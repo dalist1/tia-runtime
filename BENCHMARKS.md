@@ -18,7 +18,7 @@ These are the latest benchmark highlights from the tia research harness.
 ## Source result files
 
 ### tia startup / rpc
-- `results-max-pi/rpc.md`
+- `results-tia-pi/rpc.md`
 - `results-pi-rpc-direct-smoke/empty.md`
 
 ### tia fast tools burst
@@ -28,10 +28,10 @@ These are the latest benchmark highlights from the tia research harness.
 - `results-pi-tools-fast-burst-smoke/bash.md`
 
 ### tia opencode helper path
-- `results-max-opencode-startup/startup.md`
-- `results-max-opencode-helpers/cp.md`
-- `results-max-opencode-helpers/cat.md`
-- `results-max-opencode-helpers/combo.md`
+- `results-tia-opencode-startup/startup.md`
+- `results-tia-opencode-helpers/cp.md`
+- `results-tia-opencode-helpers/cat.md`
+- `results-tia-opencode-helpers/combo.md`
 
 ## How to reproduce
 

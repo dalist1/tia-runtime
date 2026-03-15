@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-RESULT_DIR="${RESULT_DIR:-${ROOT_DIR}/results-max-opencode-helpers}"
+RESULT_DIR="${RESULT_DIR:-${ROOT_DIR}/results-tia-opencode-helpers}"
 HELPER_DIR="${HELPER_DIR:-${HOME}/.local/share/tia/opencode-bin}"
 RUNS="${RUNS:-6}"
 WARMUP="${WARMUP:-1}"

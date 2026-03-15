@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-RESULT_DIR="${RESULT_DIR:-${ROOT_DIR}/results-max-pi}"
+RESULT_DIR="${RESULT_DIR:-${ROOT_DIR}/results-tia-pi}"
 RUNS="${RUNS:-6}"
 WARMUP="${WARMUP:-1}"
 REQUEST_FILE="${REQUEST_FILE:-${ROOT_DIR}/payloads-rpc/empty.get-state.jsonl}"

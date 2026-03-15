@@ -1,5 +1,16 @@
 # Release notes
 
+## v0.1.5
+
+Leftover tia cleanup release.
+
+### Highlights
+- benchmark scripts now use tia labels and tia runtime paths
+- added tia-named benchmark entrypoint wrappers
+- benchmark/result documentation now points at tia-named result directories
+- staged release assets now source from tia-named result directories
+- no behavior or performance claims changed from `v0.1.4`
+
 ## v0.1.4
 
 Full tia rename release.
