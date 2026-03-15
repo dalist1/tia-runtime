@@ -2,16 +2,38 @@
 
 Private research repo for making `pi` and `opencode` materially faster with sandboxed launchers and tool-path optimizations.
 
-## Main user-facing installers
+## Quick start
 
-- `scripts/install-max.sh`
-  - installs a sandboxed `max` command
+Canonical entrypoint:
+
+```bash
+bash install.sh
+```
+
+Mode-specific entrypoints:
+
+```bash
+bash install.sh max install
+bash install.sh fast-pi install
+bash install.sh fast-pi-max install
+```
+
+Raw one-liner shape:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dalist1/max-sandbox-research/main/install.sh | bash -s -- max install
+```
+
+## Install modes
+
+- `max`
+  - installs the sandboxed `max` command
   - supports:
     - `max pi`
     - `max opencode`
-- `scripts/install-fast-pi.sh`
+- `fast-pi`
   - safer compiled-launcher-only install
-- `scripts/install-fast-pi-max.sh`
+- `fast-pi-max`
   - compiled pi + global fast-tools extension
 
 ## Main docs
