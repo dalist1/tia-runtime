@@ -26,8 +26,8 @@ bash scripts/install-max.sh install
 One-liner form when the scripts are hosted somewhere accessible:
 
 ```bash
-INSTALL_BASE_URL=https://your.host/scripts \
-  curl -fsSL https://your.host/install.sh | bash -s -- max install
+curl -fsSL https://your.host/install.sh | \
+  INSTALL_BASE_URL=https://your.host/scripts bash -s -- max install
 ```
 
 ## Status

@@ -3,7 +3,13 @@
 set -euo pipefail
 
 ACTION="${1:-install}"
-ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+SOURCE_PATH="${BASH_SOURCE[0]:-$0}"
+if [[ -f "${SOURCE_PATH}" ]]; then
+	ROOT_DIR="$(cd -- "$(dirname -- "${SOURCE_PATH}")/.." && pwd)"
+else
+	ROOT_DIR="$(pwd)"
+fi
+INSTALL_BASE_URL="${INSTALL_BASE_URL:-}"
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_BIN_HOME="${XDG_BIN_HOME:-${HOME}/.local/bin}"
 MAX_ROOT="${MAX_ROOT:-${XDG_DATA_HOME}/max-sandbox}"
@@ -35,6 +41,23 @@ die() {
 
 need_cmd() {
 	command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+copy_or_fetch_script_asset() {
+	local relative_path="$1"
+	local destination="$2"
+	local local_path="${ROOT_DIR}/scripts/${relative_path}"
+
+	mkdir -p "$(dirname -- "${destination}")"
+
+	if [[ -f "${local_path}" ]]; then
+		cp "${local_path}" "${destination}"
+		return 0
+	fi
+
+	[[ -n "${INSTALL_BASE_URL}" ]] || die "Could not locate scripts/${relative_path} locally. Set INSTALL_BASE_URL to a host serving the scripts directory."
+	need_cmd curl
+	curl -fsSL "${INSTALL_BASE_URL}/${relative_path}" > "${destination}"
 }
 
 realpath_py() {
@@ -130,7 +153,7 @@ install_pi_sandbox() {
 	bun build --compile "${pi_package_dir}/dist/cli.js" --outfile "${MAX_PI_BIN}"
 	ln -sfn "${pi_package_dir}/dist/modes/interactive/theme" "${pi_bin_dir}/theme"
 	ln -sfn "${pi_package_dir}/dist/core/export-html" "${pi_bin_dir}/export-html"
-	cp "${ROOT_DIR}/scripts/fast-tools-extension.ts" "${MAX_EXTENSION_PATH}"
+	copy_or_fetch_script_asset "fast-tools-extension.ts" "${MAX_EXTENSION_PATH}"
 
 	if [[ -f "${base_agent_dir}/auth.json" ]]; then
 		ln -sfn "${base_agent_dir}/auth.json" "${MAX_PI_AGENT_DIR}/auth.json"
@@ -147,7 +170,6 @@ install_pi_sandbox() {
 
 build_fast_helpers() {
 	mkdir -p "${MAX_OPENCODE_BIN_DIR}"
-	cp "${ROOT_DIR}/scripts/fast-tools-extension.ts" "${MAX_EXTENSION_PATH}" 2>/dev/null || true
 
 	rm -f "${MAX_OPENCODE_BIN_DIR}/cat" "${MAX_OPENCODE_BIN_DIR}/cat.c"
 	if ! command -v gcc >/dev/null 2>&1; then

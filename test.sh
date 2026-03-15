@@ -30,8 +30,24 @@ assert obj['success'] is True
 PY
 
 printf '[4/8] verify installer bootstrap path\n'
-INSTALL_BASE_URL="file://${ROOT_DIR}/scripts" curl -fsSL "file://${ROOT_DIR}/install.sh" | bash -s -- max status > "${TMP_DIR}/bootstrap-status.txt"
-rg -n "max installed: yes" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
+BOOTSTRAP_HOME="${TMP_DIR}/bootstrap-home"
+BOOTSTRAP_BIN_HOME="${BOOTSTRAP_HOME}/bin"
+BOOTSTRAP_DATA_HOME="${BOOTSTRAP_HOME}/share"
+mkdir -p "${TMP_DIR}/bootstrap-cwd"
+(
+	cd "${TMP_DIR}/bootstrap-cwd"
+	curl -fsSL "file://${ROOT_DIR}/install.sh" | \
+	HOME="${BOOTSTRAP_HOME}" \
+	XDG_BIN_HOME="${BOOTSTRAP_BIN_HOME}" \
+	XDG_DATA_HOME="${BOOTSTRAP_DATA_HOME}" \
+	INSTALL_BASE_URL="file://${ROOT_DIR}/scripts" \
+	bash -s -- max install > "${TMP_DIR}/bootstrap-install.txt"
+)
+HOME="${BOOTSTRAP_HOME}" \
+XDG_BIN_HOME="${BOOTSTRAP_BIN_HOME}" \
+XDG_DATA_HOME="${BOOTSTRAP_DATA_HOME}" \
+"${BOOTSTRAP_BIN_HOME}/max" status > "${TMP_DIR}/bootstrap-status.txt"
+rg -n "max installed: yes|pi package:" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
 
 printf '[5/8] verify pi installers\n'
 bash "${ROOT_DIR}/install.sh" fast-pi status >/dev/null

@@ -25,8 +25,9 @@ Examples:
 
 Notes:
   - If the repo is cloned locally, this script delegates to ./scripts/* directly.
-  - If run via curl, set INSTALL_BASE_URL to a location serving the scripts/ directory
-    if the default raw GitHub URL is not reachable in your environment.
+  - If run via curl, set INSTALL_BASE_URL on the bash side of the pipeline to a
+    location serving the scripts/ directory if the default raw GitHub URL is not
+    reachable in your environment.
 EOF
 }
 

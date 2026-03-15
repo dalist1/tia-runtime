@@ -6,6 +6,7 @@ results*/
 # Built artifacts
 bin/
 max-opencode-bin/
+release-assets/
 opencode-optimized/bin/fastcopy
 
 # Dependencies
