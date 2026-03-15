@@ -19,7 +19,6 @@ TIA_CMD_PATH="${TIA_BIN_DIR}/tia"
 LEGACY_MAX_CMD_PATH="${TIA_BIN_DIR}/max"
 TIA_PI_BIN="${TIA_ROOT}/bin/pi"
 TIA_PI_AGENT_DIR="${TIA_ROOT}/pi-agent"
-TIA_OPENCODE_BIN_DIR="${TIA_ROOT}/opencode-bin"
 TIA_EXTENSION_PATH="${TIA_PI_AGENT_DIR}/extensions/fast-tools.ts"
 INSTALL_LEGACY_MAX_ALIAS="${INSTALL_LEGACY_MAX_ALIAS:-1}"
 PACKAGE_NAME_PI="@mariozechner/pi-coding-agent"
@@ -33,7 +32,6 @@ Usage:
 
 Installs the tia runtime command so you can run:
   tia pi [args...]
-  tia opencode [args...]
 
 By default it also creates a legacy `max` alias. Set INSTALL_LEGACY_MAX_ALIAS=0 to skip that.
 EOF
@@ -105,44 +103,6 @@ find_pi_package_dir() {
 	return 1
 }
 
-resolve_opencode_direct_bin() {
-	if ! command -v opencode >/dev/null 2>&1; then
-		return 1
-	fi
-
-	local shim resolved package_root platform arch candidate
-	shim="$(command -v opencode)"
-	resolved="$(realpath_py "${shim}")"
-	package_root="$(cd -- "$(dirname -- "${resolved}")/.." && pwd)"
-
-	case "$(uname -s)" in
-		Linux) platform="linux" ;;
-		Darwin) platform="darwin" ;;
-		*) return 1 ;;
-	esac
-
-	case "$(uname -m)" in
-		x86_64|amd64) arch="x64" ;;
-		aarch64|arm64) arch="arm64" ;;
-		armv7*|armv6*|arm) arch="arm" ;;
-		*) return 1 ;;
-	esac
-
-	for candidate in \
-		"${package_root}/../opencode-${platform}-${arch}/bin/opencode" \
-		"${package_root}/../opencode-${platform}-${arch}-baseline/bin/opencode" \
-		"${package_root}/../opencode-${platform}-${arch}-musl/bin/opencode" \
-		"${package_root}/../opencode-${platform}-${arch}-baseline-musl/bin/opencode"
-	do
-		if [[ -x "${candidate}" ]]; then
-			printf '%s\n' "${candidate}"
-			return 0
-		fi
-	done
-
-	return 1
-}
-
 install_pi_sandbox() {
 	need_cmd bun
 	need_cmd pi
@@ -173,117 +133,10 @@ install_pi_sandbox() {
 	printf '%s\n' "${pi_package_dir}" > "${TIA_ROOT}/pi-package-dir.txt"
 }
 
-build_fast_helpers() {
-	mkdir -p "${TIA_OPENCODE_BIN_DIR}"
-
-	rm -f "${TIA_OPENCODE_BIN_DIR}/cat" "${TIA_OPENCODE_BIN_DIR}/cat.c"
-	if ! command -v gcc >/dev/null 2>&1; then
-		cat > "${TIA_OPENCODE_BIN_DIR}/cp" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-real_cp="$(command -v cp)"
-fastcopy="${TIA_OPENCODE_BIN_DIR}/fastcopy"
-if [[ "\$#" -eq 2 && "\${1}" != -* && "\${2}" != -* && -f "\${1}" ]]; then
-  exec "\${fastcopy}" "\${1}" "\${2}"
-fi
-exec "\${real_cp}" "\$@"
-EOF
-		chmod +x "${TIA_OPENCODE_BIN_DIR}/cp"
-		return 0
-	fi
-
-	cat > "${TIA_OPENCODE_BIN_DIR}/fastdrain.c" <<'EOF'
-#define _POSIX_C_SOURCE 200809L
-#include <errno.h>
-#include <fcntl.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-enum { BUFFER_SIZE = 1 << 20 };
-static int drain_fd(int fd) {
-    void *buffer = NULL;
-    if (posix_memalign(&buffer, 4096, BUFFER_SIZE) != 0) return 1;
-    for (;;) {
-        ssize_t bytes_read = read(fd, buffer, BUFFER_SIZE);
-        if (bytes_read == 0) break;
-        if (bytes_read < 0) {
-            if (errno == EINTR) continue;
-            free(buffer);
-            return 1;
-        }
-    }
-    free(buffer);
-    return 0;
-}
-int main(int argc, char **argv) {
-    int fd = STDIN_FILENO;
-    if (argc > 2) return 1;
-    if (argc == 2) {
-        fd = open(argv[1], O_RDONLY | O_CLOEXEC);
-        if (fd < 0) return 1;
-    }
-    int status = drain_fd(fd);
-    if (fd != STDIN_FILENO) close(fd);
-    return status;
-}
-EOF
-
-	cat > "${TIA_OPENCODE_BIN_DIR}/fastcopy.c" <<'EOF'
-#define _GNU_SOURCE
-#include <errno.h>
-#include <fcntl.h>
-#include <sys/sendfile.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <unistd.h>
-int main(int argc, char **argv) {
-    if (argc != 3) return 1;
-    int src_fd = open(argv[1], O_RDONLY | O_CLOEXEC);
-    if (src_fd < 0) return 1;
-    struct stat st;
-    if (fstat(src_fd, &st) != 0) return 1;
-    int dst_fd = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, st.st_mode & 0777);
-    if (dst_fd < 0) return 1;
-    if (sendfile(dst_fd, src_fd, NULL, (size_t)st.st_size) < 0 && errno != EINVAL && errno != ENOSYS) return 1;
-    close(dst_fd);
-    close(src_fd);
-    return 0;
-}
-EOF
-
-	cat > "${TIA_OPENCODE_BIN_DIR}/cp.c" <<EOF
-#define _GNU_SOURCE
-#include <errno.h>
-#include <sys/stat.h>
-#include <unistd.h>
-static const char *REAL_CP = "$(command -v cp)";
-static const char *FASTCOPY = "${TIA_OPENCODE_BIN_DIR}/fastcopy";
-static int is_regular_file(const char *path) {
-    struct stat st;
-    if (stat(path, &st) != 0) return 0;
-    return S_ISREG(st.st_mode);
-}
-int main(int argc, char **argv) {
-    if (argc == 3 && argv[1][0] != '-' && argv[2][0] != '-' && is_regular_file(argv[1])) {
-        execl(FASTCOPY, FASTCOPY, argv[1], argv[2], (char *)NULL);
-    }
-    execv(REAL_CP, argv);
-    return errno ? errno : 1;
-}
-EOF
-
-	gcc -O3 -pipe -march=native -s -o "${TIA_OPENCODE_BIN_DIR}/fastdrain" "${TIA_OPENCODE_BIN_DIR}/fastdrain.c"
-	gcc -O3 -pipe -march=native -s -o "${TIA_OPENCODE_BIN_DIR}/fastcopy" "${TIA_OPENCODE_BIN_DIR}/fastcopy.c"
-	gcc -O3 -pipe -march=native -s -o "${TIA_OPENCODE_BIN_DIR}/cp" "${TIA_OPENCODE_BIN_DIR}/cp.c"
-	rm -f "${TIA_OPENCODE_BIN_DIR}"/*.c
-}
-
 write_tia_wrapper() {
 	mkdir -p "${TIA_BIN_DIR}"
-	local pi_package_dir opencode_direct_bin
+	local pi_package_dir
 	pi_package_dir="$(cat "${TIA_ROOT}/pi-package-dir.txt")"
-	opencode_direct_bin="$(resolve_opencode_direct_bin || true)"
 
 	cat > "${TIA_CMD_PATH}" <<EOF
 #!/usr/bin/env bash
@@ -291,13 +144,11 @@ set -euo pipefail
 TIA_ROOT="${TIA_ROOT}"
 TIA_PI_BIN="${TIA_PI_BIN}"
 TIA_PI_AGENT_DIR="${TIA_PI_AGENT_DIR}"
-TIA_OPENCODE_BIN_DIR="${TIA_OPENCODE_BIN_DIR}"
 PI_PACKAGE_DIR="${pi_package_dir}"
-OPENCODE_DIRECT_BIN="${opencode_direct_bin}"
 
 subcommand="\${1:-}"
 if [[ -z "\${subcommand}" ]]; then
-  echo "Usage: tia {pi|opencode|status} [args...]" >&2
+  echo "Usage: tia {pi|status} [args...]" >&2
   exit 1
 fi
 shift || true
@@ -308,23 +159,14 @@ case "\${subcommand}" in
     export PI_PACKAGE_DIR="\${PI_PACKAGE_DIR}"
     exec "\${TIA_PI_BIN}" "\$@"
     ;;
-  opencode)
-    export PATH="\${TIA_OPENCODE_BIN_DIR}:\$PATH"
-    if [[ -n "\${OPENCODE_DIRECT_BIN}" && -x "\${OPENCODE_DIRECT_BIN}" ]]; then
-      exec "\${OPENCODE_DIRECT_BIN}" "\$@"
-    fi
-    exec opencode "\$@"
-    ;;
   status)
-    echo "tia root:      \	\${TIA_ROOT}"
-    echo "tia pi bin:    \	\${TIA_PI_BIN}"
-    echo "tia pi agent:  \	\${TIA_PI_AGENT_DIR}"
-    echo "tia opencode:  \	\${TIA_OPENCODE_BIN_DIR}"
-    echo "pi package:    \	\${PI_PACKAGE_DIR}"
-    echo "opencode bin:  \	\${OPENCODE_DIRECT_BIN:-<shim>}"
+    echo "tia root:      \t\${TIA_ROOT}"
+    echo "tia pi bin:    \t\${TIA_PI_BIN}"
+    echo "tia pi agent:  \t\${TIA_PI_AGENT_DIR}"
+    echo "pi package:    \t\${PI_PACKAGE_DIR}"
     ;;
   *)
-    echo "Unknown subcommand: \	\${subcommand}" >&2
+    echo "Unknown subcommand: \t\${subcommand}" >&2
     exit 1
     ;;
 esac
@@ -355,14 +197,10 @@ install_legacy_max_alias() {
 
 install_all() {
 	install_pi_sandbox
-	build_fast_helpers
 	write_tia_wrapper
 	install_legacy_max_alias
 	printf 'Installed tia command at %s\n' "${TIA_CMD_PATH}"
 	printf 'Run: tia pi\n'
-	if command -v opencode >/dev/null 2>&1; then
-		printf 'Run: tia opencode\n'
-	fi
 	if [[ "${INSTALL_LEGACY_MAX_ALIAS}" == "1" ]]; then
 		printf 'Legacy alias: %s -> tia\n' "${LEGACY_MAX_CMD_PATH}"
 	fi
@@ -389,7 +227,6 @@ status_all() {
 	printf 'tia root:      %s\n' "${TIA_ROOT}"
 	printf 'tia pi bin:    %s\n' "${TIA_PI_BIN}"
 	printf 'tia ext:       %s\n' "${TIA_EXTENSION_PATH}"
-	printf 'tia opencode:  %s\n' "${TIA_OPENCODE_BIN_DIR}"
 	printf 'max alias:     %s\n' "${LEGACY_MAX_CMD_PATH}"
 	[[ -x "${LEGACY_MAX_CMD_PATH}" ]] && printf 'max alias ok:  yes\n' || printf 'max alias ok:  no\n'
 	if [[ -f "${TIA_ROOT}/pi-package-dir.txt" ]]; then
@@ -397,9 +234,6 @@ status_all() {
 	fi
 	if [[ -d "${LEGACY_MAX_ROOT}" && "${LEGACY_MAX_ROOT}" != "${TIA_ROOT}" ]]; then
 		printf 'legacy root:   %s\n' "${LEGACY_MAX_ROOT}"
-	fi
-	if command -v opencode >/dev/null 2>&1; then
-		printf 'opencode dir:  %s\n' "$(resolve_opencode_direct_bin || echo '<shim>')"
 	fi
 }
 

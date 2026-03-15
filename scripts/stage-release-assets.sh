@@ -20,8 +20,6 @@ rm -f "${OUT_DIR}"/*
 
 copy_asset "install.sh" "tia-install.sh"
 copy_asset "scripts/install-tia.sh" "tia-install-tia.sh"
-copy_asset "scripts/install-fast-pi.sh" "tia-install-fast-pi.sh"
-copy_asset "scripts/install-fast-pi-max.sh" "tia-install-fast-pi-max.sh"
 copy_asset "scripts/TIA.md" "tia-launcher.md"
 copy_asset "BENCHMARKS.md" "tia-benchmarks.md"
 copy_asset "results-tia-pi/rpc.md" "tia-benchmark-tia-pi-rpc.md"
@@ -30,8 +28,6 @@ copy_asset "results-pi-tools-fast-burst-smoke/read.md" "tia-benchmark-tia-pi-fas
 copy_asset "results-pi-tools-fast-burst-smoke/write.md" "tia-benchmark-tia-pi-fast-write.md"
 copy_asset "results-pi-tools-fast-burst-smoke/edit.md" "tia-benchmark-tia-pi-fast-edit.md"
 copy_asset "results-pi-tools-fast-burst-smoke/bash.md" "tia-benchmark-tia-pi-fast-bash.md"
-copy_asset "results-tia-opencode-startup/startup.md" "tia-benchmark-tia-opencode-startup.md"
-copy_asset "results-tia-opencode-helpers/cp.md" "tia-benchmark-tia-opencode-cp.md"
 
 printf 'Staged release assets in %s\n' "${OUT_DIR}"
 find "${OUT_DIR}" -maxdepth 1 -type f | sort

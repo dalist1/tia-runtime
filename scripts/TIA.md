@@ -2,13 +2,16 @@
 
 Installs tia's sandboxed launcher command.
 
-After install you can run:
+The single supported runtime mode from this project is:
 
 ```bash
 tia pi
-tia opencode
-tia status
 ```
+
+That path combines:
+- compiled startup improvements
+- sandboxed runtime wiring
+- fast tool overrides
 
 A legacy `max` alias is also created by default when that path is free or already managed by tia.
 
@@ -59,11 +62,7 @@ bash scripts/install-tia.sh uninstall
 - uses a sandboxed pi agent dir
 - loads the fast-tools extension automatically
 - reuses your existing auth/settings/models via symlinks
-
-### `tia opencode`
-- starts opencode with a sandboxed helper `PATH`
-- currently accelerates the file-copy style shell path via a fast `cp` wrapper
-- uses the direct native opencode binary when it can resolve it
+- covers both startup and tool-runtime optimization in one launcher path
 
 ## Benchmarks
 
@@ -76,15 +75,9 @@ bash scripts/install-tia.sh uninstall
   - `edit`: about **2.50x** faster
   - `bash`: about **1.59x** faster on the tested drain/copy workload
 
-### `tia opencode`
-- startup:
-  - about **1.06x** faster on the tested `--version` path
-- tested shell helper path:
-  - `cp` repeated workload: about **1.11x** faster
-
 ## Notes
 
-- `tia pi` is the strong path right now.
-- `tia opencode` is a beta path and currently gives the clearest gains on shell/file-copy heavy workloads.
+- `tia pi` is the supported runtime mode.
+- Direct compiled `pi` remains useful as a benchmark reference, not as a separate supported mode.
 - Set `INSTALL_LEGACY_MAX_ALIAS=0` if you do not want the compatibility `max` alias.
-- Re-run the installer after updating pi or opencode.
+- Re-run the installer after updating pi.

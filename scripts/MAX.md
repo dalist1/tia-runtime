@@ -15,7 +15,6 @@ Primary command:
 
 ```bash
 tia pi
-tia opencode
 tia status
 ```
 

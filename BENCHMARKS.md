@@ -12,8 +12,13 @@ These are the latest benchmark highlights from the tia research harness.
 | `tia pi` fast tools | `write` burst | 195.5 ms | 193.0 ms | **1.01x** |
 | `tia pi` fast tools | `edit` burst | 378.3 ms | 151.0 ms | **2.50x** |
 | `tia pi` fast tools | `bash` burst | 513.7 ms | 322.5 ms | **1.59x** |
-| `tia opencode` startup | `--version` | 1.365 s | 1.293 s | **1.06x** |
-| `tia opencode` helpers | repeated `cp` shell workload | 248.6 ms | 222.9 ms | **1.11x** |
+
+## Supported mode
+
+The only supported user-facing runtime mode from this project is:
+- `tia pi`
+
+`pi` compiled direct remains a benchmark reference, not a separate supported install mode.
 
 ## Source result files
 
@@ -26,12 +31,6 @@ These are the latest benchmark highlights from the tia research harness.
 - `results-pi-tools-fast-burst-smoke/write.md`
 - `results-pi-tools-fast-burst-smoke/edit.md`
 - `results-pi-tools-fast-burst-smoke/bash.md`
-
-### tia opencode helper path
-- `results-tia-opencode-startup/startup.md`
-- `results-tia-opencode-helpers/cp.md`
-- `results-tia-opencode-helpers/cat.md`
-- `results-tia-opencode-helpers/combo.md`
 
 ## How to reproduce
 
@@ -49,17 +48,13 @@ hyperfine --runs 4 --warmup 1 \
 bash bench/hyperfine-pi-tools-fast-burst.sh
 ```
 
-### tia opencode helper path
-```bash
-bash bench/hyperfine-tia-opencode-helpers.sh
-```
-
 ## Interpretation
 
 - `tia pi` is the strongest path today.
-- The largest gains come from:
-  - compiled pi startup
-  - streaming `read`
+- It combines:
+  - compiled startup
+  - sandboxed runtime wiring
+  - fast `read`
   - fast exact-text `edit`
-- `tia opencode` currently gives the clearest win on repeated `cp`-style shell workloads.
+  - faster `bash` handling on the tested workloads
 - `write` improves, but less dramatically than `read` and `edit`.
