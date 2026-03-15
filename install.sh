@@ -11,7 +11,7 @@ INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/
 usage() {
 	cat <<'EOF'
 Usage:
-  install.sh [tia|max] [install|status|uninstall]
+  install.sh [tia] [install|status|uninstall]
 
 Defaults to:
   install.sh tia install
@@ -23,7 +23,6 @@ Examples:
 
 Notes:
   - tia is the only supported user-facing runtime mode.
-  - max remains a compatibility alias for tia.
   - If the repo is cloned locally, this script delegates to ./scripts/* directly.
   - If run via curl, set INSTALL_BASE_URL on the bash side of the pipeline to a
     location serving the scripts/ directory if the default raw GitHub URL is not
@@ -48,11 +47,11 @@ delegate() {
 }
 
 case "${MODE}" in
-	tia|max)
+	tia)
 		delegate "install-tia.sh"
 		;;
-	fast-pi|fast-pi-max)
-		echo "Error: ${MODE} is no longer a separate mode. Use 'bash install.sh tia ${ACTION}' instead." >&2
+	fast-pi|fast-pi-max|max)
+		echo "Error: ${MODE} is no longer supported. Use 'bash install.sh tia ${ACTION}' instead." >&2
 		exit 1
 		;;
 	-h|--help|help)

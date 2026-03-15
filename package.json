@@ -1,0 +1,14 @@
+{
+  "name": "tia",
+  "private": true,
+  "scripts": {
+    "lint": "oxlint scripts/*.ts --deny-warnings",
+    "format": "oxfmt --check scripts/*.ts package.json",
+    "format:write": "oxfmt --write scripts/*.ts package.json"
+  },
+  "devDependencies": {
+    "oxfmt": "latest",
+    "oxlint": "latest"
+  },
+  "packageManager": "bun@1.3.11"
+}

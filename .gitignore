@@ -5,14 +5,17 @@ results*/
 
 # Built artifacts
 bin/
-max-opencode-bin/
 tia-opencode-bin/
 release-assets/
 opencode-optimized/bin/fastcopy
 
 # Dependencies
+node_modules/
 opencode-baseline/node_modules/
 opencode-optimized/node_modules/
+
+# Helper bins
+max-opencode-bin/
 
 # Misc
 .DS_Store

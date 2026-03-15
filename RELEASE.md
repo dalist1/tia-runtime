@@ -6,11 +6,8 @@ Single-mode tia release.
 
 ### Highlights
 - `tia pi` is now the only supported user-facing runtime mode from this project
-- `install.sh` now supports only:
-  - `tia`
-  - `max` compatibility alias
-- deprecated top-level modes `fast-pi` and `fast-pi-max` are now rejected
-- legacy scripts `install-fast-pi.sh` and `install-fast-pi-max.sh` now delegate to `install-tia.sh`
+- `install.sh` now supports only `tia`
+- deprecated top-level modes `max`, `fast-pi`, and `fast-pi-max` are now rejected
 - docs and release assets were simplified around the single tia mode
 - `tia pi` remains the path that combines startup and tool optimization without patching upstream pi
 
@@ -32,7 +29,6 @@ curl -fsSL https://your.host/install.sh | \
 ### Notes
 - supported mode: `tia pi`
 - benchmark-only reference path: compiled direct `pi`
-- `max` remains a compatibility alias
 
 ## v0.1.6
 

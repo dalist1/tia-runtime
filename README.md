@@ -12,8 +12,6 @@ Reference baselines still exist for comparison:
 - stock/native `pi`
 - compiled direct `pi` benchmark path
 
-A legacy `max` alias is still installed by default for compatibility when that path is free or already managed by tia.
-
 ## Supported mode
 
 There is one supported tia mode:
@@ -37,13 +35,6 @@ bash install.sh tia status
 bash install.sh tia uninstall
 ```
 
-Legacy compatibility alias:
-
-```bash
-bash install.sh max install
-max status
-```
-
 ## Curl / bootstrap usage
 
 The top-level installer bootstraps sibling scripts when `INSTALL_BASE_URL` points at a host serving the `scripts/` directory.
@@ -63,8 +54,8 @@ This path is smoke-tested from outside the repo checkout.
   - compiled pi startup path
   - sandboxed pi agent dir
   - fast-tools extension enabled
+  - current shell environment preserved for provider/model login env vars
 - combines startup improvement and tool-path optimization in one runtime
-- installs a legacy `max` alias by default when safe to do so
 
 ## Current benchmark highlights
 
@@ -73,12 +64,14 @@ This path is smoke-tested from outside the repo checkout.
 | `tia pi` | RPC startup (`get_state`) | **1.86x** |
 | compiled direct `pi` | RPC startup (`get_state`) | **1.98x** |
 | `tia pi` fast tools | `read` burst | **5.18x** |
+| `tia pi` fast tools | `read` streaming burst | **5.49x** |
 | `tia pi` fast tools | `edit` burst | **2.50x** |
 | `tia pi` fast tools | `bash` burst | **1.59x** |
 
 Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
 - `tia pi` is the single supported runtime mode from this project.
+- `tia` does not add startup-time session/history cleanup logic.
 
 More detail:
 - `BENCHMARKS.md`
@@ -92,13 +85,20 @@ Run the smoke/integration checks:
 bash test.sh
 ```
 
+## Linting and formatting
+
+```bash
+bun install
+bun run lint
+bun run format
+bun run format:write
+```
+
 What it covers:
 - local `tia` install/status
-- legacy `max` alias health
 - rejection of deprecated top-level modes
 - `tia pi` RPC health
 - real curl/bootstrap install from outside the repo checkout
-- legacy fast-pi wrapper delegation to tia
 - fast tool runner execution
 - benchmark process cleanup
 
@@ -108,7 +108,24 @@ What it covers:
 bash bench/hyperfine-tia-pi.sh
 bash bench/hyperfine-pi-rpc-direct.sh
 bash bench/hyperfine-pi-tools-fast-burst.sh
+bash bench/hyperfine-pi-tools-fast-stream.sh
 ```
+
+## Fast stream path
+
+For faster JSON streaming, tia now uses the slim stream runtime by default for `--mode json --no-session`:
+
+```bash
+tia pi --mode json --no-session "Reply in five words."
+```
+
+Opt out only if needed:
+
+```bash
+TIA_DISABLE_FAST_STREAM=1 tia pi --mode json --no-session "Reply in five words."
+```
+
+This path is intentionally optimized for speed over stock JSON event compatibility.
 
 ## Release asset staging
 
@@ -121,5 +138,4 @@ This writes clearly named `tia-*` files into `release-assets/`.
 ## Notes
 
 - `tia pi` is the strongest path today.
-- Set `INSTALL_LEGACY_MAX_ALIAS=0` if you do not want the compatibility `max` alias.
 - Generated payloads, benchmark results, release-assets, compiled binaries, and `node_modules` are gitignored.

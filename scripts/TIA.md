@@ -13,8 +13,6 @@ That path combines:
 - sandboxed runtime wiring
 - fast tool overrides
 
-A legacy `max` alias is also created by default when that path is free or already managed by tia.
-
 ## Install
 
 Recommended from a local clone:
@@ -61,7 +59,9 @@ bash scripts/install-tia.sh uninstall
 - uses a sandboxed compiled pi binary
 - uses a sandboxed pi agent dir
 - loads the fast-tools extension automatically
-- reuses your existing auth/settings/models via symlinks
+- reuses your current shell agent auth/settings/models via symlinks refreshed at launch time
+- preserves the current shell environment for provider/model login env vars
+- supports an opt-in slim stream runtime for `--mode json --no-session`
 - covers both startup and tool-runtime optimization in one launcher path
 
 ## Benchmarks
@@ -71,6 +71,7 @@ bash scripts/install-tia.sh uninstall
   - about **1.86x** faster than the original `pi` launcher
 - isolated tool burst benchmarks:
   - `read`: about **5.18x** faster
+  - `read` streaming burst: about **5.49x** faster
   - `write`: about **1.01x** faster
   - `edit`: about **2.50x** faster
   - `bash`: about **1.59x** faster on the tested drain/copy workload
@@ -79,5 +80,7 @@ bash scripts/install-tia.sh uninstall
 
 - `tia pi` is the supported runtime mode.
 - Direct compiled `pi` remains useful as a benchmark reference, not as a separate supported mode.
-- Set `INSTALL_LEGACY_MAX_ALIAS=0` if you do not want the compatibility `max` alias.
+- The slim stream path is enabled by default for `--mode json --no-session`.
+- Set `TIA_DISABLE_FAST_STREAM=1` if you need to opt out.
+- `tia` does not add startup-time session/history cleanup logic.
 - Re-run the installer after updating pi.

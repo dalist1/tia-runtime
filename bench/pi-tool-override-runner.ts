@@ -221,29 +221,49 @@ async function tryOptimizedBash(command: string) {
 		.map((part) => part.trim())
 		.filter(Boolean);
 
+	if (parts.length === 0) {
+		return false;
+	}
+
+	const actions: Array<() => Promise<void>> = [];
+
 	for (const part of parts) {
 		const catMatch = part.match(/^cat\s+(\S+)\s*>\s*\/dev\/null$/);
 		if (catMatch) {
-			await runBinary(`${ROOT_DIR}/bin/fastdrain`, [resolve(ROOT_DIR, catMatch[1])]);
+			const file = resolve(ROOT_DIR, catMatch[1]);
+			actions.push(async () => {
+				await runBinary(`${ROOT_DIR}/bin/fastdrain`, [file]);
+			});
 			continue;
 		}
 
 		const cpMatch = part.match(/^cp\s+(\S+)\s+(\S+)$/);
 		if (cpMatch) {
-			await runBinary(`${ROOT_DIR}/opencode-optimized/bin/fastcopy`, [resolve(ROOT_DIR, cpMatch[1]), cpMatch[2]]);
+			const src = resolve(ROOT_DIR, cpMatch[1]);
+			const dst = resolve(ROOT_DIR, cpMatch[2]);
+			actions.push(async () => {
+				await runBinary(`${ROOT_DIR}/opencode-optimized/bin/fastcopy`, [src, dst]);
+			});
 			continue;
 		}
 
 		const rmMatch = part.match(/^rm\s+(\S+)$/);
 		if (rmMatch) {
-			rmSync(rmMatch[1], { force: true });
+			const target = resolve(ROOT_DIR, rmMatch[1]);
+			actions.push(async () => {
+				rmSync(target, { force: true });
+			});
 			continue;
 		}
 
 		return false;
 	}
 
-	return parts.length > 0;
+	for (const action of actions) {
+		await action();
+	}
+
+	return true;
 }
 
 async function fastBash(command: string) {
