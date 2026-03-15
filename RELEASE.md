@@ -1,5 +1,15 @@
 # Release notes
 
+## v0.1.6
+
+Canonical tia benchmark-script release.
+
+### Highlights
+- tia-named benchmark scripts are now the canonical implementations
+- legacy `max` benchmark script names remain as compatibility wrappers
+- tia-named helper build script is now canonical too
+- no installer, launcher, or performance claims changed from `v0.1.5`
+
 ## v0.1.5
 
 Leftover tia cleanup release.
