@@ -4,13 +4,13 @@ Private research repo for making `pi` and `opencode` materially faster with sand
 
 ## Quick start
 
-Canonical entrypoint:
+Canonical local entrypoint:
 
 ```bash
 bash install.sh
 ```
 
-Mode-specific entrypoints:
+Mode-specific local entrypoints:
 
 ```bash
 bash install.sh max install
@@ -18,11 +18,7 @@ bash install.sh fast-pi install
 bash install.sh fast-pi-max install
 ```
 
-Raw one-liner shape:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/dalist1/max-sandbox-research/main/install.sh | bash -s -- max install
-```
+If you want to run `install.sh` via curl, either serve this repo from a host that exposes the `scripts/` directory or set `INSTALL_BASE_URL` to an alternate script host.
 
 ## Install modes
 
@@ -36,18 +32,42 @@ curl -fsSL https://raw.githubusercontent.com/dalist1/max-sandbox-research/main/i
 - `fast-pi-max`
   - compiled pi + global fast-tools extension
 
-## Main docs
+## What matters most
 
+| Path | Workload | Speedup |
+|---|---|---:|
+| `max pi` | RPC startup (`get_state`) | **1.86x** |
+| `pi` compiled direct | RPC startup (`get_state`) | **1.98x** |
+| `max pi` fast tools | `read` burst | **5.18x** |
+| `max pi` fast tools | `edit` burst | **2.50x** |
+| `max pi` fast tools | `bash` burst | **1.59x** |
+| `max opencode` startup | `--version` | **1.06x** |
+| `max opencode` helpers | repeated `cp` shell workload | **1.11x** |
+
+See also:
+- `BENCHMARKS.md`
 - `scripts/MAX.md`
 - `scripts/FAST-PI.md`
 - `scripts/FAST-PI-MAX.md`
 
+## Testing
+
+Run the smoke/integration checks with:
+
+```bash
+bash test.sh
+```
+
 ## Benchmarks
 
+Main benchmark entrypoints:
+
+- `bench/hyperfine-max-pi.sh`
 - `bench/hyperfine-pi-tools-fast-burst.sh`
 - `bench/hyperfine-pi-rpc-direct.sh`
 - `bench/hyperfine-pi-rpc-burst.sh`
 - `bench/hyperfine-max-opencode-helpers.sh`
+- `bench/hyperfine-max-opencode-startup.sh`
 
 ## Notes
 

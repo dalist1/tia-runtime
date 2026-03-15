@@ -1,27 +1,36 @@
 # Release notes
 
-## v0.1.0
+## v0.1.1
 
-Initial private release.
+Polish release.
 
 ### Highlights
-- top-level `install.sh` entrypoint
-- sandboxed `max` launcher:
+- top-level `install.sh` entrypoint now supports local delegation and curl/bootstrap delegation
+- root `BENCHMARKS.md` summary added
+- root `test.sh` smoke/integration test added
+- dedicated benchmark entrypoints for:
   - `max pi`
-  - `max opencode`
-- compiled pi launcher path
-- aggressive pi fast-tools extension
-- benchmark suite for launcher, RPC, built-in tools, and opencode helper paths
+  - `max opencode` startup
+- root README simplified and benchmark summary table added
 
 ### Recommended install
 
+Local clone:
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dalist1/max-sandbox-research/main/install.sh | bash -s -- max install
+bash install.sh max install
+```
+
+If using curl, point `INSTALL_BASE_URL` at a host serving the `scripts/` directory when needed:
+
+```bash
+INSTALL_BASE_URL=https://your.host/scripts \
+  curl -fsSL https://your.host/install.sh | bash -s -- max install
 ```
 
 ### Other modes
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dalist1/max-sandbox-research/main/install.sh | bash -s -- fast-pi install
-curl -fsSL https://raw.githubusercontent.com/dalist1/max-sandbox-research/main/install.sh | bash -s -- fast-pi-max install
+bash install.sh fast-pi install
+bash install.sh fast-pi-max install
 ```

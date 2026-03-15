@@ -6,7 +6,21 @@ It does two things:
 1. installs the compiled `pi` launcher as the default `pi`
 2. installs a global `fast-tools` extension that overrides `read`, `write`, `edit`, and `bash`
 
-## One-liner
+## Install
+
+Recommended from a local clone:
+
+```bash
+bash install.sh fast-pi-max install
+```
+
+Direct script form:
+
+```bash
+bash scripts/install-fast-pi-max.sh install
+```
+
+One-liner:
 
 ```bash
 curl -fsSL https://your.host/install-fast-pi-max.sh | bash -s -- install
@@ -16,14 +30,6 @@ Local test form:
 
 ```bash
 curl -fsSL file:///absolute/path/to/install-fast-pi-max.sh | bash -s -- install
-```
-
-## Commands
-
-Install:
-
-```bash
-bash scripts/install-fast-pi-max.sh install
 ```
 
 Status:
@@ -53,13 +59,13 @@ bash scripts/install-fast-pi-max.sh uninstall
 ## Benchmark highlights
 
 Launcher / RPC startup:
-- compiled default `pi`: about **1.94x** faster than original
+- compiled default `pi`: about **1.98x** faster than the stock RPC launcher path
 
 Built-in tool runtime, isolated burst benchmarks:
-- `read`: about **4.18x** faster
-- `write`: about **1.09x** faster
-- `edit`: about **2.76x** faster
-- `bash`: about **1.38x** faster on file-drain/copy/remove style commands
+- `read`: about **5.18x** faster
+- `write`: about **1.01x** faster
+- `edit`: about **2.50x** faster
+- `bash`: about **1.59x** faster on file-drain/copy/remove style commands
 
 ## Notes
 

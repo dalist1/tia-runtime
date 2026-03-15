@@ -11,14 +11,23 @@ max opencode
 
 ## Install
 
+Recommended from a local clone:
+
+```bash
+bash install.sh max install
+```
+
+Direct script form:
+
 ```bash
 bash scripts/install-max.sh install
 ```
 
-One-liner form:
+One-liner form when the scripts are hosted somewhere accessible:
 
 ```bash
-curl -fsSL https://your.host/install-max.sh | bash -s -- install
+INSTALL_BASE_URL=https://your.host/scripts \
+  curl -fsSL https://your.host/install.sh | bash -s -- max install
 ```
 
 ## Status
@@ -51,18 +60,18 @@ bash scripts/install-max.sh uninstall
 
 ### `max pi`
 - startup / rpc:
-  - about **1.72x** faster than original `pi` launcher
+  - about **1.86x** faster than the original `pi` launcher
 - isolated tool burst benchmarks:
-  - `read`: about **4.18x** faster
-  - `write`: about **1.09x** faster
-  - `edit`: about **2.76x** faster
-  - `bash`: about **1.38x** faster on the tested drain/copy workload
+  - `read`: about **5.18x** faster
+  - `write`: about **1.01x** faster
+  - `edit`: about **2.50x** faster
+  - `bash`: about **1.59x** faster on the tested drain/copy workload
 
 ### `max opencode`
 - startup:
-  - roughly on par to slightly faster depending on the machine
+  - about **1.06x** faster on the tested `--version` path
 - tested shell helper path:
-  - `cp` repeated workload: about **1.19x** faster
+  - `cp` repeated workload: about **1.11x** faster
 
 ## Notes
 

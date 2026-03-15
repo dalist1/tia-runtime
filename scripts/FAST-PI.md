@@ -12,6 +12,18 @@ It does **not** patch the pi codebase. It compiles the existing installed `dist/
 
 ## Install
 
+Recommended from a local clone:
+
+```bash
+bash install.sh fast-pi install
+```
+
+Direct script form:
+
+```bash
+bash scripts/install-fast-pi.sh install
+```
+
 Local file one-liner:
 
 ```bash
@@ -22,12 +34,6 @@ Hosted one-liner:
 
 ```bash
 curl -fsSL https://your.host/install-fast-pi.sh | bash -s -- install
-```
-
-Direct invocation also works:
-
-```bash
-bash scripts/install-fast-pi.sh install
 ```
 
 ## Check status
@@ -73,5 +79,6 @@ bash bench/hyperfine-pi-rpc-direct.sh
   - `write`: about **1.13x** faster
   - `edit`: about **1.15x** faster
   - `bash`: about **1.15x** faster
+- For the launcher/RPC startup path, the compiled direct runner benchmark measured about **1.98x** speedup.
 - It is intended to be a safe drop-in default for normal `pi` usage.
 - Re-run the installer after updating pi globally, since the compiled binary should track the installed version.
