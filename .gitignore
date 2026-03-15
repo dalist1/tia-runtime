@@ -1,0 +1,17 @@
+# Generated payloads / results
+payloads/
+payloads-rpc/
+results*/
+
+# Built artifacts
+bin/
+max-opencode-bin/
+opencode-optimized/bin/fastcopy
+
+# Dependencies
+opencode-baseline/node_modules/
+opencode-optimized/node_modules/
+
+# Misc
+.DS_Store
+*.log

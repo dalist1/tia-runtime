@@ -1,0 +1,71 @@
+# Fast pi MAX installer
+
+This is the aggressive installer.
+
+It does two things:
+1. installs the compiled `pi` launcher as the default `pi`
+2. installs a global `fast-tools` extension that overrides `read`, `write`, `edit`, and `bash`
+
+## One-liner
+
+```bash
+curl -fsSL https://your.host/install-fast-pi-max.sh | bash -s -- install
+```
+
+Local test form:
+
+```bash
+curl -fsSL file:///absolute/path/to/install-fast-pi-max.sh | bash -s -- install
+```
+
+## Commands
+
+Install:
+
+```bash
+bash scripts/install-fast-pi-max.sh install
+```
+
+Status:
+
+```bash
+bash scripts/install-fast-pi-max.sh status
+```
+
+Uninstall:
+
+```bash
+bash scripts/install-fast-pi-max.sh uninstall
+```
+
+## What it installs
+
+- compiled default launcher:
+  - `pi`
+- original launcher backup:
+  - `pi-original`
+- global extension:
+  - `~/.pi/agent/extensions/fast-tools.ts`
+- optional native helpers when `gcc` exists:
+  - `~/.pi/agent/fast-tools/fastdrain`
+  - `~/.pi/agent/fast-tools/fastcopy`
+
+## Benchmark highlights
+
+Launcher / RPC startup:
+- compiled default `pi`: about **1.94x** faster than original
+
+Built-in tool runtime, isolated burst benchmarks:
+- `read`: about **4.18x** faster
+- `write`: about **1.09x** faster
+- `edit`: about **2.76x** faster
+- `bash`: about **1.38x** faster on file-drain/copy/remove style commands
+
+## Notes
+
+- The fastest gains come from:
+  - compiled launcher startup
+  - streamed `read`
+  - Bun-native `edit`
+  - optimized `bash` fast paths for common file commands
+- Re-run after updating pi globally.
