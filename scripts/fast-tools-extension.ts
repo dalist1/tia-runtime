@@ -123,6 +123,58 @@ async function fastRead(
     emitTextUpdate(onUpdate, output);
   };
 
+  const appendLine = (line: string) => {
+    if (currentLine >= startLine) {
+      if (outputLines >= maxLines) {
+        const endLine = startLine + outputLines - 1;
+        const nextOffset = endLine + 1;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${output}\n\n[Showing lines ${startLine}-${endLine}. Use offset=${nextOffset} to continue.]`,
+            },
+          ],
+          details: { truncation: { truncated: true, truncatedBy: "lines", outputLines } },
+        };
+      }
+
+      const nextBytes = Buffer.byteLength(line, "utf8");
+      if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
+        if (outputLines === 0) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash for partial reads.]`,
+              },
+            ],
+            details: { truncation: { truncated: true, firstLineExceedsLimit: true } },
+          };
+        }
+        const endLine = startLine + outputLines - 1;
+        const nextOffset = endLine + 1;
+        return {
+          content: [
+            {
+              type: "text",
+              text: `${output}\n\n[Showing lines ${startLine}-${endLine} (${formatSize(outputBytes)} limit). Use offset=${nextOffset} to continue.]`,
+            },
+          ],
+          details: { truncation: { truncated: true, truncatedBy: "bytes", outputLines } },
+        };
+      }
+
+      output += line;
+      outputLines += 1;
+      outputBytes += nextBytes;
+      maybeEmitProgress();
+    }
+
+    currentLine += 1;
+    return null;
+  };
+
   for await (const chunk of createReadStream(absolutePath, {
     encoding: "utf8",
     highWaterMark: 64 * 1024,
@@ -130,58 +182,22 @@ async function fastRead(
     ensureNotAborted(signal);
 
     const combined = carry + chunk;
-    const lines = combined.split("\n");
-    carry = lines.pop() ?? "";
+    let lineStart = 0;
 
-    for (const lineBody of lines) {
-      const line = `${lineBody}\n`;
-      if (currentLine >= startLine) {
-        if (outputLines >= maxLines) {
-          const endLine = startLine + outputLines - 1;
-          const nextOffset = endLine + 1;
-          return {
-            content: [
-              {
-                type: "text",
-                text: `${output}\n\n[Showing lines ${startLine}-${endLine}. Use offset=${nextOffset} to continue.]`,
-              },
-            ],
-            details: { truncation: { truncated: true, truncatedBy: "lines", outputLines } },
-          };
-        }
-
-        const nextBytes = Buffer.byteLength(line, "utf8");
-        if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
-          if (outputLines === 0) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash for partial reads.]`,
-                },
-              ],
-              details: { truncation: { truncated: true, firstLineExceedsLimit: true } },
-            };
-          }
-          const endLine = startLine + outputLines - 1;
-          const nextOffset = endLine + 1;
-          return {
-            content: [
-              {
-                type: "text",
-                text: `${output}\n\n[Showing lines ${startLine}-${endLine} (${formatSize(outputBytes)} limit). Use offset=${nextOffset} to continue.]`,
-              },
-            ],
-            details: { truncation: { truncated: true, truncatedBy: "bytes", outputLines } },
-          };
-        }
-
-        output += line;
-        outputLines += 1;
-        outputBytes += nextBytes;
-        maybeEmitProgress();
+    while (true) {
+      const newlineIndex = combined.indexOf("\n", lineStart);
+      if (newlineIndex === -1) {
+        carry = combined.slice(lineStart);
+        break;
       }
-      currentLine += 1;
+
+      const line = combined.slice(lineStart, newlineIndex + 1);
+      const result = appendLine(line);
+      if (result) {
+        return result;
+      }
+
+      lineStart = newlineIndex + 1;
     }
   }
 

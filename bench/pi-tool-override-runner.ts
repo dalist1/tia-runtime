@@ -37,33 +37,46 @@ async function fastRead(pathArg: string, offset?: number, limit?: number) {
 	let output = "";
 	let outputLines = 0;
 	let outputBytes = 0;
-	let truncatedReason: "lines" | "bytes" | undefined;
 	let carry = "";
+
+	const appendLine = (line: string) => {
+		if (currentLine >= startLine) {
+			if (outputLines >= maxLines) {
+				return finalizeFastRead(output, startLine, outputLines, outputBytes, "lines", line, pathArg);
+			}
+
+			const nextBytes = Buffer.byteLength(line, "utf8");
+			if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
+				return finalizeFastRead(output, startLine, outputLines, outputBytes, "bytes", line, pathArg);
+			}
+
+			output += line;
+			outputLines += 1;
+			outputBytes += nextBytes;
+		}
+
+		currentLine += 1;
+		return null;
+	};
 
 	for await (const chunk of createReadStream(absolutePath, { encoding: "utf8", highWaterMark: 64 * 1024 })) {
 		const combined = carry + chunk;
-		const lines = combined.split("\n");
-		carry = lines.pop() ?? "";
+		let lineStart = 0;
 
-		for (const lineBody of lines) {
-			const line = `${lineBody}\n`;
-			if (currentLine >= startLine) {
-				if (outputLines >= maxLines) {
-					truncatedReason = "lines";
-					return finalizeFastRead(output, startLine, outputLines, outputBytes, truncatedReason, line, pathArg);
-				}
-
-				const nextBytes = Buffer.byteLength(line, "utf8");
-				if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
-					truncatedReason = "bytes";
-					return finalizeFastRead(output, startLine, outputLines, outputBytes, truncatedReason, line, pathArg);
-				}
-
-				output += line;
-				outputLines += 1;
-				outputBytes += nextBytes;
+		while (true) {
+			const newlineIndex = combined.indexOf("\n", lineStart);
+			if (newlineIndex === -1) {
+				carry = combined.slice(lineStart);
+				break;
 			}
-			currentLine += 1;
+
+			const line = combined.slice(lineStart, newlineIndex + 1);
+			const result = appendLine(line);
+			if (result !== null) {
+				return result;
+			}
+
+			lineStart = newlineIndex + 1;
 		}
 	}
 
@@ -242,7 +255,8 @@ async function tryOptimizedBash(command: string) {
 			const src = resolve(ROOT_DIR, cpMatch[1]);
 			const dst = resolve(ROOT_DIR, cpMatch[2]);
 			actions.push(async () => {
-				await runBinary(`${ROOT_DIR}/opencode-optimized/bin/fastcopy`, [src, dst]);
+				mkdirSync(dirname(dst), { recursive: true });
+				await Bun.write(dst, Bun.file(src));
 			});
 			continue;
 		}

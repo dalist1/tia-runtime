@@ -41,31 +41,47 @@ async function fastRead(pathArg: string, offset?: number, limit?: number) {
 	let outputBytes = 0;
 	let carry = "";
 
+	const appendLine = (line: string) => {
+		if (currentLine >= startLine) {
+			if (outputLines >= maxLines) {
+				return output;
+			}
+
+			const nextBytes = Buffer.byteLength(line, "utf8");
+			if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
+				if (outputLines === 0) {
+					return `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit.]`;
+				}
+				return output;
+			}
+
+			output += line;
+			outputLines += 1;
+			outputBytes += nextBytes;
+		}
+
+		currentLine += 1;
+		return null;
+	};
+
 	for await (const chunk of createReadStream(absolutePath, { encoding: "utf8", highWaterMark: 64 * 1024 })) {
 		const combined = carry + chunk;
-		const lines = combined.split("\n");
-		carry = lines.pop() ?? "";
+		let lineStart = 0;
 
-		for (const lineBody of lines) {
-			const line = `${lineBody}\n`;
-			if (currentLine >= startLine) {
-				if (outputLines >= maxLines) {
-					return output;
-				}
-
-				const nextBytes = Buffer.byteLength(line, "utf8");
-				if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
-					if (outputLines === 0) {
-						return `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit.]`;
-					}
-					return output;
-				}
-
-				output += line;
-				outputLines += 1;
-				outputBytes += nextBytes;
+		while (true) {
+			const newlineIndex = combined.indexOf("\n", lineStart);
+			if (newlineIndex === -1) {
+				carry = combined.slice(lineStart);
+				break;
 			}
-			currentLine += 1;
+
+			const line = combined.slice(lineStart, newlineIndex + 1);
+			const result = appendLine(line);
+			if (result !== null) {
+				return result;
+			}
+
+			lineStart = newlineIndex + 1;
 		}
 	}
 
@@ -189,7 +205,8 @@ async function tryOptimizedBash(command: string) {
 			const src = resolve(ROOT_DIR, cpMatch[1]);
 			const dst = resolve(ROOT_DIR, cpMatch[2]);
 			actions.push(async () => {
-				await runBinary(`${ROOT_DIR}/opencode-optimized/bin/fastcopy`, [src, dst]);
+				mkdirSync(dirname(dst), { recursive: true });
+				await Bun.write(dst, Bun.file(src));
 			});
 			continue;
 		}
@@ -218,17 +235,7 @@ async function fastBash(command: string) {
 		return;
 	}
 
-	const helperBin = `${ROOT_DIR}/opencode-optimized/bin`;
-	const tool = createBashTool(ROOT_DIR, {
-		spawnHook: ({ command: currentCommand, cwd, env }) => ({
-			command: currentCommand,
-			cwd,
-			env: {
-				...(env ?? process.env),
-				PATH: `${helperBin}:${process.env.PATH ?? ""}`,
-			},
-		}),
-	});
+	const tool = createBashTool(ROOT_DIR);
 	await tool.execute("fast-bash", { command }, undefined as any, undefined);
 }
 

@@ -17,7 +17,6 @@ cleanup
 
 bash "${ROOT_DIR}/bench/build-tool-fixtures.sh"
 bash "${ROOT_DIR}/bench/build-native.sh"
-bash "${ROOT_DIR}/bench/build-opencode-fastpath.sh"
 bash "${ROOT_DIR}/bench/build-pi-tool-override-runner.sh"
 
 run_suite() {
