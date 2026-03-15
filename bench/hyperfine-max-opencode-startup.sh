@@ -16,7 +16,7 @@ hyperfine \
 	--export-markdown "${RESULT_DIR}/startup.md" \
 	--command-name "opencode version" \
 	"opencode --version" \
-	--command-name "max opencode version" \
-	"max opencode --version"
+	--command-name "tia opencode version" \
+	"tia opencode --version"
 
-printf 'Wrote max opencode startup benchmarks to %s\n' "${RESULT_DIR}"
+printf 'Wrote tia opencode startup benchmarks to %s\n' "${RESULT_DIR}"

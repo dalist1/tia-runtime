@@ -4,22 +4,22 @@ set -euo pipefail
 
 SOURCE_PATH="${BASH_SOURCE[0]:-$0}"
 ROOT_DIR="$(cd -- "$(dirname -- "${SOURCE_PATH}")" && pwd)"
-MODE="${1:-max}"
+MODE="${1:-tia}"
 ACTION="${2:-install}"
-INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/max-sandbox-research/main/scripts}"
+INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/tia/main/scripts}"
 
 usage() {
 	cat <<'EOF'
 Usage:
-  install.sh [max|fast-pi|fast-pi-max] [install|status|uninstall]
+  install.sh [tia|fast-pi|fast-pi-max|max] [install|status|uninstall]
 
 Defaults to:
-  install.sh max install
+  install.sh tia install
 
 Examples:
   bash install.sh
-  bash install.sh max install
-  bash install.sh max status
+  bash install.sh tia install
+  bash install.sh tia status
   bash install.sh fast-pi install
   bash install.sh fast-pi-max uninstall
 
@@ -48,8 +48,11 @@ delegate() {
 }
 
 case "${MODE}" in
+	tia)
+		delegate "install-tia.sh"
+		;;
 	max)
-		delegate "install-max.sh"
+		delegate "install-tia.sh"
 		;;
 	fast-pi)
 		delegate "install-fast-pi.sh"

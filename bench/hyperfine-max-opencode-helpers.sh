@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULT_DIR="${RESULT_DIR:-${ROOT_DIR}/results-max-opencode-helpers}"
-HELPER_DIR="${HELPER_DIR:-${HOME}/.local/share/max-sandbox/opencode-bin}"
+HELPER_DIR="${HELPER_DIR:-${HOME}/.local/share/tia/opencode-bin}"
 RUNS="${RUNS:-6}"
 WARMUP="${WARMUP:-1}"
 CAT_REPS="${CAT_REPS:-30}"
@@ -30,7 +30,7 @@ run_suite() {
 		--export-markdown "${RESULT_DIR}/${name}.md" \
 		--command-name "stock" \
 		"${stock_cmd}" \
-		--command-name "max-opencode" \
+		--command-name "tia-opencode" \
 		"${fast_cmd}"
 }
 
@@ -41,12 +41,12 @@ run_suite \
 
 run_suite \
 	cp \
-	"bash -lc 'for i in \$(seq 1 ${CP_REPS}); do cp ${ROOT_DIR}/payloads/jsonl-5m.txt /tmp/max-opencode-stock-\$i && rm /tmp/max-opencode-stock-\$i; done'" \
-	"bash -lc 'PATH=${HELPER_DIR}:\$PATH; for i in \$(seq 1 ${CP_REPS}); do cp ${ROOT_DIR}/payloads/jsonl-5m.txt /tmp/max-opencode-fast-\$i && rm /tmp/max-opencode-fast-\$i; done'"
+	"bash -lc 'for i in \$(seq 1 ${CP_REPS}); do cp ${ROOT_DIR}/payloads/jsonl-5m.txt /tmp/tia-opencode-stock-\$i && rm /tmp/tia-opencode-stock-\$i; done'" \
+	"bash -lc 'PATH=${HELPER_DIR}:\$PATH; for i in \$(seq 1 ${CP_REPS}); do cp ${ROOT_DIR}/payloads/jsonl-5m.txt /tmp/tia-opencode-fast-\$i && rm /tmp/tia-opencode-fast-\$i; done'"
 
 run_suite \
 	combo \
-	"bash -lc 'for i in \$(seq 1 ${COMBO_REPS}); do cat ${ROOT_DIR}/payloads/jsonl-5m.txt > /dev/null && cp ${ROOT_DIR}/payloads/jsonl-5m.txt /tmp/max-opencode-combo-stock-\$i && rm /tmp/max-opencode-combo-stock-\$i; done'" \
-	"bash -lc 'PATH=${HELPER_DIR}:\$PATH; for i in \$(seq 1 ${COMBO_REPS}); do cat ${ROOT_DIR}/payloads/jsonl-5m.txt > /dev/null && cp ${ROOT_DIR}/payloads/jsonl-5m.txt /tmp/max-opencode-combo-fast-\$i && rm /tmp/max-opencode-combo-fast-\$i; done'"
+	"bash -lc 'for i in \$(seq 1 ${COMBO_REPS}); do cat ${ROOT_DIR}/payloads/jsonl-5m.txt > /dev/null && cp ${ROOT_DIR}/payloads/jsonl-5m.txt /tmp/tia-opencode-combo-stock-\$i && rm /tmp/tia-opencode-combo-stock-\$i; done'" \
+	"bash -lc 'PATH=${HELPER_DIR}:\$PATH; for i in \$(seq 1 ${COMBO_REPS}); do cat ${ROOT_DIR}/payloads/jsonl-5m.txt > /dev/null && cp ${ROOT_DIR}/payloads/jsonl-5m.txt /tmp/tia-opencode-combo-fast-\$i && rm /tmp/tia-opencode-combo-fast-\$i; done'"
 
-printf 'Wrote max opencode helper benchmarks to %s\n' "${RESULT_DIR}"
+printf 'Wrote tia opencode helper benchmarks to %s\n' "${RESULT_DIR}"

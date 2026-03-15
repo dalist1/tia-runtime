@@ -17,7 +17,7 @@ hyperfine \
 	--export-markdown "${RESULT_DIR}/rpc.md" \
 	--command-name "pi original rpc" \
 	"pi-node --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes < ${REQUEST_FILE}" \
-	--command-name "max pi rpc" \
-	"max pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes < ${REQUEST_FILE}"
+	--command-name "tia pi rpc" \
+	"tia pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes < ${REQUEST_FILE}"
 
-printf 'Wrote max pi benchmarks to %s\n' "${RESULT_DIR}"
+printf 'Wrote tia pi benchmarks to %s\n' "${RESULT_DIR}"
