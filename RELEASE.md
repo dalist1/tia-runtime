@@ -1,15 +1,15 @@
 # Release notes
 
-## v0.1.2
+## v0.1.3
 
-Bootstrap and packaging polish release.
+Naming release.
 
 ### Highlights
-- true curl/bootstrap install path now works from outside the repo checkout when `INSTALL_BASE_URL` is set
-- `scripts/install-max.sh` can now fetch `fast-tools-extension.ts` from the script host when local repo files are unavailable
-- `test.sh` now verifies a real isolated bootstrap install, not just local delegation
-- root `README.md` was collapsed into a more complete single-page guide
-- added `scripts/stage-release-assets.sh` to build clearly named release assets
+- the project is now branded as **tia**
+- expanded title in docs: **Terminal Interactive Agents runtime**
+- root docs and benchmark docs now use tia naming
+- release asset staging now emits cleaner `tia-*` filenames
+- launcher behavior and benchmark claims are unchanged from `v0.1.2`
 
 ### Recommended install
 
@@ -27,8 +27,20 @@ curl -fsSL https://your.host/install.sh | \
 ```
 
 ### Notes
-- no new performance claims were introduced in this release
-- benchmark summaries continue to live in `BENCHMARKS.md`
+- the runtime name is now `tia`
+- the launcher command remains `max`
+- the repository slug is unchanged in this release to avoid breaking install URLs
+
+## v0.1.2
+
+Bootstrap and packaging polish release.
+
+### Highlights
+- true curl/bootstrap install path now works from outside the repo checkout when `INSTALL_BASE_URL` is set
+- `scripts/install-max.sh` can now fetch `fast-tools-extension.ts` from the script host when local repo files are unavailable
+- `test.sh` now verifies a real isolated bootstrap install, not just local delegation
+- root `README.md` was collapsed into a more complete single-page guide
+- added `scripts/stage-release-assets.sh` to build clearly named release assets
 
 ## v0.1.1
 

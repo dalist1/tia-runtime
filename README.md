@@ -1,6 +1,6 @@
-# max sandbox research
+# tia — Terminal Interactive Agents runtime
 
-Private research repo for making `pi` and `opencode` faster without patching the upstream pi codebase.
+Private research repo for the **Terminal Interactive Agents runtime**: a minimal runtime layer for making `pi` and `opencode` faster without patching the upstream pi codebase.
 
 The main idea is simple:
 - use a compiled `pi` launcher where that helps
@@ -19,7 +19,7 @@ The main idea is simple:
 
 ## Recommended path
 
-Install the sandboxed launcher:
+Install the tia sandboxed launcher:
 
 ```bash
 bash install.sh max install
@@ -66,7 +66,7 @@ This path is smoke-tested from outside the repo checkout.
 
 ### `max`
 - installs `~/.local/bin/max`
-- creates a sandboxed pi runtime under `~/.local/share/max-sandbox`
+- creates the tia sandbox runtime under `~/.local/share/max-sandbox`
 - runs `max pi` with:
   - compiled pi
   - sandboxed pi agent dir

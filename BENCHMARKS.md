@@ -1,6 +1,6 @@
-# Benchmarks
+# tia benchmarks
 
-These are the latest benchmark highlights from this repo's current research harness.
+These are the latest benchmark highlights from the tia research harness.
 
 ## Summary table
 

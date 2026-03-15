@@ -1,4 +1,4 @@
-# Fast pi installer
+# tia fast pi installer
 
 This installs a compiled `pi` launcher as the default `pi` command on the current machine.
 

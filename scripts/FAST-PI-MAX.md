@@ -1,4 +1,4 @@
-# Fast pi MAX installer
+# tia fast pi MAX installer
 
 This is the aggressive installer.
 

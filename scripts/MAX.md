@@ -1,6 +1,6 @@
-# max sandbox
+# tia launcher
 
-Installs a sandboxed `max` command.
+Installs tia's sandboxed `max` command.
 
 After install you can run:
 
