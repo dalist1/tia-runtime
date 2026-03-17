@@ -22,7 +22,8 @@ Examples:
   bash install.sh tia status
 
 Notes:
-  - tia is the only supported user-facing runtime mode.
+  - tia is the only supported top-level installer target.
+  - Installed tia runtime subcommands currently include `pi` and `opencode` when they are available locally.
   - If the repo is cloned locally, this script delegates to ./scripts/* directly.
   - If run via curl, set INSTALL_BASE_URL on the bash side of the pipeline to a
     location serving the scripts/ directory if the default raw GitHub URL is not

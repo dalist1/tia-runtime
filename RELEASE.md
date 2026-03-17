@@ -2,14 +2,15 @@
 
 ## v0.2.0
 
-Single-mode tia release.
+Tia runtime release.
 
 ### Highlights
-- `tia pi` is now the only supported user-facing runtime mode from this project
-- `install.sh` now supports only `tia`
+- `install.sh` now supports only the `tia` top-level target
+- runtime subcommands now include `tia pi` and `tia opencode`
 - deprecated top-level modes `max`, `fast-pi`, and `fast-pi-max` are now rejected
-- docs and release assets were simplified around the single tia mode
+- docs and release assets were simplified around the tia runtime
 - `tia pi` remains the path that combines startup and tool optimization without patching upstream pi
+- `tia opencode` adds sandboxed opencode launch support via tia-managed XDG directories
 
 ### Recommended install
 
@@ -27,7 +28,7 @@ curl -fsSL https://your.host/install.sh | \
 ```
 
 ### Notes
-- supported mode: `tia pi`
+- supported runtime subcommands: `tia pi`, `tia opencode`
 - benchmark-only reference path: compiled direct `pi`
 
 ## v0.1.6

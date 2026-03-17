@@ -14,12 +14,14 @@ These are the latest benchmark highlights from the tia research harness.
 | `tia pi` fast tools | `edit` burst | 378.3 ms | 151.0 ms | **2.50x** |
 | `tia pi` fast tools | `bash` burst | 513.7 ms | 322.5 ms | **1.59x** |
 
-## Supported mode
+## Supported runtime subcommands
 
-The only supported user-facing runtime mode from this project is:
+Supported user-facing tia runtime subcommands from this project are:
 - `tia pi`
+- `tia opencode`
 
 `pi` compiled direct remains a benchmark reference, not a separate supported install mode.
+Current benchmark results below focus on `tia pi`.
 
 ## Source result files
 
@@ -35,6 +37,11 @@ The only supported user-facing runtime mode from this project is:
 
 ### tia fast tools streaming
 - `results-pi-tools-fast-stream-smoke/read.md`
+
+### tia fast tools persistent
+- `results-pi-tools-persistent-smoke/read.md`
+- `results-pi-tools-persistent-smoke/edit.md`
+- `results-pi-tools-persistent-smoke/bash.md`
 
 ## How to reproduce
 
@@ -52,10 +59,29 @@ hyperfine --runs 4 --warmup 1 \
 bash bench/hyperfine-pi-tools-fast-burst.sh
 ```
 
+This now compares:
+- `stock (bun)`
+- `fast (bun + native helpers)`
+- `fast (compiled + native helpers)`
+
 ### tia fast tools streaming
 ```bash
 bash bench/hyperfine-pi-tools-fast-stream.sh
 ```
+
+This now compares:
+- `stock (bun)`
+- `fast (bun + native helpers)`
+- `fast (compiled + native helpers)`
+
+### tia fast tools persistent warm runner
+```bash
+bash bench/hyperfine-pi-tools-persistent.sh
+```
+
+This compares:
+- `fast (compiled cold spawn-per-request)`
+- `fast (compiled warm daemon + native helpers)`
 
 ## Interpretation
 

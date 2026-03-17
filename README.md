@@ -3,18 +3,19 @@
 Private research repo for the **Terminal Interactive Agents runtime**.
 
 Goal:
-- make terminal coding agents faster without patching the upstream pi codebase
+- make terminal coding agents faster without patching upstream agent codebases
 - keep the fast path simple and sandboxed
-- expose one user-facing runtime mode from this project:
+- expose user-facing tia runtime subcommands from this project:
   - `tia pi`
+  - `tia opencode`
 
 Reference baselines still exist for comparison:
 - stock/native `pi`
 - compiled direct `pi` benchmark path
 
-## Supported mode
+## Supported modes
 
-There is one supported tia mode:
+Install tia with:
 
 ```bash
 bash install.sh tia install
@@ -24,6 +25,7 @@ Then use:
 
 ```bash
 tia pi
+tia opencode
 tia status
 ```
 
@@ -55,7 +57,11 @@ This path is smoke-tested from outside the repo checkout.
   - sandboxed pi agent dir
   - fast-tools extension enabled
   - current shell environment preserved for provider/model login env vars
-- combines startup improvement and tool-path optimization in one runtime
+- runs `tia opencode` with:
+  - sandboxed XDG data/cache/state dirs
+  - shell opencode config linked into the sandbox
+  - shell opencode `bin/`, `kv.json`, and `model.json` refreshed into the sandbox at launch time
+- combines runtime sandboxing with the pi fast path in one launcher
 
 ## Current benchmark highlights
 
@@ -70,7 +76,8 @@ This path is smoke-tested from outside the repo checkout.
 
 Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
-- `tia pi` is the single supported runtime mode from this project.
+- benchmark highlights below currently focus on `tia pi`.
+- `tia opencode` currently focuses on sandboxed runtime wiring rather than a separate benchmark fast path.
 - `tia` does not add startup-time session/history cleanup logic.
 
 More detail:
@@ -85,6 +92,12 @@ Run the smoke/integration checks:
 bash test.sh
 ```
 
+Run the low-level optimization checks only:
+
+```bash
+bash bench/test-low-level.sh
+```
+
 ## Linting and formatting
 
 ```bash
@@ -96,10 +109,13 @@ bun run format:write
 
 What it covers:
 - local `tia` install/status
+- `tia pi` shell-agent link refresh
+- `tia opencode` sandbox/link refresh when `opencode` is installed
 - rejection of deprecated top-level modes
 - `tia pi` RPC health
 - real curl/bootstrap install from outside the repo checkout
 - fast tool runner execution
+- low-level native/compiled runner validation
 - benchmark process cleanup
 
 ## Main benchmark commands
@@ -109,6 +125,7 @@ bash bench/hyperfine-tia-pi.sh
 bash bench/hyperfine-pi-rpc-direct.sh
 bash bench/hyperfine-pi-tools-fast-burst.sh
 bash bench/hyperfine-pi-tools-fast-stream.sh
+bash bench/hyperfine-pi-tools-persistent.sh
 ```
 
 ## Fast stream path
@@ -137,5 +154,6 @@ This writes clearly named `tia-*` files into `release-assets/`.
 
 ## Notes
 
-- `tia pi` is the strongest path today.
+- `tia pi` is the strongest performance-focused path today.
+- `tia opencode` adds the same tia-style sandbox launcher flow for opencode.
 - Generated payloads, benchmark results, release-assets, compiled binaries, and `node_modules` are gitignored.
