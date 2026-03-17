@@ -206,12 +206,14 @@ refresh_shell_agent_links() {
 refresh_shell_opencode_links() {
   local shell_config_home="\${XDG_CONFIG_HOME:-\${HOME}/.config}"
   local shell_data_home="\${XDG_DATA_HOME:-\${HOME}/.local/share}"
+  local shell_cache_home="\${XDG_CACHE_HOME:-\${HOME}/.cache}"
   local shell_state_home="\${XDG_STATE_HOME:-\${HOME}/.local/state}"
   local shell_config_dir="\${shell_config_home}/opencode"
-  local shell_bin_dir="\${shell_data_home}/opencode/bin"
+  local shell_data_dir="\${shell_data_home}/opencode"
+  local shell_cache_dir="\${shell_cache_home}/opencode"
   local shell_state_dir="\${shell_state_home}/opencode"
 
-  mkdir -p "\${TIA_OPENCODE_CONFIG_HOME}" "\${TIA_OPENCODE_DATA_HOME}/opencode" "\${TIA_OPENCODE_CACHE_HOME}" "\${TIA_OPENCODE_STATE_HOME}/opencode"
+  mkdir -p "\${TIA_OPENCODE_CONFIG_HOME}" "\${TIA_OPENCODE_DATA_HOME}" "\${TIA_OPENCODE_CACHE_HOME}" "\${TIA_OPENCODE_STATE_HOME}"
 
   rm -rf "\${TIA_OPENCODE_CONFIG_HOME}/opencode"
   if [[ -e "\${shell_config_dir}" ]]; then
@@ -220,17 +222,26 @@ refresh_shell_opencode_links() {
     mkdir -p "\${TIA_OPENCODE_CONFIG_HOME}/opencode"
   fi
 
-  rm -rf "\${TIA_OPENCODE_DATA_HOME}/opencode/bin"
-  if [[ -d "\${shell_bin_dir}" ]]; then
-    ln -s "\${shell_bin_dir}" "\${TIA_OPENCODE_DATA_HOME}/opencode/bin"
+  rm -rf "\${TIA_OPENCODE_DATA_HOME}/opencode"
+  if [[ -e "\${shell_data_dir}" ]]; then
+    ln -s "\${shell_data_dir}" "\${TIA_OPENCODE_DATA_HOME}/opencode"
+  else
+    mkdir -p "\${TIA_OPENCODE_DATA_HOME}/opencode"
   fi
 
-  for name in kv.json model.json; do
-    rm -f "\${TIA_OPENCODE_STATE_HOME}/opencode/\${name}"
-    if [[ -f "\${shell_state_dir}/\${name}" ]]; then
-      ln -s "\${shell_state_dir}/\${name}" "\${TIA_OPENCODE_STATE_HOME}/opencode/\${name}"
-    fi
-  done
+  rm -rf "\${TIA_OPENCODE_CACHE_HOME}/opencode"
+  if [[ -e "\${shell_cache_dir}" ]]; then
+    ln -s "\${shell_cache_dir}" "\${TIA_OPENCODE_CACHE_HOME}/opencode"
+  else
+    mkdir -p "\${TIA_OPENCODE_CACHE_HOME}/opencode"
+  fi
+
+  rm -rf "\${TIA_OPENCODE_STATE_HOME}/opencode"
+  if [[ -e "\${shell_state_dir}" ]]; then
+    ln -s "\${shell_state_dir}" "\${TIA_OPENCODE_STATE_HOME}/opencode"
+  else
+    mkdir -p "\${TIA_OPENCODE_STATE_HOME}/opencode"
+  fi
 }
 
 subcommand="\${1:-}"
@@ -292,6 +303,7 @@ case "\${subcommand}" in
     echo "tia opencode state:  \t\${TIA_OPENCODE_STATE_HOME}/opencode"
     echo "shell opencode config:\t\${XDG_CONFIG_HOME:-\${HOME}/.config}/opencode"
     echo "shell opencode data: \t\${XDG_DATA_HOME:-\${HOME}/.local/share}/opencode"
+    echo "shell opencode cache:\t\${XDG_CACHE_HOME:-\${HOME}/.cache}/opencode"
     echo "shell opencode state:\t\${XDG_STATE_HOME:-\${HOME}/.local/state}/opencode"
     ;;
   *)
@@ -372,6 +384,7 @@ status_all() {
 	printf 'tia opencode state:  %s\n' "${TIA_OPENCODE_STATE_HOME}/opencode"
 	printf 'shell opencode config: %s\n' "${XDG_CONFIG_HOME:-${HOME}/.config}/opencode"
 	printf 'shell opencode data: %s\n' "${XDG_DATA_HOME:-${HOME}/.local/share}/opencode"
+	printf 'shell opencode cache: %s\n' "${XDG_CACHE_HOME:-${HOME}/.cache}/opencode"
 	printf 'shell opencode state: %s\n' "${XDG_STATE_HOME:-${HOME}/.local/state}/opencode"
 }
 

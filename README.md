@@ -58,9 +58,9 @@ This path is smoke-tested from outside the repo checkout.
   - fast-tools extension enabled
   - current shell environment preserved for provider/model login env vars
 - runs `tia opencode` with:
-  - sandboxed XDG data/cache/state dirs
-  - shell opencode config linked into the sandbox
-  - shell opencode `bin/`, `kv.json`, and `model.json` refreshed into the sandbox at launch time
+  - tia-managed XDG wrapper dirs
+  - the shell opencode config/data/cache/state directories linked in at launch time
+  - the exact same opencode credentials, session database, login state, and shell env vars preserved
 - combines runtime sandboxing with the pi fast path in one launcher
 
 ## Current benchmark highlights
@@ -77,7 +77,7 @@ This path is smoke-tested from outside the repo checkout.
 Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
 - benchmark highlights below currently focus on `tia pi`.
-- `tia opencode` currently focuses on sandboxed runtime wiring rather than a separate benchmark fast path.
+- `tia opencode` currently focuses on preserving the exact same shell credentials/session wiring rather than a separate benchmark fast path.
 - `tia` does not add startup-time session/history cleanup logic.
 
 More detail:
@@ -110,7 +110,7 @@ bun run format:write
 What it covers:
 - local `tia` install/status
 - `tia pi` shell-agent link refresh
-- `tia opencode` sandbox/link refresh when `opencode` is installed
+- `tia opencode` exact credential/session dir linking and env preservation when `opencode` is installed
 - rejection of deprecated top-level modes
 - `tia pi` RPC health
 - real curl/bootstrap install from outside the repo checkout

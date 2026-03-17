@@ -36,26 +36,52 @@ PI_CODING_AGENT_DIR="${CUSTOM_AGENT_DIR}" tia pi --version >/dev/null
 [[ "$(readlink "${HOME}/.local/share/tia/pi-agent/models.json")" == "${CUSTOM_AGENT_DIR}/models.json" ]]
 [[ "$(readlink "${HOME}/.local/share/tia/pi-agent/settings.json")" == "${CUSTOM_AGENT_DIR}/settings.json" ]]
 
-printf '[4/11] verify tia refreshes opencode sandbox links at launch\n'
+printf '[4/11] verify tia preserves exact opencode credentials/session dirs and env\n'
 if [[ "${HAS_OPENCODE}" == "1" ]]; then
 	SHELL_XDG_CONFIG_HOME="${TMP_DIR}/shell-config"
 	SHELL_XDG_DATA_HOME="${TMP_DIR}/shell-data"
+	SHELL_XDG_CACHE_HOME="${TMP_DIR}/shell-cache"
 	SHELL_XDG_STATE_HOME="${TMP_DIR}/shell-state"
-	mkdir -p "${SHELL_XDG_CONFIG_HOME}/opencode" "${SHELL_XDG_DATA_HOME}/opencode/bin" "${SHELL_XDG_STATE_HOME}/opencode"
+	mkdir -p \
+		"${SHELL_XDG_CONFIG_HOME}/opencode" \
+		"${SHELL_XDG_DATA_HOME}/opencode" \
+		"${SHELL_XDG_CACHE_HOME}/opencode" \
+		"${SHELL_XDG_STATE_HOME}/opencode"
 	printf '%s\n' '{"source":"custom"}' > "${SHELL_XDG_CONFIG_HOME}/opencode/opencode.json"
-	printf '%s\n' '#!/usr/bin/env bash' > "${SHELL_XDG_DATA_HOME}/opencode/bin/dummy"
+	printf '%s\n' '{"source":"custom"}' > "${SHELL_XDG_DATA_HOME}/opencode/auth.json"
+	printf '%s\n' 'db' > "${SHELL_XDG_DATA_HOME}/opencode/opencode.db"
+	printf '%s\n' '{"source":"custom"}' > "${SHELL_XDG_CACHE_HOME}/opencode/models.json"
 	printf '%s\n' '{"source":"custom"}' > "${SHELL_XDG_STATE_HOME}/opencode/kv.json"
 	printf '%s\n' '{"source":"custom"}' > "${SHELL_XDG_STATE_HOME}/opencode/model.json"
+	printf '%s\n' '{"source":"custom"}' > "${SHELL_XDG_STATE_HOME}/opencode/prompt-history.jsonl"
+	OPENCODE_HELPER="${TMP_DIR}/opencode-env-dump.sh"
+	cat > "${OPENCODE_HELPER}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'args=%s\n' "$*"
+printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY:-}"
+printf 'ANTHROPIC_API_KEY=%s\n' "${ANTHROPIC_API_KEY:-}"
+printf 'XDG_CONFIG_HOME=%s\n' "${XDG_CONFIG_HOME:-}"
+printf 'XDG_DATA_HOME=%s\n' "${XDG_DATA_HOME:-}"
+printf 'XDG_CACHE_HOME=%s\n' "${XDG_CACHE_HOME:-}"
+printf 'XDG_STATE_HOME=%s\n' "${XDG_STATE_HOME:-}"
+EOF
+	chmod +x "${OPENCODE_HELPER}"
 	XDG_CONFIG_HOME="${SHELL_XDG_CONFIG_HOME}" \
 	XDG_DATA_HOME="${SHELL_XDG_DATA_HOME}" \
+	XDG_CACHE_HOME="${SHELL_XDG_CACHE_HOME}" \
 	XDG_STATE_HOME="${SHELL_XDG_STATE_HOME}" \
-		timeout 30s tia opencode debug paths > "${TMP_DIR}/tia-opencode-paths.txt" 2>&1
+	OPENAI_API_KEY="custom-openai-key" \
+	ANTHROPIC_API_KEY="custom-anthropic-key" \
+	OPENCODE_BIN_PATH="${OPENCODE_HELPER}" \
+		tia opencode debug paths > "${TMP_DIR}/tia-opencode-env.txt" 2>&1
 	TIA_OPENCODE_ROOT="${HOME}/.local/share/tia/opencode"
 	[[ "$(readlink "${TIA_OPENCODE_ROOT}/config-home/opencode")" == "${SHELL_XDG_CONFIG_HOME}/opencode" ]]
-	[[ "$(readlink "${TIA_OPENCODE_ROOT}/data-home/opencode/bin")" == "${SHELL_XDG_DATA_HOME}/opencode/bin" ]]
-	[[ "$(readlink "${TIA_OPENCODE_ROOT}/state-home/opencode/kv.json")" == "${SHELL_XDG_STATE_HOME}/opencode/kv.json" ]]
-	[[ "$(readlink "${TIA_OPENCODE_ROOT}/state-home/opencode/model.json")" == "${SHELL_XDG_STATE_HOME}/opencode/model.json" ]]
-	rg -n "${TIA_OPENCODE_ROOT}/config-home/opencode|${TIA_OPENCODE_ROOT}/data-home/opencode|${TIA_OPENCODE_ROOT}/state-home/opencode" "${TMP_DIR}/tia-opencode-paths.txt" >/dev/null
+	[[ "$(readlink "${TIA_OPENCODE_ROOT}/data-home/opencode")" == "${SHELL_XDG_DATA_HOME}/opencode" ]]
+	[[ "$(readlink "${TIA_OPENCODE_ROOT}/cache-home/opencode")" == "${SHELL_XDG_CACHE_HOME}/opencode" ]]
+	[[ "$(readlink "${TIA_OPENCODE_ROOT}/state-home/opencode")" == "${SHELL_XDG_STATE_HOME}/opencode" ]]
+	rg -n "args=debug paths|OPENAI_API_KEY=custom-openai-key|ANTHROPIC_API_KEY=custom-anthropic-key" "${TMP_DIR}/tia-opencode-env.txt" >/dev/null
+	rg -n "XDG_CONFIG_HOME=${TIA_OPENCODE_ROOT}/config-home|XDG_DATA_HOME=${TIA_OPENCODE_ROOT}/data-home|XDG_CACHE_HOME=${TIA_OPENCODE_ROOT}/cache-home|XDG_STATE_HOME=${TIA_OPENCODE_ROOT}/state-home" "${TMP_DIR}/tia-opencode-env.txt" >/dev/null
 else
 	printf 'skipped (opencode not installed)\n'
 fi

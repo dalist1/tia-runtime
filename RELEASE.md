@@ -10,7 +10,7 @@ Tia runtime release.
 - deprecated top-level modes `max`, `fast-pi`, and `fast-pi-max` are now rejected
 - docs and release assets were simplified around the tia runtime
 - `tia pi` remains the path that combines startup and tool optimization without patching upstream pi
-- `tia opencode` adds sandboxed opencode launch support via tia-managed XDG directories
+- `tia opencode` adds opencode launch support via tia-managed XDG wrapper directories while preserving the same shell credentials and session state
 
 ### Recommended install
 

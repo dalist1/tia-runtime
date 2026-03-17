@@ -66,9 +66,8 @@ bash scripts/install-tia.sh uninstall
 
 ### `tia opencode`
 - runs your installed `opencode` command via the tia launcher
-- uses tia-managed sandboxed XDG data/cache/state directories
-- reuses your shell opencode config directory through a refreshed symlink
-- reuses your shell opencode `bin/`, `kv.json`, and `model.json` through refreshed sandbox links
+- uses tia-managed XDG wrapper dirs that point back to your shell opencode dirs
+- preserves the exact same shell opencode config/data/cache/state contents, including auth and session databases
 - preserves the current shell environment for provider/model login env vars
 
 ## Benchmarks
@@ -86,7 +85,7 @@ bash scripts/install-tia.sh uninstall
 ## Notes
 
 - `tia pi` remains the benchmarked performance path today.
-- `tia opencode` currently focuses on sandboxed runtime wiring rather than a separate benchmark fast path.
+- `tia opencode` currently focuses on exact credential/session preservation rather than a separate benchmark fast path.
 - Direct compiled `pi` remains useful as a benchmark reference, not as a separate supported mode.
 - The slim stream path is enabled by default for `--mode json --no-session`.
 - Set `TIA_DISABLE_FAST_STREAM=1` if you need to opt out.
