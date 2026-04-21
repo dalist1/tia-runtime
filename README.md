@@ -1,6 +1,6 @@
-# tia — Terminal Interactive Agents runtime
+# tia-runtime — Terminal Interactive Agents runtime
 
-Private research repo for the **Terminal Interactive Agents runtime**.
+Private research repo for **tia-runtime**, the Terminal Interactive Agents runtime.
 
 Goal:
 - make terminal coding agents faster without patching upstream agent codebases
@@ -15,7 +15,7 @@ Reference baselines still exist for comparison:
 
 ## Supported modes
 
-Install tia with:
+Install the `tia` launcher with:
 
 ```bash
 bash install.sh tia install
@@ -48,10 +48,10 @@ curl -fsSL https://your.host/install.sh | \
 
 This path is smoke-tested from outside the repo checkout.
 
-## What tia does
+## What tia-runtime installs
 
-- installs `~/.local/bin/tia`
-- creates the tia sandbox runtime under `~/.local/share/tia`
+- installs the `tia` launcher at `~/.local/bin/tia`
+- creates the tia runtime sandbox under `~/.local/share/tia`
 - runs `tia pi` with:
   - compiled pi startup path
   - sandboxed pi agent dir
@@ -78,7 +78,7 @@ Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
 - benchmark highlights below currently focus on `tia pi`.
 - `tia opencode` currently focuses on preserving the exact same shell credentials/session wiring rather than a separate benchmark fast path.
-- `tia` does not add startup-time session/history cleanup logic.
+- `tia-runtime` does not add startup-time session/history cleanup logic.
 
 More detail:
 - `BENCHMARKS.md`

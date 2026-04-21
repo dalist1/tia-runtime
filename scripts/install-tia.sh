@@ -9,7 +9,8 @@ if [[ -f "${SOURCE_PATH}" ]]; then
 else
 	ROOT_DIR="$(pwd)"
 fi
-INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/tia/main/scripts}"
+INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/tia-runtime/main/scripts}"
+RUNTIME_NAME="tia-runtime"
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_BIN_HOME="${XDG_BIN_HOME:-${HOME}/.local/bin}"
 TIA_ROOT="${TIA_ROOT:-${XDG_DATA_HOME}/tia}"
@@ -33,7 +34,7 @@ Usage:
   install-tia.sh uninstall
   install-tia.sh status
 
-Installs the tia runtime command so you can run:
+Installs the tia-runtime launcher command so you can run:
   tia pi [args...]
   tia opencode [args...]
 EOF
@@ -191,6 +192,13 @@ should_use_fast_stream() {
   [[ "\${has_json}" == "1" && "\${has_rpc}" != "1" ]]
 }
 
+ensure_cliproxy_started() {
+  [[ "\${PI_NO_PROXY_AUTO_START:-0}" != "1" ]] || return 0
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user start cliproxyapi >/dev/null 2>&1 || true
+  fi
+}
+
 refresh_shell_agent_links() {
   local shell_agent_dir="\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
   mkdir -p "\${TIA_PI_AGENT_DIR}"
@@ -257,6 +265,7 @@ case "\${subcommand}" in
       echo "tia pi is not installed. Re-run: bash install.sh tia install" >&2
       exit 1
     }
+    ensure_cliproxy_started
     refresh_shell_agent_links
     export PI_CODING_AGENT_DIR="\${TIA_PI_AGENT_DIR}"
     export PI_PACKAGE_DIR="\${PI_PACKAGE_DIR}"
@@ -289,6 +298,7 @@ case "\${subcommand}" in
     echo "tia pi agent:        \t\${TIA_PI_AGENT_DIR}"
     echo "shell pi agent:      \t\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
     echo "history mode:        \tunchanged by tia pi startup"
+    echo "cliproxy auto-start:\tenabled for tia pi when systemd user services are available"
     echo "fast stream:         \tenabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)"
     echo "pi package:          \t\${PI_PACKAGE_DIR:-}"
     if [[ -n "\${TIA_OPENCODE_CMD}" && -x "\${TIA_OPENCODE_CMD}" ]]; then
@@ -331,7 +341,7 @@ install_all() {
 	[[ "${has_pi}" == "1" || "${has_opencode}" == "1" ]] || die "Need at least one supported runtime on PATH: pi or opencode"
 
 	write_tia_wrapper
-	printf 'Installed tia command at %s\n' "${TIA_CMD_PATH}"
+	printf 'Installed %s command at %s\n' "${RUNTIME_NAME}" "${TIA_CMD_PATH}"
 	if [[ "${has_pi}" == "1" ]]; then
 		printf 'Run: tia pi\n'
 	fi
@@ -347,13 +357,13 @@ uninstall_all() {
 	rm -f "${TIA_CMD_PATH}"
 	rm -f "${TIA_BIN_DIR}/max"
 	rm -rf "${TIA_ROOT}"
-	printf 'Removed tia command and runtime assets.\n'
+	printf 'Removed %s command and runtime assets.\n' "${RUNTIME_NAME}"
 }
 
 status_all() {
-	printf 'tia command:         %s\n' "${TIA_CMD_PATH}"
-	[[ -x "${TIA_CMD_PATH}" ]] && printf 'tia installed:       yes\n' || printf 'tia installed:       no\n'
-	printf 'tia root:            %s\n' "${TIA_ROOT}"
+	printf '%s command: %s\n' "${RUNTIME_NAME}" "${TIA_CMD_PATH}"
+	[[ -x "${TIA_CMD_PATH}" ]] && printf '%s installed: yes\n' "${RUNTIME_NAME}" || printf '%s installed: no\n' "${RUNTIME_NAME}"
+	printf '%s root: %s\n' "${RUNTIME_NAME}" "${TIA_ROOT}"
 	if [[ -f "${TIA_ROOT}/pi-package-dir.txt" && -x "${TIA_PI_BIN}" ]]; then
 		printf 'tia pi available:    yes\n'
 	else
@@ -365,6 +375,7 @@ status_all() {
 	printf 'tia pi agent:        %s\n' "${TIA_PI_AGENT_DIR}"
 	printf 'shell pi agent:      %s\n' "${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}"
 	printf 'history mode:        unchanged by tia pi startup\n'
+	printf 'cliproxy auto-start: enabled for tia pi when systemd user services are available\n'
 	printf 'fast stream:         enabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)\n'
 	if [[ -f "${TIA_ROOT}/pi-package-dir.txt" ]]; then
 		printf 'pi package:          %s\n' "$(cat "${TIA_ROOT}/pi-package-dir.txt")"

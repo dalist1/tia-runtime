@@ -1,6 +1,6 @@
-# tia launcher
+# tia-runtime launcher
 
-Installs tia's sandboxed launcher command.
+Installs tia-runtime's sandboxed `tia` launcher command.
 
 Supported tia runtime subcommands from this project are:
 
@@ -89,5 +89,5 @@ bash scripts/install-tia.sh uninstall
 - Direct compiled `pi` remains useful as a benchmark reference, not as a separate supported mode.
 - The slim stream path is enabled by default for `--mode json --no-session`.
 - Set `TIA_DISABLE_FAST_STREAM=1` if you need to opt out.
-- `tia` does not add startup-time session/history cleanup logic.
+- `tia-runtime` does not add startup-time session/history cleanup logic.
 - Re-run the installer after updating pi or opencode.

@@ -6,7 +6,7 @@ SOURCE_PATH="${BASH_SOURCE[0]:-$0}"
 ROOT_DIR="$(cd -- "$(dirname -- "${SOURCE_PATH}")" && pwd)"
 MODE="${1:-tia}"
 ACTION="${2:-install}"
-INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/tia/main/scripts}"
+INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/tia-runtime/main/scripts}"
 
 usage() {
 	cat <<'EOF'
