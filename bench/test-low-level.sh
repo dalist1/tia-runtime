@@ -96,6 +96,16 @@ assert_json_field_eq "${TMP_DIR}/compiled-edit.json" "mode" "fast"
 assert_json_field_eq "${TMP_DIR}/compiled-edit.json" "tool" "edit"
 assert_json_field_eq "${TMP_DIR}/compiled-edit.json" "iterations" "2"
 
+printf '[low-level write] verify exact write reliability\n'
+"${ROOT_DIR}/bin/pi-tool-override-burst" fast write 4 > "${TMP_DIR}/compiled-write.json"
+assert_json_field_eq "${TMP_DIR}/compiled-write.json" "mode" "fast"
+assert_json_field_eq "${TMP_DIR}/compiled-write.json" "tool" "write"
+"${ROOT_DIR}/bin/pi-tool-request-loop" daemon fast write 4 > "${TMP_DIR}/daemon-write.json"
+assert_json_field_eq "${TMP_DIR}/daemon-write.json" "transport" "daemon"
+assert_json_field_eq "${TMP_DIR}/daemon-write.json" "tool" "write"
+bun "${ROOT_DIR}/bench/write-reliability.ts" 20 > "${TMP_DIR}/write-reliability.json"
+assert_json_field_eq "${TMP_DIR}/write-reliability.json" "ok" "True"
+
 printf '[low-level 7/12] verify compiled streaming runner\n'
 "${ROOT_DIR}/bin/pi-tool-override-stream-burst" fast read 2 > "${TMP_DIR}/compiled-stream.json"
 assert_json_field_eq "${TMP_DIR}/compiled-stream.json" "mode" "fast"

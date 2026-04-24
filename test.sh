@@ -10,15 +10,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-printf '[1/8] install tia runtime\n'
+printf '[1/9] install tia runtime\n'
 bash "${ROOT_DIR}/install.sh" >/dev/null
 
-printf '[2/8] check tia status\n'
+printf '[2/9] check tia status\n'
 tia status > "${TMP_DIR}/tia-status.txt"
 rg -n "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
 ! rg -n "opencode" "${TMP_DIR}/tia-status.txt" >/dev/null
 
-printf '[3/8] verify tia refreshes shell pi agent links at launch\n'
+printf '[3/9] verify tia refreshes shell pi agent links at launch\n'
 CUSTOM_AGENT_DIR="${TMP_DIR}/custom-agent"
 mkdir -p "${CUSTOM_AGENT_DIR}"
 printf '%s\n' '{"source":"custom"}' > "${CUSTOM_AGENT_DIR}/auth.json"
@@ -29,7 +29,7 @@ PI_CODING_AGENT_DIR="${CUSTOM_AGENT_DIR}" tia pi --version >/dev/null
 [[ "$(readlink "${HOME}/.local/share/tia/pi-agent/models.json")" == "${CUSTOM_AGENT_DIR}/models.json" ]]
 [[ "$(readlink "${HOME}/.local/share/tia/pi-agent/settings.json")" == "${CUSTOM_AGENT_DIR}/settings.json" ]]
 
-printf '[4/8] verify tia pi does not touch sandbox history on startup\n'
+printf '[4/9] verify tia pi does not touch sandbox history on startup\n'
 TIA_AGENT_DIR="${HOME}/.local/share/tia/pi-agent"
 mkdir -p "${TIA_AGENT_DIR}/sessions"
 printf '{}' > "${TIA_AGENT_DIR}/sessions/stale.jsonl"
@@ -37,13 +37,13 @@ tia pi --version >/dev/null
 [[ -e "${TIA_AGENT_DIR}/sessions/stale.jsonl" ]]
 rm -f "${TIA_AGENT_DIR}/sessions/stale.jsonl"
 
-printf '[5/8] verify deprecated top-level modes are rejected\n'
+printf '[5/9] verify deprecated top-level modes are rejected\n'
 ! bash "${ROOT_DIR}/install.sh" fast-pi status >"${TMP_DIR}/fast-pi.out" 2>"${TMP_DIR}/fast-pi.err"
 ! bash "${ROOT_DIR}/install.sh" fast-pi-max status >"${TMP_DIR}/fast-pi-max.out" 2>"${TMP_DIR}/fast-pi-max.err"
 ! bash "${ROOT_DIR}/install.sh" max status >"${TMP_DIR}/max.out" 2>"${TMP_DIR}/max.err"
 rg -n "no longer supported" "${TMP_DIR}/fast-pi.err" "${TMP_DIR}/fast-pi-max.err" "${TMP_DIR}/max.err" >/dev/null
 
-printf '[6/8] verify tia pi rpc\n'
+printf '[6/9] verify tia pi rpc\n'
 bash "${ROOT_DIR}/bench/build-pi-rpc-payloads.sh" >/dev/null
 ANTHROPIC_API_KEY=dummy \
 	timeout 25s tia pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes \
@@ -58,7 +58,17 @@ assert obj['command'] == 'get_state'
 assert obj['success'] is True
 PY
 
-printf '[7/8] verify installer bootstrap path\n'
+printf '[7/9] verify exact write reliability\n'
+bun "${ROOT_DIR}/bench/write-reliability.ts" 5 > "${TMP_DIR}/write-reliability.json"
+python3 - <<'PY' "${TMP_DIR}/write-reliability.json"
+import json, sys
+with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    obj = json.load(f)
+assert obj['ok'] is True
+assert obj['writes'] > 0
+PY
+
+printf '[8/9] verify installer bootstrap path\n'
 BOOTSTRAP_HOME="${TMP_DIR}/bootstrap-home"
 BOOTSTRAP_BIN_HOME="${BOOTSTRAP_HOME}/bin"
 BOOTSTRAP_DATA_HOME="${BOOTSTRAP_HOME}/share"
@@ -81,7 +91,7 @@ rg -n "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:
 ! rg -n "opencode" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
 [[ ! -e "${BOOTSTRAP_BIN_HOME}/max" ]]
 
-printf '[8/8] cleanup tia benchmark helper processes\n'
+printf '[9/9] cleanup tia benchmark helper processes\n'
 bash "${ROOT_DIR}/bench/cleanup-processes.sh" >/dev/null
 
 printf 'All runtime tests passed.\n'

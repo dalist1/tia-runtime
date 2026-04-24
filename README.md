@@ -84,7 +84,7 @@ Run the smoke/integration checks:
 bash test.sh
 ```
 
-Run the low-level optimization checks only:
+Run the low-level optimization checks only (includes exact write verification for empty, large, CRLF, Unicode, overwrite, nested path, and symlink-preserving cases):
 
 ```bash
 bash bench/test-low-level.sh
@@ -124,6 +124,7 @@ What it covers:
 - `tia pi` shell-agent link refresh
 - rejection of deprecated top-level modes
 - `tia pi` RPC health
+- exact write reliability cases for empty, large, CRLF, Unicode, overwrite, nested path, and symlink-preserving writes
 - real curl/bootstrap install from outside the repo checkout
 - fast tool runner execution
 - low-level native/compiled runner validation

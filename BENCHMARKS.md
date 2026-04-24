@@ -119,5 +119,5 @@ This compares:
   - streamed fast `read` updates
   - fast exact-text `edit`
   - faster `bash` handling on the tested workloads
-- `write` improves, but less dramatically than `read` and `edit`.
+- `write` improves less dramatically than `read` and `edit`; current feedback-loop write candidates perform exact post-write verification so text mismatches fail the run instead of being counted as success.
 - In the direct streaming runner, fast `read` delivered about 7 partial updates per iteration with about 1.29 ms average time-to-first-update across 60 iterations.

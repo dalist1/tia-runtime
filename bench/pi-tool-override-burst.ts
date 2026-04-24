@@ -41,6 +41,15 @@ const tempDir = () => {
 	return dir;
 };
 
+
+function assertFileText(path: string, expected: string) {
+	const actual = readFileSync(path, "utf8");
+	if (actual !== expected) {
+		throw new Error(
+			`write verification failed for ${path}: expected ${expected.length} chars/${Buffer.byteLength(expected, "utf8")} bytes, got ${actual.length} chars/${Buffer.byteLength(actual, "utf8")} bytes`,
+		);
+	}
+}
 async function runBinaryCapture(cmd: string, args: string[]) {
 	const proc = Bun.spawn([cmd, ...args], {
 		cwd: ROOT_DIR,
@@ -72,8 +81,10 @@ async function fastWrite(contentFile: string) {
 	const dir = tempDir();
 	try {
 		const content = readFileSync(contentFile, "utf8");
-		mkdirSync(dirname(join(dir, "out.txt")), { recursive: true });
-		await Bun.write(join(dir, "out.txt"), content);
+		const targetFile = join(dir, "out.txt");
+		mkdirSync(dirname(targetFile), { recursive: true });
+		await Bun.write(targetFile, content);
+		assertFileText(targetFile, content);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -101,6 +112,7 @@ async function stockWrite(contentFile: string) {
 	try {
 		const tool = createWriteTool(dir);
 		await tool.execute("stock-write", { path: "out.txt", content }, undefined as any);
+		assertFileText(join(dir, "out.txt"), content);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

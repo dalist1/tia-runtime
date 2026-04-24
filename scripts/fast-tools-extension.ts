@@ -1,4 +1,5 @@
-import { createReadStream, existsSync, mkdirSync, rmSync } from "node:fs";
+import { createReadStream, existsSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
@@ -100,6 +101,69 @@ function emitTextUpdate(onUpdate: ToolUpdateFn, text: string, details?: any) {
 function ensureNotAborted(signal?: AbortSignal) {
   if (signal?.aborted) {
     throw new Error("Operation aborted");
+  }
+}
+
+const fileMutationQueues = new Map<string, Promise<void>>();
+
+async function withFileMutationQueue<T>(path: string, task: () => Promise<T>): Promise<T> {
+  const previous = fileMutationQueues.get(path) ?? Promise.resolve();
+  let release = () => {};
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.catch(() => undefined).then(() => current);
+  fileMutationQueues.set(path, queued);
+
+  await previous.catch(() => undefined);
+  try {
+    return await task();
+  } finally {
+    release();
+    if (fileMutationQueues.get(path) === queued) {
+      fileMutationQueues.delete(path);
+    }
+  }
+}
+
+function firstMismatchIndex(expected: string, actual: string) {
+  const limit = Math.min(expected.length, actual.length);
+  for (let i = 0; i < limit; i += 1) {
+    if (expected.charCodeAt(i) !== actual.charCodeAt(i)) return i;
+  }
+  return expected.length === actual.length ? -1 : limit;
+}
+
+function writeVerificationError(pathArg: string, label: string, expected: string, actual: string) {
+  const mismatch = firstMismatchIndex(expected, actual);
+  const expectedBytes = Buffer.byteLength(expected, "utf8");
+  const actualBytes = Buffer.byteLength(actual, "utf8");
+  const suffix =
+    mismatch === -1
+      ? "length metadata mismatch"
+      : `first mismatch at character ${mismatch} (expected code ${expected.charCodeAt(mismatch)}, got ${actual.charCodeAt(mismatch)})`;
+  return new Error(
+    `Write verification failed for ${pathArg} after ${label}: expected ${expected.length} chars/${expectedBytes} bytes, got ${actual.length} chars/${actualBytes} bytes; ${suffix}.`,
+  );
+}
+
+async function verifyWrittenText(
+  absolutePath: string,
+  pathArg: string,
+  expected: string,
+  label: string,
+) {
+  const actual = await Bun.file(absolutePath).text();
+  if (actual !== expected) {
+    throw writeVerificationError(pathArg, label, expected, actual);
+  }
+}
+
+function isSymlink(path: string) {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
   }
 }
 
@@ -255,15 +319,39 @@ async function fastRead(
 }
 
 async function fastWrite(cwd: string, pathArg: string, content: string, signal?: AbortSignal) {
-  ensureNotAborted(signal);
   const absolutePath = resolvePath(cwd, pathArg);
-  mkdirSync(dirname(absolutePath), { recursive: true });
-  await Bun.write(absolutePath, content);
-  ensureNotAborted(signal);
-  return {
-    content: [{ type: "text", text: `Successfully wrote ${content.length} bytes to ${pathArg}` }],
-    details: undefined,
-  };
+
+  return withFileMutationQueue(absolutePath, async () => {
+    ensureNotAborted(signal);
+    mkdirSync(dirname(absolutePath), { recursive: true });
+
+    if (isSymlink(absolutePath)) {
+      await Bun.write(absolutePath, content);
+      ensureNotAborted(signal);
+      await verifyWrittenText(absolutePath, pathArg, content, "symlink-preserving write");
+    } else {
+      const tmpPath = `${absolutePath}.tmp.${process.pid}.${Date.now()}.${randomUUID()}`;
+      try {
+        await Bun.write(tmpPath, content);
+        ensureNotAborted(signal);
+        await verifyWrittenText(tmpPath, pathArg, content, "temporary write");
+        renameSync(tmpPath, absolutePath);
+        ensureNotAborted(signal);
+        await verifyWrittenText(absolutePath, pathArg, content, "final rename");
+      } catch (error) {
+        rmSync(tmpPath, { force: true });
+        throw error;
+      }
+    }
+
+    const bytes = Buffer.byteLength(content, "utf8");
+    return {
+      content: [
+        { type: "text", text: `Successfully wrote and verified ${bytes} bytes to ${pathArg}` },
+      ],
+      details: { verified: true, bytes },
+    };
+  });
 }
 
 function normalizeEditParams(params: any): ReplacementEdit[] {
@@ -298,65 +386,68 @@ async function fastEdit(
   edits: ReplacementEdit[],
   signal?: AbortSignal,
 ) {
-  ensureNotAborted(signal);
   const absolutePath = resolvePath(cwd, pathArg);
-  const content = await Bun.file(absolutePath).text();
-  ensureNotAborted(signal);
 
-  const replacements = edits.map((edit, index) => {
-    if (edit.oldText.length === 0) {
-      throw new Error(`Edit ${index + 1} in ${pathArg} has empty oldText.`);
+  return withFileMutationQueue(absolutePath, async () => {
+    ensureNotAborted(signal);
+    const content = await Bun.file(absolutePath).text();
+    ensureNotAborted(signal);
+
+    const replacements = edits.map((edit, index) => {
+      if (edit.oldText.length === 0) {
+        throw new Error(`Edit ${index + 1} in ${pathArg} has empty oldText.`);
+      }
+
+      const firstIndex = content.indexOf(edit.oldText);
+      if (firstIndex === -1) {
+        throw new Error(
+          `Could not find edit ${index + 1} in ${pathArg}. The old text must match exactly including all whitespace and newlines.`,
+        );
+      }
+
+      const secondIndex = content.indexOf(edit.oldText, firstIndex + edit.oldText.length);
+      if (secondIndex !== -1) {
+        throw new Error(
+          `Found multiple occurrences for edit ${index + 1} in ${pathArg}. The old text must be unique.`,
+        );
+      }
+
+      return {
+        index,
+        start: firstIndex,
+        end: firstIndex + edit.oldText.length,
+        newText: edit.newText,
+      };
+    });
+
+    replacements.sort((a, b) => a.start - b.start || a.index - b.index);
+    let updated = "";
+    let cursor = 0;
+    for (const replacement of replacements) {
+      if (replacement.start < cursor) {
+        throw new Error(
+          `Edit ${replacement.index + 1} in ${pathArg} overlaps another replacement. Merge nearby changes into one edit.`,
+        );
+      }
+      updated += content.slice(cursor, replacement.start);
+      updated += replacement.newText;
+      cursor = replacement.end;
+    }
+    updated += content.slice(cursor);
+
+    if (updated === content) {
+      throw new Error(`No changes made to ${pathArg}. The replacement produced identical content.`);
     }
 
-    const firstIndex = content.indexOf(edit.oldText);
-    if (firstIndex === -1) {
-      throw new Error(
-        `Could not find edit ${index + 1} in ${pathArg}. The old text must match exactly including all whitespace and newlines.`,
-      );
-    }
-
-    const secondIndex = content.indexOf(edit.oldText, firstIndex + edit.oldText.length);
-    if (secondIndex !== -1) {
-      throw new Error(
-        `Found multiple occurrences for edit ${index + 1} in ${pathArg}. The old text must be unique.`,
-      );
-    }
-
+    await Bun.write(absolutePath, updated);
+    ensureNotAborted(signal);
     return {
-      index,
-      start: firstIndex,
-      end: firstIndex + edit.oldText.length,
-      newText: edit.newText,
+      content: [
+        { type: "text", text: `Successfully replaced ${edits.length} block(s) in ${pathArg}.` },
+      ],
+      details: undefined,
     };
   });
-
-  replacements.sort((a, b) => a.start - b.start || a.index - b.index);
-  let updated = "";
-  let cursor = 0;
-  for (const replacement of replacements) {
-    if (replacement.start < cursor) {
-      throw new Error(
-        `Edit ${replacement.index + 1} in ${pathArg} overlaps another replacement. Merge nearby changes into one edit.`,
-      );
-    }
-    updated += content.slice(cursor, replacement.start);
-    updated += replacement.newText;
-    cursor = replacement.end;
-  }
-  updated += content.slice(cursor);
-
-  if (updated === content) {
-    throw new Error(`No changes made to ${pathArg}. The replacement produced identical content.`);
-  }
-
-  await Bun.write(absolutePath, updated);
-  ensureNotAborted(signal);
-  return {
-    content: [
-      { type: "text", text: `Successfully replaced ${edits.length} block(s) in ${pathArg}.` },
-    ],
-    details: undefined,
-  };
 }
 
 async function runBinary(cmd: string, args: string[]) {
