@@ -8,6 +8,7 @@ These are the latest benchmark highlights from the tia research harness.
 |---|---|---:|---:|---:|
 | `tia pi` | RPC startup (`get_state`) | 1.786 s | 0.961 s | **1.86x** |
 | `pi` compiled direct | RPC startup (`get_state`) | 1.476 s | 0.745 s | **1.98x** |
+| `tia pi` slim JSON stream | JSON stream startup (`--mode json --no-session`, no prompt) | 1.200 s | 506.0 ms | **2.37x** |
 | `tia pi` fast tools | `read` burst | 977.7 ms | 188.6 ms | **5.18x** |
 | `tia pi` fast tools | `read` streaming burst | 1.372 s | 249.9 ms | **5.49x** |
 | `tia pi` fast tools | `write` burst | 195.5 ms | 193.0 ms | **1.01x** |
@@ -27,6 +28,9 @@ Current benchmark results below focus on `tia pi`.
 ### tia startup / rpc
 - `results-tia-pi/rpc.md`
 - `results-pi-rpc-direct-smoke/empty.md`
+
+### tia slim JSON streaming
+- `results-tia-json-stream/startup.md`
 
 ### tia fast tools burst
 - `results-pi-tools-fast-burst-smoke/read.md`
@@ -82,6 +86,20 @@ hyperfine --runs 4 --warmup 1 \
   'env -u PI_PACKAGE_DIR ANTHROPIC_API_KEY=dummy tia pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes < ./payloads-rpc/empty.get-state.jsonl'
 ```
 
+### tia slim JSON streaming
+```bash
+mkdir -p results-tia-json-stream
+hyperfine --warmup 2 --runs 10 --shell=none \
+  --export-json results-tia-json-stream/startup.json \
+  --export-markdown results-tia-json-stream/startup.md \
+  --command-name 'tia slim json stream startup' \
+  'tia pi --mode json --no-session' \
+  --command-name 'tia full json startup' \
+  'env TIA_DISABLE_FAST_STREAM=1 tia pi --mode json --no-session'
+```
+
+This benchmark isolates local JSON streaming startup/runner overhead by sending no prompt. It does not measure provider first-token or token-throughput latency, which is network/model dependent.
+
 ### tia fast tools burst
 ```bash
 bash bench/hyperfine-pi-tools-fast-burst.sh
@@ -116,9 +134,11 @@ This compares:
 - It combines:
   - compiled startup
   - sandboxed runtime wiring
+  - slim JSON streaming for `--mode json --no-session`
   - fast `read`
   - streamed fast `read` updates
   - fast exact-text `edit`
   - faster `bash` handling on the tested workloads
 - `write` improves less dramatically than `read` and `edit`; current feedback-loop write candidates perform exact post-write verification so text mismatches fail the run instead of being counted as success.
-- In the direct streaming runner, fast `read` delivered about 7 partial updates per iteration with about 1.29 ms average time-to-first-update across 60 iterations.
+- The slim JSON stream path routes `tia pi --mode json --no-session` to a direct provider-streaming runner. In the local no-prompt startup benchmark, it measured 506.0 ms versus 1.200 s for the full compiled JSON path with `TIA_DISABLE_FAST_STREAM=1` (**2.37x** faster).
+- In the direct tool streaming runner, fast `read` delivered about 7 partial updates per iteration with about 1.29 ms average time-to-first-update across 60 iterations.
