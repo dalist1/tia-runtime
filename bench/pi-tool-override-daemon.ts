@@ -23,6 +23,10 @@ function detectRootDir() {
 }
 
 const ROOT_DIR = detectRootDir();
+const FASTREAD_BIN = process.env.TIA_FASTREAD_BIN ?? `${ROOT_DIR}/bin/fastread-window`;
+const FASTEDIT_BIN = process.env.TIA_FASTEDIT_BIN ?? `${ROOT_DIR}/bin/fastedit`;
+const FASTDRAIN_BIN = process.env.TIA_FASTDRAIN_BIN ?? `${ROOT_DIR}/bin/fastdrain`;
+const FASTCOPY_BIN = process.env.TIA_FASTCOPY_BIN ?? `${ROOT_DIR}/bin/fastcopy`;
 const mode = process.argv[2];
 const READ_PROGRESS_MIN_INTERVAL_MS = 120;
 const READ_PROGRESS_MIN_BYTES = 8 * 1024;
@@ -85,7 +89,7 @@ async function fastRead(pathArg: string, offset?: number, limit?: number, onUpda
 	const absolutePath = resolve(ROOT_DIR, pathArg);
 	const startLine = Math.max(1, offset ?? 1);
 	const maxLines = limit ?? DEFAULT_MAX_LINES;
-	const proc = Bun.spawn([`${ROOT_DIR}/bin/fastread-window`, absolutePath, String(startLine), String(maxLines)], {
+	const proc = Bun.spawn([FASTREAD_BIN, absolutePath, String(startLine), String(maxLines)], {
 		cwd: ROOT_DIR,
 		stdout: "pipe",
 		stderr: "pipe",
@@ -144,7 +148,7 @@ async function fastEdit(templateFile: string, oldTextFile: string, newTextFile: 
 	try {
 		const targetFile = join(dir, "edit-target.txt");
 		writeFileSync(targetFile, readFileSync(templateFile, "utf8"), "utf8");
-		await runBinary(`${ROOT_DIR}/bin/fastedit`, [targetFile, oldTextFile, newTextFile]);
+		await runBinary(FASTEDIT_BIN, [targetFile, oldTextFile, newTextFile]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -212,7 +216,7 @@ async function tryOptimizedBash(command: string) {
 		if (catMatch) {
 			const file = resolve(ROOT_DIR, catMatch[1]);
 			actions.push(async () => {
-				await runBinary(`${ROOT_DIR}/bin/fastdrain`, [file]);
+				await runBinary(FASTDRAIN_BIN, [file]);
 			});
 			continue;
 		}
@@ -223,7 +227,7 @@ async function tryOptimizedBash(command: string) {
 			const dst = resolve(ROOT_DIR, cpMatch[2]);
 			actions.push(async () => {
 				mkdirSync(dirname(dst), { recursive: true });
-				await runBinary(`${ROOT_DIR}/bin/fastcopy`, [src, dst]);
+				await runBinary(FASTCOPY_BIN, [src, dst]);
 			});
 			continue;
 		}

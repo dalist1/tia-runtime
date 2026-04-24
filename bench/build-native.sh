@@ -3,42 +3,40 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+export PATH="${HOME}/.local/bin:${PATH}"
 mkdir -p "${ROOT_DIR}/bin"
 
-gcc \
-	-O3 \
-	-pipe \
-	-march=native \
-	-s \
-	-o "${ROOT_DIR}/bin/fastdrain" \
-	"${ROOT_DIR}/native/fastdrain.c"
+build_gcc() {
+	local name="$1"
+	gcc \
+		-O3 \
+		-pipe \
+		-march=native \
+		-s \
+		-o "${ROOT_DIR}/bin/${name}" \
+		"${ROOT_DIR}/native/${name}.c"
+}
 
-gcc \
-	-O3 \
-	-pipe \
-	-march=native \
-	-s \
-	-o "${ROOT_DIR}/bin/fastedit" \
-	"${ROOT_DIR}/native/fastedit.c"
+build_zigcc() {
+	local name="$1"
+	zig cc \
+		-O3 \
+		-pipe \
+		-march=native \
+		-s \
+		-o "${ROOT_DIR}/bin/${name}-zigcc" \
+		"${ROOT_DIR}/native/${name}.c"
+}
 
-gcc \
-	-O3 \
-	-pipe \
-	-march=native \
-	-s \
-	-o "${ROOT_DIR}/bin/fastread-window" \
-	"${ROOT_DIR}/native/fastread-window.c"
+for name in fastdrain fastedit fastread-window fastcopy; do
+	build_gcc "${name}"
+done
 
-gcc \
-	-O3 \
-	-pipe \
-	-march=native \
-	-s \
-	-o "${ROOT_DIR}/bin/fastcopy" \
-	"${ROOT_DIR}/native/fastcopy.c"
-
-printf 'Built %s, %s, %s, and %s\n' \
-	"${ROOT_DIR}/bin/fastdrain" \
-	"${ROOT_DIR}/bin/fastedit" \
-	"${ROOT_DIR}/bin/fastread-window" \
-	"${ROOT_DIR}/bin/fastcopy"
+if command -v zig >/dev/null 2>&1; then
+	for name in fastdrain fastedit fastread-window fastcopy; do
+		build_zigcc "${name}"
+	done
+	printf 'Built native helpers with gcc and zig cc in %s/bin\n' "${ROOT_DIR}"
+else
+	printf 'Built native helpers with gcc in %s/bin (zig not found; skipped zig cc variants)\n' "${ROOT_DIR}"
+fi

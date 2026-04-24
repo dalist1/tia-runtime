@@ -67,6 +67,23 @@ assert text.startswith('line-4500\nline-4501\nline-4502\n')
 assert 'Use offset=4504 to continue.' in text
 PY
 
+if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" ]]; then
+	printf '[low-level zig] verify zig-built native helpers\n'
+	"${ROOT_DIR}/bin/fastread-window-zigcc" "${ROOT_DIR}/payloads/lines-10k.txt" 4501 3 > "${TMP_DIR}/fastread-zig-slice.txt"
+	cmp -s "${TMP_DIR}/fastread-slice.txt" "${TMP_DIR}/fastread-zig-slice.txt"
+	"${ROOT_DIR}/bin/fastcopy-zigcc" \
+		"${ROOT_DIR}/payloads/tiny.txt" \
+		"${TMP_DIR}/copy/zig-copied.txt" > "${TMP_DIR}/fastcopy-zig.json"
+	assert_json_field_eq "${TMP_DIR}/fastcopy-zig.json" "ok" "True"
+	cmp -s "${ROOT_DIR}/payloads/tiny.txt" "${TMP_DIR}/copy/zig-copied.txt"
+	cp "${ROOT_DIR}/payloads/lines-10k.txt" "${TMP_DIR}/edit-zig-target.txt"
+	"${ROOT_DIR}/bin/fastedit-zigcc" \
+		"${TMP_DIR}/edit-zig-target.txt" \
+		"${ROOT_DIR}/payloads/edit-old.txt" \
+		"${ROOT_DIR}/payloads/edit-new.txt" > "${TMP_DIR}/fastedit-zig.json"
+	assert_file_contains "${TMP_DIR}/edit-zig-target.txt" "line-4500-updated"
+fi
+
 printf '[low-level 5/12] verify compiled fast read runner\n'
 "${ROOT_DIR}/bin/pi-tool-override-burst" fast read 2 > "${TMP_DIR}/compiled-read.json"
 assert_json_field_eq "${TMP_DIR}/compiled-read.json" "mode" "fast"

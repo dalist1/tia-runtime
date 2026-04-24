@@ -17,6 +17,7 @@ function detectRootDir() {
 }
 
 const ROOT_DIR = detectRootDir();
+const FASTREAD_BIN = process.env.TIA_FASTREAD_BIN ?? `${ROOT_DIR}/bin/fastread-window`;
 const mode = process.argv[2];
 const tool = process.argv[3];
 const iterations = Number(process.argv[4] ?? 20);
@@ -49,7 +50,7 @@ async function fastRead(pathArg: string, offset?: number, limit?: number, onUpda
 	const absolutePath = resolve(ROOT_DIR, pathArg);
 	const startLine = Math.max(1, offset ?? 1);
 	const maxLines = limit ?? DEFAULT_MAX_LINES;
-	const proc = Bun.spawn([`${ROOT_DIR}/bin/fastread-window`, absolutePath, String(startLine), String(maxLines)], {
+	const proc = Bun.spawn([FASTREAD_BIN, absolutePath, String(startLine), String(maxLines)], {
 		cwd: ROOT_DIR,
 		stdout: "pipe",
 		stderr: "pipe",

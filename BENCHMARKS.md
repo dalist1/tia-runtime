@@ -55,8 +55,9 @@ Defaults:
 - repeated `hyperfine` runs per round
 - correctness gates before benchmarking
 - score = mean latency penalized by variance and failures
-- top candidates: native helpers, compiled runner path, warm daemon transport
-- Zig is treated as an optional candidate only when `zig` is available and can beat the current native helpers in this same loop
+- top candidates: native helpers, compiled runner path, warm daemon transport, Zig-built helpers
+- `bench/feedback-loop.sh` auto-installs Zig locally via `scripts/install-zig.sh` unless `SETUP_ZIG=0`
+- Zig is treated as a measured candidate only when `zig` can build helper variants and beat the current native helpers in this same loop
 
 Results are written under `results-feedback-loop/<run-id>/summary.md` and `summary.json`.
 
@@ -65,6 +66,8 @@ For a heavier confirmation pass:
 ```bash
 TIER=full ROUNDS=5 bash bench/feedback-loop.sh
 ```
+
+Latest local 5-round Zig smoke check (`ROUNDS=5 RUNS=1 WARMUP=0 TIER=smoke`) found Zig-built helpers fastest on stream-read, bash, and read; gcc-built helpers remained fastest on edit/write. All compared candidates completed with 100% success in that run.
 
 ## How to reproduce
 

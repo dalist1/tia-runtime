@@ -28,6 +28,8 @@ def pstdev(values: list[float]) -> float:
 
 def strategy_for(command: str) -> str:
     lower = command.lower()
+    if "zigcc" in lower or "zig" in lower:
+        return "zig-built native helpers"
     if "warm-daemon" in lower or "warm daemon" in lower:
         return "warm daemon + native helpers"
     if "compiled" in lower and "native" in lower:

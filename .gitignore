@@ -6,6 +6,8 @@ results*/
 # Built artifacts
 bin/
 release-assets/
+.zig-cache/
+zig-cache/
 
 # Dependencies
 node_modules/

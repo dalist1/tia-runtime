@@ -23,6 +23,10 @@ function detectRootDir() {
 }
 
 const ROOT_DIR = detectRootDir();
+const FASTREAD_BIN = process.env.TIA_FASTREAD_BIN ?? `${ROOT_DIR}/bin/fastread-window`;
+const FASTEDIT_BIN = process.env.TIA_FASTEDIT_BIN ?? `${ROOT_DIR}/bin/fastedit`;
+const FASTDRAIN_BIN = process.env.TIA_FASTDRAIN_BIN ?? `${ROOT_DIR}/bin/fastdrain`;
+const FASTCOPY_BIN = process.env.TIA_FASTCOPY_BIN ?? `${ROOT_DIR}/bin/fastcopy`;
 const mode = process.argv[2];
 const tool = process.argv[3];
 const iterations = Number(process.argv[4] ?? 20);
@@ -59,9 +63,9 @@ async function fastRead(pathArg: string, offset?: number, limit?: number) {
 	const startLine = Math.max(1, offset ?? 1);
 	const maxLines = limit ?? DEFAULT_MAX_LINES;
 	if (startLine >= 1 && maxLines >= 1) {
-		return await runBinaryCapture(`${ROOT_DIR}/bin/fastread-window`, [absolutePath, String(startLine), String(maxLines)]);
+		return await runBinaryCapture(FASTREAD_BIN, [absolutePath, String(startLine), String(maxLines)]);
 	}
-	return await runBinaryCapture(`${ROOT_DIR}/bin/fastread-window`, [absolutePath, "1", String(DEFAULT_MAX_LINES)]);
+	return await runBinaryCapture(FASTREAD_BIN, [absolutePath, "1", String(DEFAULT_MAX_LINES)]);
 }
 
 async function fastWrite(contentFile: string) {
@@ -80,7 +84,7 @@ async function fastEdit(templateFile: string, oldTextFile: string, newTextFile: 
 	try {
 		const targetFile = join(dir, "edit-target.txt");
 		writeFileSync(targetFile, readFileSync(templateFile, "utf8"), "utf8");
-		await runBinary(`${ROOT_DIR}/bin/fastedit`, [targetFile, oldTextFile, newTextFile]);
+		await runBinary(FASTEDIT_BIN, [targetFile, oldTextFile, newTextFile]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -158,7 +162,7 @@ async function tryOptimizedBash(command: string) {
 		if (catMatch) {
 			const file = resolve(ROOT_DIR, catMatch[1]);
 			actions.push(async () => {
-				await runBinary(`${ROOT_DIR}/bin/fastdrain`, [file]);
+				await runBinary(FASTDRAIN_BIN, [file]);
 			});
 			continue;
 		}
@@ -169,7 +173,7 @@ async function tryOptimizedBash(command: string) {
 			const dst = resolve(ROOT_DIR, cpMatch[2]);
 			actions.push(async () => {
 				mkdirSync(dirname(dst), { recursive: true });
-				await runBinary(`${ROOT_DIR}/bin/fastcopy`, [src, dst]);
+				await runBinary(FASTCOPY_BIN, [src, dst]);
 			});
 			continue;
 		}

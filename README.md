@@ -102,6 +102,14 @@ For a heavier confirmation pass:
 TIER=full ROUNDS=5 bash bench/feedback-loop.sh
 ```
 
+The feedback loop auto-installs Zig locally for measured Zig-built helper candidates. You can also install it explicitly:
+
+```bash
+bun run install:zig
+# or
+bash scripts/install-zig.sh
+```
+
 ## Linting and formatting
 
 ```bash

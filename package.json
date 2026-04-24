@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "bench:feedback": "bash bench/feedback-loop.sh",
+    "install:zig": "bash scripts/install-zig.sh",
     "lint": "oxlint -c .oxlintrc.json scripts/*.ts --deny-warnings",
     "format": "oxfmt --check scripts/*.ts package.json .oxlintrc.json",
     "format:write": "oxfmt --write scripts/*.ts package.json .oxlintrc.json"

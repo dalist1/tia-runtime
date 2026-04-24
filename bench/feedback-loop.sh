@@ -12,6 +12,7 @@ WARMUP="${WARMUP:-1}"
 RUN_STARTUP="${RUN_STARTUP:-auto}"
 RUN_GATES="${RUN_GATES:-1}"
 IGNORE_FAILURE="${IGNORE_FAILURE:-1}"
+SETUP_ZIG="${SETUP_ZIG:-1}"
 
 case "${TIER}" in
 	smoke)
@@ -72,13 +73,19 @@ need_cmd gcc
 need_cmd hyperfine
 need_cmd python3
 
+export PATH="${HOME}/.local/bin:${PATH}"
+if [[ "${SETUP_ZIG}" != "0" && -z "$(command -v zig 2>/dev/null || true)" ]]; then
+	log "zig not found; installing local Zig toolchain"
+	bash "${ROOT_DIR}/scripts/install-zig.sh" >/dev/null || true
+fi
+
 mkdir -p "${RESULT_DIR}"
 
 ZIG_PATH="$(command -v zig 2>/dev/null || true)"
 if [[ -n "${ZIG_PATH}" ]]; then
-	ZIG_STATUS="available:${ZIG_PATH}"
+	ZIG_STATUS="available:${ZIG_PATH} ($(zig version))"
 else
-	ZIG_STATUS="absent (skipping Zig rewrite candidate until it can be measured here)"
+	ZIG_STATUS="absent (skipping Zig toolchain candidate until it can be measured here)"
 fi
 
 if [[ "${RUN_STARTUP}" == "auto" ]]; then
@@ -137,8 +144,8 @@ config = {
             "hypothesis": "A persistent worker amortizes cold starts across repeated tool calls and should win when reliability stays at 100%.",
         },
         {
-            "name": "Zig rewrite gate",
-            "hypothesis": "Only replace C/Bun pieces with Zig if the same loop proves it faster and at least as reliable; language choice alone is not treated as a guarantee.",
+            "name": "Zig toolchain gate",
+            "hypothesis": "Build native helpers with Zig and only promote a Zig rewrite/toolchain path when this same loop proves it faster and at least as reliable; language choice alone is not treated as a guarantee.",
         },
     ],
 }
@@ -147,13 +154,20 @@ with open(path, "w", encoding="utf-8") as f:
 PY
 
 log "results: ${RESULT_DIR}"
-log "top 3 active ideas: native helpers, compiled runner, warm daemon"
+log "top active ideas: native helpers, compiled runner, warm daemon, zig-built helpers"
 log "zig status: ${ZIG_STATUS}"
 
 log "build fixtures, native helpers, compiled harnesses"
 bash "${ROOT_DIR}/bench/build-tool-fixtures.sh" >/dev/null
 bash "${ROOT_DIR}/bench/build-native.sh" >/dev/null
 bash "${ROOT_DIR}/bench/build-pi-tool-override-burst.sh" >/dev/null
+HAVE_ZIG_HELPERS=0
+if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastdrain-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" ]]; then
+	HAVE_ZIG_HELPERS=1
+	log "zig helper candidate: enabled (zig cc built native helpers)"
+else
+	log "zig helper candidate: disabled (missing zig-built helper binaries)"
+fi
 if [[ "${RUN_STARTUP}" == "1" ]]; then
 	bash "${ROOT_DIR}/bench/build-pi-rpc-payloads.sh" >/dev/null
 fi
@@ -173,6 +187,17 @@ if [[ "${RUN_GATES}" == "1" ]]; then
 	json_assert_field "${TMP_DIR}/stream.json" mode fast
 	"${ROOT_DIR}/bin/pi-tool-request-loop" daemon fast read 3 > "${TMP_DIR}/daemon.json"
 	json_assert_field "${TMP_DIR}/daemon.json" transport daemon
+	if [[ "${HAVE_ZIG_HELPERS}" == "1" ]]; then
+		env TIA_FASTREAD_BIN="${ROOT_DIR}/bin/fastread-window-zigcc" \
+			"${ROOT_DIR}/bin/pi-tool-override-burst" fast read 2 > "${TMP_DIR}/zig-read.json"
+		json_assert_field "${TMP_DIR}/zig-read.json" mode fast
+		env TIA_FASTEDIT_BIN="${ROOT_DIR}/bin/fastedit-zigcc" \
+			"${ROOT_DIR}/bin/pi-tool-override-burst" fast edit 2 > "${TMP_DIR}/zig-edit.json"
+		json_assert_field "${TMP_DIR}/zig-edit.json" tool edit
+		env TIA_FASTREAD_BIN="${ROOT_DIR}/bin/fastread-window-zigcc" \
+			"${ROOT_DIR}/bin/pi-tool-override-stream-burst" fast read 2 > "${TMP_DIR}/zig-stream.json"
+		json_assert_field "${TMP_DIR}/zig-stream.json" mode fast
+	fi
 	rm -rf "${TMP_DIR}"
 	trap cleanup EXIT INT TERM
 fi
@@ -188,18 +213,27 @@ run_tool_suite() {
 	local iterations="$3"
 	local out="${round_dir}/tool-${tool}.json"
 	log "round ${round}: tool ${tool} (${iterations} iterations, runs=${RUNS})"
+	local commands=(
+		--command-name "stock bun"
+		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts stock ${tool} ${iterations}"
+		--command-name "fast bun/native"
+		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts fast ${tool} ${iterations}"
+		--command-name "fast compiled/native"
+		"${ROOT_DIR}/bin/pi-tool-override-burst fast ${tool} ${iterations}"
+		--command-name "fast warm-daemon/native"
+		"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast ${tool} ${iterations}"
+	)
+	if [[ "${HAVE_ZIG_HELPERS}" == "1" && "${tool}" != "write" ]]; then
+		commands+=(
+			--command-name "fast compiled/zigcc-native"
+			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${tool} ${iterations}"
+		)
+	fi
 	hyperfine \
 		--shell=none \
 		"${HF_COMMON[@]}" \
 		--export-json "${out}" \
-		--command-name "stock bun" \
-		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts stock ${tool} ${iterations}" \
-		--command-name "fast bun/native" \
-		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts fast ${tool} ${iterations}" \
-		--command-name "fast compiled/native" \
-		"${ROOT_DIR}/bin/pi-tool-override-burst fast ${tool} ${iterations}" \
-		--command-name "fast warm-daemon/native" \
-		"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast ${tool} ${iterations}" \
+		"${commands[@]}" \
 		> "${round_dir}/tool-${tool}.log"
 }
 
@@ -207,16 +241,25 @@ run_stream_suite() {
 	local round_dir="$1"
 	local out="${round_dir}/stream-read.json"
 	log "round ${round}: stream read (${STREAM_ITERATIONS} iterations, runs=${RUNS})"
+	local commands=(
+		--command-name "stock stream bun"
+		"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts stock read ${STREAM_ITERATIONS}"
+		--command-name "fast stream bun/native"
+		"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts fast read ${STREAM_ITERATIONS}"
+		--command-name "fast stream compiled/native"
+		"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${STREAM_ITERATIONS}"
+	)
+	if [[ "${HAVE_ZIG_HELPERS}" == "1" ]]; then
+		commands+=(
+			--command-name "fast stream compiled/zigcc-native"
+			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc ${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${STREAM_ITERATIONS}"
+		)
+	fi
 	hyperfine \
 		--shell=none \
 		"${HF_COMMON[@]}" \
 		--export-json "${out}" \
-		--command-name "stock stream bun" \
-		"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts stock read ${STREAM_ITERATIONS}" \
-		--command-name "fast stream bun/native" \
-		"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts fast read ${STREAM_ITERATIONS}" \
-		--command-name "fast stream compiled/native" \
-		"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${STREAM_ITERATIONS}" \
+		"${commands[@]}" \
 		> "${round_dir}/stream-read.log"
 }
 
