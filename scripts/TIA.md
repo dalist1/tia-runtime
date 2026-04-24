@@ -58,6 +58,7 @@ bash scripts/install-tia.sh uninstall
 - uses a sandboxed pi agent dir
 - loads the fast-tools extension automatically
 - reuses your current shell agent auth/settings/models via symlinks refreshed at launch time
+- avoids self-linking the tia sandbox if `PI_CODING_AGENT_DIR` already points there, preserving shell pi / cliproxy linkage
 - preserves the current shell environment for provider/model login env vars
 - supports an opt-in slim stream runtime for `--mode json --no-session`
 - covers both startup and tool-runtime optimization in one launcher path

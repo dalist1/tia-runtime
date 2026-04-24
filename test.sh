@@ -28,6 +28,12 @@ PI_CODING_AGENT_DIR="${CUSTOM_AGENT_DIR}" tia pi --version >/dev/null
 [[ "$(readlink "${HOME}/.local/share/tia/pi-agent/auth.json")" == "${CUSTOM_AGENT_DIR}/auth.json" ]]
 [[ "$(readlink "${HOME}/.local/share/tia/pi-agent/models.json")" == "${CUSTOM_AGENT_DIR}/models.json" ]]
 [[ "$(readlink "${HOME}/.local/share/tia/pi-agent/settings.json")" == "${CUSTOM_AGENT_DIR}/settings.json" ]]
+if [[ -f "${HOME}/.pi/agent/auth.json" && -f "${HOME}/.pi/agent/models.json" && -f "${HOME}/.pi/agent/settings.json" ]]; then
+	PI_CODING_AGENT_DIR="${HOME}/.local/share/tia/pi-agent" tia pi --version >/dev/null
+	[[ "$(readlink "${HOME}/.local/share/tia/pi-agent/auth.json")" == "${HOME}/.pi/agent/auth.json" ]]
+	[[ "$(readlink "${HOME}/.local/share/tia/pi-agent/models.json")" == "${HOME}/.pi/agent/models.json" ]]
+	[[ "$(readlink "${HOME}/.local/share/tia/pi-agent/settings.json")" == "${HOME}/.pi/agent/settings.json" ]]
+fi
 
 printf '[4/9] verify tia pi does not touch sandbox history on startup\n'
 TIA_AGENT_DIR="${HOME}/.local/share/tia/pi-agent"

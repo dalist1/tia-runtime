@@ -54,6 +54,7 @@ This path is smoke-tested from outside the repo checkout.
   - sandboxed pi agent dir
   - fast-tools extension enabled
   - current shell environment preserved for provider/model login env vars
+  - auth/models/settings symlinks refreshed from the shell pi agent without self-linking the tia sandbox, preserving cliproxy model/provider linkage
 - combines runtime sandboxing with the pi fast path in one launcher
 
 ## Current benchmark highlights

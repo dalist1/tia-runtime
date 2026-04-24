@@ -125,6 +125,9 @@ install_pi_sandbox() {
 	fi
 	pi_bin_dir="$(dirname -- "${TIA_PI_BIN}")"
 	base_agent_dir="${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}"
+	if [[ "${base_agent_dir}" == "${TIA_PI_AGENT_DIR}" ]]; then
+		base_agent_dir="${HOME}/.pi/agent"
+	fi
 
 	bun build --compile "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
@@ -194,6 +197,9 @@ ensure_cliproxy_started() {
 
 refresh_shell_agent_links() {
   local shell_agent_dir="\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
+  if [[ "\${shell_agent_dir}" == "\${TIA_PI_AGENT_DIR}" ]]; then
+    shell_agent_dir="\${HOME}/.pi/agent"
+  fi
   mkdir -p "\${TIA_PI_AGENT_DIR}"
 
   for name in auth.json models.json settings.json; do
