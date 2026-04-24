@@ -202,6 +202,8 @@ TIA_DISABLE_FAST_STREAM=1 tia pi --mode json --no-session "Reply in five words."
 
 This path is intentionally optimized for speed over stock JSON event compatibility. It uses a compiled slim runner that calls pi's provider streaming layer directly, bypassing the full CLI, AgentSession, tools, extensions, skills, prompt templates, themes, and context-file discovery. Unsupported flags or sessionful JSON runs fall back to the normal compiled `tia pi` binary.
 
+Subagent guidance: do not force tool-using coding subagents through slim mode. Use full JSON pi for subagents that need tools or stock pi JSON events, optionally with `--no-session --no-skills --no-prompt-templates --no-themes --no-context-files`. Reserve slim mode for model-only stateless subagents that can consume compact `t` events.
+
 ## Release asset staging
 
 ```bash

@@ -84,6 +84,7 @@ bash scripts/install-tia.sh uninstall
 - Direct compiled `pi` remains useful as a benchmark reference, not as a separate supported mode.
 - The slim stream path is enabled by default for `--mode json --no-session`.
 - It calls pi's provider streaming layer directly and intentionally skips full CLI/session/resource/tool loading for speed; unsupported flags and sessionful JSON runs fall back to normal compiled `tia pi`.
+- Do not force tool-using coding subagents through slim mode; use full JSON pi for subagents that need tools or stock pi JSON events.
 - Set `TIA_DISABLE_FAST_STREAM=1` if you need to opt out.
 - Set `TIA_ENABLE_FFF=0` during install to skip FFF, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior.
 - `tia-runtime` does not add startup-time session/history cleanup logic.
