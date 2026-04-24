@@ -58,10 +58,12 @@ bash scripts/install-tia.sh uninstall
 - uses a sandboxed pi agent dir
 - loads the fast-tools extension automatically
 - installs low-level helper binaries for hot paths when building from a local checkout (`fastread-window`, `fastwrite`, `fastedit`, `fastdrain`, `fastcopy`)
+- installs the official FFF pi extension (`@ff-labs/pi-fff`) when available, defaulting to `PI_FFF_MODE=override` for FFF-backed `find`, `grep`, `multi_grep`, and `@` file autocomplete
 - reuses your current shell agent auth/settings/models via symlinks refreshed at launch time
 - avoids self-linking the tia sandbox if `PI_CODING_AGENT_DIR` already points there, preserving shell pi / cliproxy linkage
 - preserves the current shell environment for provider/model login env vars
 - supports an opt-in slim stream runtime for `--mode json --no-session`
+- keeps FFF frecency/history state in the tia sandbox under `~/.local/share/tia/pi-agent/fff`
 - covers both startup and tool-runtime optimization in one launcher path
 
 ## Benchmarks
@@ -82,5 +84,6 @@ bash scripts/install-tia.sh uninstall
 - Direct compiled `pi` remains useful as a benchmark reference, not as a separate supported mode.
 - The slim stream path is enabled by default for `--mode json --no-session`.
 - Set `TIA_DISABLE_FAST_STREAM=1` if you need to opt out.
+- Set `TIA_ENABLE_FFF=0` during install to skip FFF, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior.
 - `tia-runtime` does not add startup-time session/history cleanup logic.
 - Re-run the installer after updating pi.

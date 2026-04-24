@@ -11,7 +11,7 @@ cleanup() {
 trap cleanup EXIT
 
 printf '[1/9] install tia runtime\n'
-bash "${ROOT_DIR}/install.sh" >/dev/null
+TIA_ENABLE_FFF=0 bash "${ROOT_DIR}/install.sh" >/dev/null
 
 printf '[2/9] check tia status\n'
 tia status > "${TMP_DIR}/tia-status.txt"
@@ -87,6 +87,7 @@ mkdir -p "${TMP_DIR}/bootstrap-cwd"
 	XDG_DATA_HOME="${BOOTSTRAP_DATA_HOME}" \
 	INSTALL_BASE_URL="file://${ROOT_DIR}/scripts" \
 	PI_PACKAGE_DIR="${HOST_PI_PACKAGE_DIR}" \
+	TIA_ENABLE_FFF=0 \
 	bash -s -- tia install > "${TMP_DIR}/bootstrap-install.txt"
 )
 HOME="${BOOTSTRAP_HOME}" \

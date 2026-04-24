@@ -54,6 +54,7 @@ This path is smoke-tested from outside the repo checkout.
   - sandboxed pi agent dir
   - fast-tools extension enabled
   - low-level helper binaries installed under `~/.local/share/tia/pi-agent/fast-tools` when building from a local checkout (`fastread-window`, `fastwrite`, `fastedit`, `fastdrain`, `fastcopy`)
+  - FFF (`@ff-labs/pi-fff`) installed as a sandboxed pi extension when available, giving FFF-backed `find`/`grep`/`multi_grep` and `@` file autocomplete (default `PI_FFF_MODE=override`)
   - current shell environment preserved for provider/model login env vars
   - auth/models/settings symlinks refreshed from the shell pi agent without self-linking the tia sandbox, preserving cliproxy model/provider linkage
 - combines runtime sandboxing with the pi fast path in one launcher
@@ -94,6 +95,14 @@ The installed fast-tools extension now tries low-level helpers for every hot too
 - `write` → `fastwrite` with exact verification
 - `edit` → `fastedit` for single exact replacements, JS multi-edit fallback otherwise
 - `bash` optimized drain/copy paths → `fastdrain` and `fastcopy`
+
+The installer also attempts to add the official FFF pi extension:
+- `find`/`grep` are backed by FFF in the default `override` mode
+- `multi_grep` adds FFF multi-pattern content search
+- interactive `@` file autocomplete is fed by FFF's frecency-ranked index
+- state lives under `~/.local/share/tia/pi-agent/fff`
+
+Set `TIA_ENABLE_FFF=0` to skip installing it, `TIA_REQUIRE_FFF=1` to make installation failure fatal, `TIA_FFF_PACKAGE_VERSION=<version>` to pin a different package version, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change mode.
 
 Removed from active tool benchmarking and harness code:
 

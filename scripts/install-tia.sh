@@ -21,6 +21,9 @@ TIA_PI_STREAM_BIN="${TIA_ROOT}/bin/pi-stream-fast"
 TIA_PI_AGENT_DIR="${TIA_ROOT}/pi-agent"
 TIA_EXTENSION_PATH="${TIA_PI_AGENT_DIR}/extensions/fast-tools.ts"
 TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
+TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
+TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
+TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-0.6.4}"
 PACKAGE_NAME_PI="@mariozechner/pi-coding-agent"
 
 usage() {
@@ -134,6 +137,48 @@ install_fast_tool_helpers() {
 	fi
 }
 
+install_fff_extension() {
+	if [[ "${TIA_ENABLE_FFF:-1}" == "0" ]]; then
+		rm -rf "${TIA_FFF_EXTENSION_DIR}"
+		return 0
+	fi
+
+	mkdir -p "${TIA_FFF_EXTENSION_DIR}" "${TIA_FFF_STATE_DIR}"
+	cat > "${TIA_FFF_EXTENSION_DIR}/package.json" <<EOF2
+{
+  "name": "tia-pi-fff-extension",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ff-labs/pi-fff": "${TIA_FFF_PACKAGE_VERSION}",
+    "@ff-labs/fff-node": "${TIA_FFF_PACKAGE_VERSION}"
+  }
+}
+EOF2
+	cat > "${TIA_FFF_EXTENSION_DIR}/index.ts" <<'EOF2'
+export { default } from "@ff-labs/pi-fff/src/index.ts";
+EOF2
+
+	local install_log="${TIA_ROOT}/pi-fff-install.log"
+	: > "${install_log}"
+	if (cd "${TIA_FFF_EXTENSION_DIR}" && bun install --production --omit=peer >> "${install_log}" 2>&1); then
+		return 0
+	fi
+
+	if command -v npm >/dev/null 2>&1; then
+		rm -rf "${TIA_FFF_EXTENSION_DIR}/node_modules" "${TIA_FFF_EXTENSION_DIR}/bun.lock" "${TIA_FFF_EXTENSION_DIR}/package-lock.json"
+		if (cd "${TIA_FFF_EXTENSION_DIR}" && npm install --omit=dev --legacy-peer-deps >> "${install_log}" 2>&1); then
+			return 0
+		fi
+	fi
+
+	rm -rf "${TIA_FFF_EXTENSION_DIR}"
+	if [[ "${TIA_REQUIRE_FFF:-0}" == "1" ]]; then
+		die "FFF pi extension install failed (see ${install_log})"
+	fi
+	printf 'Warning: FFF pi extension was not installed (see %s). Set TIA_REQUIRE_FFF=1 to make this fatal, or TIA_ENABLE_FFF=0 to skip.\n' "${install_log}" >&2
+}
+
 install_pi_sandbox() {
 	need_cmd bun
 	mkdir -p "$(dirname -- "${TIA_PI_BIN}")" "$(dirname -- "${TIA_EXTENSION_PATH}")"
@@ -175,6 +220,7 @@ install_pi_sandbox() {
 	ln -sfn "${pi_package_dir}/examples" "${pi_bin_dir}/examples"
 	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
 	install_fast_tool_helpers
+	install_fff_extension
 
 	rm -f "${TIA_PI_AGENT_DIR}/auth.json" "${TIA_PI_AGENT_DIR}/models.json" "${TIA_PI_AGENT_DIR}/settings.json"
 	if [[ -f "${base_agent_dir}/auth.json" ]]; then
@@ -204,6 +250,7 @@ TIA_ROOT="${TIA_ROOT}"
 TIA_PI_BIN="${TIA_PI_BIN}"
 TIA_PI_STREAM_BIN="${TIA_PI_STREAM_BIN}"
 TIA_PI_AGENT_DIR="${TIA_PI_AGENT_DIR}"
+TIA_FFF_STATE_DIR="${TIA_FFF_STATE_DIR}"
 
 should_use_fast_stream() {
   [[ "\${TIA_DISABLE_FAST_STREAM:-0}" != "1" ]] || return 1
@@ -244,6 +291,31 @@ refresh_shell_agent_links() {
   done
 }
 
+configure_fff_env() {
+  mkdir -p "\${TIA_FFF_STATE_DIR}"
+  local arg prev="" cli_mode=""
+  for arg in "\$@"; do
+    if [[ "\${prev}" == "--fff-mode" ]]; then
+      cli_mode="\${arg}"
+      break
+    fi
+    case "\${arg}" in
+      --fff-mode=*)
+        cli_mode="\${arg#--fff-mode=}"
+        break
+        ;;
+    esac
+    prev="\${arg}"
+  done
+  if [[ -n "\${cli_mode}" ]]; then
+    export PI_FFF_MODE="\${cli_mode}"
+  else
+    export PI_FFF_MODE="\${PI_FFF_MODE:-override}"
+  fi
+  export FFF_FRECENCY_DB="\${FFF_FRECENCY_DB:-\${TIA_FFF_STATE_DIR}/frecency.sqlite}"
+  export FFF_HISTORY_DB="\${FFF_HISTORY_DB:-\${TIA_FFF_STATE_DIR}/history.sqlite}"
+}
+
 subcommand="\${1:-}"
 if [[ -z "\${subcommand}" ]]; then
   echo "Usage: tia {pi|status} [args...]" >&2
@@ -259,6 +331,7 @@ case "\${subcommand}" in
     }
     ensure_cliproxy_started
     refresh_shell_agent_links
+    configure_fff_env "\$@"
     export PI_CODING_AGENT_DIR="\${TIA_PI_AGENT_DIR}"
     export PI_PACKAGE_DIR="${TIA_ROOT}/bin"
     if should_use_fast_stream "\$@"; then
@@ -280,6 +353,12 @@ case "\${subcommand}" in
     echo "history mode:        \tunchanged by tia pi startup"
     echo "cliproxy auto-start:\tenabled for tia pi when systemd user services are available"
     echo "fast stream:         \tenabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)"
+    if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/index.ts" ]]; then
+      echo "fff extension:       \tenabled (default mode: \${PI_FFF_MODE:-override})"
+    else
+      echo "fff extension:       \tnot installed"
+    fi
+    echo "fff state:           \t\${TIA_FFF_STATE_DIR}"
     echo "pi package:          \t${TIA_ROOT}/bin"
     ;;
   *)
@@ -328,6 +407,12 @@ status_all() {
 	printf 'history mode:        unchanged by tia pi startup\n'
 	printf 'cliproxy auto-start: enabled for tia pi when systemd user services are available\n'
 	printf 'fast stream:         enabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)\n'
+	if [[ -f "${TIA_FFF_EXTENSION_DIR}/index.ts" ]]; then
+		printf 'fff extension:       enabled (default mode: %s)\n' "${PI_FFF_MODE:-override}"
+	else
+		printf 'fff extension:       not installed\n'
+	fi
+	printf 'fff state:           %s\n' "${TIA_FFF_STATE_DIR}"
 	printf 'pi package:          %s\n' "${TIA_ROOT}/bin"
 }
 
