@@ -20,17 +20,24 @@ bash "${ROOT_DIR}/bench/build-tool-fixtures.sh"
 bash "${ROOT_DIR}/bench/build-native.sh"
 bash "${ROOT_DIR}/bench/build-pi-tool-override-burst.sh"
 
+commands=(
+	--command-name "fast (compiled + native helpers)"
+	"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${READ_ITERATIONS}"
+)
+
+if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" ]]; then
+	commands+=(
+		--command-name "fast (compiled + zigcc helpers)"
+		"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc ${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${READ_ITERATIONS}"
+	)
+fi
+
 hyperfine \
 	--shell=none \
 	--warmup "${WARMUP}" \
 	--runs "${RUNS}" \
 	--export-json "${RESULT_DIR}/read.json" \
 	--export-markdown "${RESULT_DIR}/read.md" \
-	--command-name "stock (bun)" \
-	"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts stock read ${READ_ITERATIONS}" \
-	--command-name "fast (bun)" \
-	"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts fast read ${READ_ITERATIONS}" \
-	--command-name "fast (compiled)" \
-	"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${READ_ITERATIONS}"
+	"${commands[@]}"
 
-printf 'Wrote fast override streaming benchmark results to %s\n' "${RESULT_DIR}"
+printf 'Wrote retained fast override streaming benchmark results to %s\n' "${RESULT_DIR}"

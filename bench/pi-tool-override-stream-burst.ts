@@ -4,7 +4,6 @@ import { access, constants } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
-import { createReadTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/read.js";
 import { DEFAULT_MAX_LINES } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/truncate.js";
 
 function detectRootDir() {
@@ -23,8 +22,8 @@ const tool = process.argv[3];
 const iterations = Number(process.argv[4] ?? 20);
 const READ_PROGRESS_MIN_INTERVAL_MS = 120;
 
-if (!mode || !tool || !Number.isFinite(iterations) || iterations <= 0) {
-	throw new Error("Usage: pi-tool-override-stream-burst.ts <stock|fast> <tool> <iterations>");
+if (mode !== "fast" || !tool || !Number.isFinite(iterations) || iterations <= 0) {
+	throw new Error("Usage: pi-tool-override-stream-burst.ts fast <tool> <iterations>");
 }
 
 type UpdateStats = {
@@ -93,11 +92,6 @@ async function fastRead(pathArg: string, offset?: number, limit?: number, onUpda
 	return output;
 }
 
-async function stockRead(file: string, onUpdate?: OnUpdate) {
-	const tool = createReadTool(ROOT_DIR);
-	await tool.execute("stock-read", { path: file }, undefined as any, onUpdate as any);
-}
-
 await access(join(ROOT_DIR, "payloads"), constants.R_OK).catch(() => {
 	throw new Error("Missing payloads; run build-tool-fixtures.sh first");
 });
@@ -117,13 +111,7 @@ for (let i = 0; i < iterations; i += 1) {
 	const iterationStart = performance.now();
 	const stats: UpdateStats = { updates: 0, firstUpdateMs: null, observedBytes: 0 };
 	const onUpdate = makeUpdateTracker(iterationStart, stats);
-	if (mode === "stock") {
-		await stockRead(file, onUpdate);
-	} else if (mode === "fast") {
-		await fastRead(file, undefined, undefined, onUpdate);
-	} else {
-		throw new Error(`Unsupported mode: ${mode}`);
-	}
+	await fastRead(file, undefined, undefined, onUpdate);
 	if (stats.firstUpdateMs !== null) {
 		firstUpdateTotalMs += stats.firstUpdateMs;
 		iterationsWithUpdate += 1;

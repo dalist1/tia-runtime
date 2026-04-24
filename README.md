@@ -58,23 +58,51 @@ This path is smoke-tested from outside the repo checkout.
 
 ## Current benchmark highlights
 
-| Path | Workload | Speedup |
+Recent local feedback-loop runs show:
+
+| Path | Workload | Result |
 |---|---|---:|
-| `tia pi` | RPC startup (`get_state`) | **1.86x** |
-| compiled direct `pi` | RPC startup (`get_state`) | **1.98x** |
-| `tia pi` fast tools | `read` burst | **5.18x** |
-| `tia pi` fast tools | `read` streaming burst | **5.49x** |
-| `tia pi` fast tools | `edit` burst | **2.50x** |
-| `tia pi` fast tools | `bash` burst | **1.59x** |
+| `tia pi` | RPC startup (`get_state`) | about **1.9x** faster than stock `pi` |
+| retained tool path | `read` burst | about **2.1x** faster than stock in smoke loops |
+| retained tool path | `read` streaming burst | about **2.0x** faster than stock in smoke loops |
+| retained tool path | `edit` burst | about **2.1x** faster than stock in smoke loops |
+| retained tool path | verified `write` burst | about **1.5–1.6x** faster than stock in smoke loops |
+| retained tool path | `bash` drain/copy burst | about **1.9x** faster than stock in smoke loops |
 
 Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
-- benchmark highlights below currently focus on `tia pi`.
+- active feedback-loop candidates now focus on retained fast paths only.
+- the two slowest retired tool approaches are the stock Bun tool baseline and the Bun source-runner fast path.
 - `tia-runtime` does not add startup-time session/history cleanup logic.
 
 More detail:
 - `BENCHMARKS.md`
 - `scripts/TIA.md`
+
+## Retained fast paths
+
+The active tool-runtime loop now keeps only the approaches that remain useful:
+
+1. **compiled runner + native helpers** — default retained fast path.
+2. **compiled runner + Zig-built helpers** — measured candidate for read/stream/bash/edit helper binaries.
+3. **warm daemon + native helpers** — retained for repeated-call and verified-write workloads where amortizing startup can still win.
+
+Removed from active tool benchmarking and harness code:
+
+- **stock Bun tool baseline** — still useful historically, but too slow as an active candidate.
+- **Bun source-runner fast path** — slower than compiled runners and no longer worth carrying as a separate approach.
+
+## Write reliability
+
+Writes are now optimized for correctness first:
+
+- normal file writes use a same-directory temporary file followed by atomic rename
+- writes verify exact text after the temporary write and after final rename
+- symlink writes preserve the symlink and verify the target content
+- per-file mutation queues serialize concurrent writes/edits to the same path
+- mismatch errors include expected/got character counts, byte counts, and first mismatch location
+
+Reliability tests cover empty content, large content, CRLF, Unicode/emoji, markdown/code fences, JSON escaping, overwrite shrinking, nested paths, concurrent writes, and symlink-preserving writes.
 
 ## Testing
 
@@ -90,7 +118,7 @@ Run the low-level optimization checks only (includes exact write verification fo
 bash bench/test-low-level.sh
 ```
 
-Run the iterative speed/reliability feedback loop (defaults to 5 smoke rounds):
+Run the iterative speed/reliability feedback loop (defaults to 5 smoke rounds and compares only retained candidates):
 
 ```bash
 bash bench/feedback-loop.sh

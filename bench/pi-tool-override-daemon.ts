@@ -8,9 +8,6 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { createBashTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js";
-import { createEditTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/edit.js";
-import { createReadTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/read.js";
-import { createWriteTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/write.js";
 import { DEFAULT_MAX_LINES } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/truncate.js";
 
 function detectRootDir() {
@@ -53,8 +50,8 @@ type UpdateStats = {
 	observedBytes: number;
 };
 
-if (mode !== "stock" && mode !== "fast") {
-	throw new Error("Usage: pi-tool-override-daemon.ts <stock|fast>");
+if (mode !== "fast") {
+	throw new Error("Usage: pi-tool-override-daemon.ts fast");
 }
 
 const tempDir = () => {
@@ -165,52 +162,6 @@ async function fastEdit(templateFile: string, oldTextFile: string, newTextFile: 
 	}
 }
 
-async function stockRead(file: string, onUpdate?: OnUpdate) {
-	const tool = createReadTool(ROOT_DIR);
-	return await tool.execute("stock-read", { path: file }, undefined as any, onUpdate as any);
-}
-
-async function stockWrite(contentFile: string) {
-	const content = readFileSync(contentFile, "utf8");
-	const dir = tempDir();
-	try {
-		const tool = createWriteTool(dir);
-		await tool.execute("stock-write", { path: "out.txt", content }, undefined as any);
-		assertFileText(join(dir, "out.txt"), content);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-}
-
-async function stockEdit(templateFile: string, oldTextFile: string, newTextFile: string) {
-	const dir = tempDir();
-	try {
-		const targetFile = join(dir, "edit-target.txt");
-		writeFileSync(targetFile, readFileSync(templateFile, "utf8"), "utf8");
-		const tool = createEditTool(dir);
-		await tool.execute(
-			"stock-edit",
-			{
-				path: "edit-target.txt",
-				edits: [
-					{
-						oldText: readFileSync(oldTextFile, "utf8"),
-						newText: readFileSync(newTextFile, "utf8"),
-					},
-				],
-			},
-			undefined as any,
-		);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-}
-
-async function stockBash(command: string) {
-	const tool = createBashTool(ROOT_DIR);
-	await tool.execute("stock-bash", { command }, undefined as any, undefined);
-}
-
 async function tryOptimizedBash(command: string) {
 	const parts = command
 		.split("&&")
@@ -303,15 +254,8 @@ async function handleRequest(request: Request) {
 			const file = request.path ?? `${ROOT_DIR}/payloads/jsonl-5m.txt`;
 			const offset = request.offset;
 			const limit = request.limit;
-			let bytes = 0;
-			if (mode === "stock") {
-				const result = await stockRead(file, onUpdate);
-				const text = result?.content?.[0]?.text ?? "";
-				bytes = Buffer.byteLength(text, "utf8");
-			} else {
-				const text = await fastRead(file, offset, limit, onUpdate);
-				bytes = Buffer.byteLength(text, "utf8");
-			}
+			const text = await fastRead(file, offset, limit, onUpdate);
+			const bytes = Buffer.byteLength(text, "utf8");
 			output({
 				id,
 				ok: true,
@@ -328,8 +272,7 @@ async function handleRequest(request: Request) {
 
 		if (tool === "write") {
 			const contentFile = request.contentFile ?? `${ROOT_DIR}/payloads/blob-1m.txt`;
-			if (mode === "stock") await stockWrite(contentFile);
-			else await fastWrite(contentFile);
+			await fastWrite(contentFile);
 			output({ id, ok: true, tool, mode, elapsedMs: performance.now() - startedAt });
 			return;
 		}
@@ -338,8 +281,7 @@ async function handleRequest(request: Request) {
 			const templateFile = request.templateFile ?? `${ROOT_DIR}/payloads/lines-10k.txt`;
 			const oldTextFile = request.oldTextFile ?? `${ROOT_DIR}/payloads/edit-old.txt`;
 			const newTextFile = request.newTextFile ?? `${ROOT_DIR}/payloads/edit-new.txt`;
-			if (mode === "stock") await stockEdit(templateFile, oldTextFile, newTextFile);
-			else await fastEdit(templateFile, oldTextFile, newTextFile);
+			await fastEdit(templateFile, oldTextFile, newTextFile);
 			output({ id, ok: true, tool, mode, elapsedMs: performance.now() - startedAt });
 			return;
 		}
@@ -349,8 +291,7 @@ async function handleRequest(request: Request) {
 			const command =
 				request.command ??
 				`cat ${ROOT_DIR}/payloads/jsonl-5m.txt > /dev/null && cp ${ROOT_DIR}/payloads/jsonl-5m.txt ${copyPath} && rm ${copyPath}`;
-			if (mode === "stock") await stockBash(command);
-			else await fastBash(command);
+			await fastBash(command);
 			output({ id, ok: true, tool, mode, elapsedMs: performance.now() - startedAt });
 			return;
 		}

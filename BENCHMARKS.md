@@ -55,7 +55,8 @@ Defaults:
 - repeated `hyperfine` runs per round
 - correctness gates before benchmarking
 - score = mean latency penalized by variance and failures
-- top candidates: native helpers, compiled runner path, warm daemon transport, Zig-built helpers
+- retained candidates: compiled/native helpers, compiled/Zig-built helpers, and warm daemon/native helpers
+- retired slow approaches: stock Bun tool baseline and Bun source-runner fast path
 - `bench/feedback-loop.sh` auto-installs Zig locally via `scripts/install-zig.sh` unless `SETUP_ZIG=0`
 - Zig is treated as a measured candidate only when `zig` can build helper variants and beat the current native helpers in this same loop
 
@@ -67,7 +68,7 @@ For a heavier confirmation pass:
 TIER=full ROUNDS=5 bash bench/feedback-loop.sh
 ```
 
-Latest local 5-round Zig smoke check (`ROUNDS=5 RUNS=1 WARMUP=0 TIER=smoke`) found Zig-built helpers fastest on stream-read, bash, and read; gcc-built helpers remained fastest on edit/write. All compared candidates completed with 100% success in that run.
+Recent loops found the retained set alternating between compiled/native, compiled/Zig-built, and warm-daemon winners depending on workload. Verified writes now perform exact post-write content checks; any mismatch fails the run.
 
 ## How to reproduce
 
@@ -85,20 +86,19 @@ hyperfine --runs 4 --warmup 1 \
 bash bench/hyperfine-pi-tools-fast-burst.sh
 ```
 
-This now compares:
-- `stock (bun)`
-- `fast (bun + native helpers)`
+This now compares retained candidates only:
 - `fast (compiled + native helpers)`
+- `fast (compiled + zigcc helpers)` when Zig helpers are available
+- `fast (warm daemon + native helpers)`
 
 ### tia fast tools streaming
 ```bash
 bash bench/hyperfine-pi-tools-fast-stream.sh
 ```
 
-This now compares:
-- `stock (bun)`
-- `fast (bun + native helpers)`
+This now compares retained candidates only:
 - `fast (compiled + native helpers)`
+- `fast (compiled + zigcc helpers)` when Zig helpers are available
 
 ### tia fast tools persistent warm runner
 ```bash

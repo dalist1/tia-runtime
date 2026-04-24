@@ -8,9 +8,6 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { createBashTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js";
-import { createEditTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/edit.js";
-import { createReadTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/read.js";
-import { createWriteTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/write.js";
 import { DEFAULT_MAX_LINES } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/truncate.js";
 
 function detectRootDir() {
@@ -31,8 +28,8 @@ const mode = process.argv[2];
 const tool = process.argv[3];
 const iterations = Number(process.argv[4] ?? 20);
 
-if (!mode || !tool || !Number.isFinite(iterations) || iterations <= 0) {
-	throw new Error("Usage: pi-tool-override-burst.ts <stock|fast> <tool> <iterations>");
+if (mode !== "fast" || !tool || !Number.isFinite(iterations) || iterations <= 0) {
+	throw new Error("Usage: pi-tool-override-burst.ts fast <tool> <iterations>");
 }
 
 const tempDir = () => {
@@ -99,52 +96,6 @@ async function fastEdit(templateFile: string, oldTextFile: string, newTextFile: 
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
-}
-
-async function stockRead(file: string) {
-	const tool = createReadTool(ROOT_DIR);
-	await tool.execute("stock-read", { path: file }, undefined as any);
-}
-
-async function stockWrite(contentFile: string) {
-	const content = readFileSync(contentFile, "utf8");
-	const dir = tempDir();
-	try {
-		const tool = createWriteTool(dir);
-		await tool.execute("stock-write", { path: "out.txt", content }, undefined as any);
-		assertFileText(join(dir, "out.txt"), content);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-}
-
-async function stockEdit(templateFile: string, oldTextFile: string, newTextFile: string) {
-	const dir = tempDir();
-	try {
-		const targetFile = join(dir, "edit-target.txt");
-		writeFileSync(targetFile, readFileSync(templateFile, "utf8"), "utf8");
-		const tool = createEditTool(dir);
-		await tool.execute(
-			"stock-edit",
-			{
-				path: "edit-target.txt",
-				edits: [
-					{
-						oldText: readFileSync(oldTextFile, "utf8"),
-						newText: readFileSync(newTextFile, "utf8"),
-					},
-				],
-			},
-			undefined as any,
-		);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-}
-
-async function stockBash(command: string) {
-	const tool = createBashTool(ROOT_DIR);
-	await tool.execute("stock-bash", { command }, undefined as any, undefined);
 }
 
 async function runBinary(cmd: string, args: string[]) {
@@ -226,8 +177,7 @@ const run = async () => {
 	if (tool === "read") {
 		const file = `${ROOT_DIR}/payloads/jsonl-5m.txt`;
 		for (let i = 0; i < iterations; i += 1) {
-			if (mode === "stock") await stockRead(file);
-			else await fastRead(file);
+			await fastRead(file);
 		}
 		return;
 	}
@@ -235,8 +185,7 @@ const run = async () => {
 	if (tool === "write") {
 		const contentFile = `${ROOT_DIR}/payloads/blob-1m.txt`;
 		for (let i = 0; i < iterations; i += 1) {
-			if (mode === "stock") await stockWrite(contentFile);
-			else await fastWrite(contentFile);
+			await fastWrite(contentFile);
 		}
 		return;
 	}
@@ -246,8 +195,7 @@ const run = async () => {
 		const oldTextFile = `${ROOT_DIR}/payloads/edit-old.txt`;
 		const newTextFile = `${ROOT_DIR}/payloads/edit-new.txt`;
 		for (let i = 0; i < iterations; i += 1) {
-			if (mode === "stock") await stockEdit(templateFile, oldTextFile, newTextFile);
-			else await fastEdit(templateFile, oldTextFile, newTextFile);
+			await fastEdit(templateFile, oldTextFile, newTextFile);
 		}
 		return;
 	}
@@ -256,8 +204,7 @@ const run = async () => {
 		for (let i = 0; i < iterations; i += 1) {
 			const copyPath = `/tmp/pi-fast-tool-copy-${process.pid}-${Date.now()}-${i}`;
 			const command = `cat ${ROOT_DIR}/payloads/jsonl-5m.txt > /dev/null && cp ${ROOT_DIR}/payloads/jsonl-5m.txt ${copyPath} && rm ${copyPath}`;
-			if (mode === "stock") await stockBash(command);
-			else await fastBash(command);
+			await fastBash(command);
 		}
 		return;
 	}

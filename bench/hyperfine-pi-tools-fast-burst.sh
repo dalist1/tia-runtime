@@ -26,6 +26,19 @@ bash "${ROOT_DIR}/bench/build-pi-tool-override-burst.sh"
 run_suite() {
 	local name="$1"
 	local iterations="$2"
+	local commands=(
+		--command-name "fast (compiled + native helpers)"
+		"${ROOT_DIR}/bin/pi-tool-override-burst fast ${name} ${iterations}"
+		--command-name "fast (warm daemon + native helpers)"
+		"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast ${name} ${iterations}"
+	)
+
+	if [[ "${name}" != "write" && -x "${ROOT_DIR}/bin/fastread-window-zigcc" ]]; then
+		commands+=(
+			--command-name "fast (compiled + zigcc helpers)"
+			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${name} ${iterations}"
+		)
+	fi
 
 	hyperfine \
 		--shell=none \
@@ -33,15 +46,10 @@ run_suite() {
 		--runs "${RUNS}" \
 		--export-json "${RESULT_DIR}/${name}.json" \
 		--export-markdown "${RESULT_DIR}/${name}.md" \
-		--command-name "stock (bun)" \
-		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts stock ${name} ${iterations}" \
-		--command-name "fast (bun + native helpers)" \
-		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts fast ${name} ${iterations}" \
-		--command-name "fast (compiled + native helpers)" \
-		"${ROOT_DIR}/bin/pi-tool-override-burst fast ${name} ${iterations}"
+		"${commands[@]}"
 }
 
-printf 'Running fast override burst benchmarks into %s (runs=%s warmup=%s)\n' \
+printf 'Running retained fast override burst benchmarks into %s (runs=%s warmup=%s)\n' \
 	"${RESULT_DIR}" "${RUNS}" "${WARMUP}"
 
 run_suite "read" "${READ_ITERATIONS}"

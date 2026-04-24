@@ -132,21 +132,21 @@ config = {
     },
     "top_ideas": [
         {
-            "name": "native helpers for hot file paths",
-            "hypothesis": "C helpers for read/edit/drain/copy reduce JS runtime overhead and syscalls on IO-heavy tool calls.",
-        },
-        {
-            "name": "compiled runner path",
-            "hypothesis": "Bun --compile removes TypeScript/runtime startup overhead for cold tool bursts and tia startup paths.",
+            "name": "compiled runner + native helpers",
+            "hypothesis": "Compiled Bun runner plus native helper binaries is the default retained fast path.",
         },
         {
             "name": "warm daemon transport",
-            "hypothesis": "A persistent worker amortizes cold starts across repeated tool calls and should win when reliability stays at 100%.",
+            "hypothesis": "A persistent worker amortizes cold starts across repeated tool calls, especially verified-write loops.",
         },
         {
             "name": "Zig toolchain gate",
-            "hypothesis": "Build native helpers with Zig and only promote a Zig rewrite/toolchain path when this same loop proves it faster and at least as reliable; language choice alone is not treated as a guarantee.",
+            "hypothesis": "Build native helpers with Zig and only promote the Zig-built path when this same loop proves it faster and at least as reliable.",
         },
+    ],
+    "removed_approaches": [
+        "stock Bun tool baseline",
+        "Bun source-runner fast path",
     ],
 }
 with open(path, "w", encoding="utf-8") as f:
@@ -154,7 +154,7 @@ with open(path, "w", encoding="utf-8") as f:
 PY
 
 log "results: ${RESULT_DIR}"
-log "top active ideas: native helpers, compiled runner, warm daemon, zig-built helpers"
+log "retained ideas: compiled/native, warm daemon, zig-built helpers"
 log "zig status: ${ZIG_STATUS}"
 
 log "build fixtures, native helpers, compiled harnesses"
@@ -214,10 +214,6 @@ run_tool_suite() {
 	local out="${round_dir}/tool-${tool}.json"
 	log "round ${round}: tool ${tool} (${iterations} iterations, runs=${RUNS})"
 	local commands=(
-		--command-name "stock bun"
-		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts stock ${tool} ${iterations}"
-		--command-name "fast bun/native"
-		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts fast ${tool} ${iterations}"
 		--command-name "fast compiled/native"
 		"${ROOT_DIR}/bin/pi-tool-override-burst fast ${tool} ${iterations}"
 		--command-name "fast warm-daemon/native"
@@ -242,10 +238,6 @@ run_stream_suite() {
 	local out="${round_dir}/stream-read.json"
 	log "round ${round}: stream read (${STREAM_ITERATIONS} iterations, runs=${RUNS})"
 	local commands=(
-		--command-name "stock stream bun"
-		"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts stock read ${STREAM_ITERATIONS}"
-		--command-name "fast stream bun/native"
-		"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts fast read ${STREAM_ITERATIONS}"
 		--command-name "fast stream compiled/native"
 		"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${STREAM_ITERATIONS}"
 	)

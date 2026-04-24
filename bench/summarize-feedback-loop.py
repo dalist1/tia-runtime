@@ -36,8 +36,6 @@ def strategy_for(command: str) -> str:
         return "compiled runner + native helpers"
     if "tia pi rpc" in lower:
         return "tia compiled launcher"
-    if "bun/native" in lower or "bun + native" in lower or "bun+native" in lower:
-        return "bun fast path + native helpers"
     if "stream" in lower and "fast" in lower:
         return "native streaming read"
     return command
@@ -115,10 +113,11 @@ def finalize(suites: dict[str, dict[str, dict[str, Any]]], baselines: dict[str, 
             cv = sd / m if m and math.isfinite(m) else math.inf
             score = m * (1.0 + cv) / max(success_rate, 0.01)
             speedup = baseline_mean / m if m > 0 and math.isfinite(baseline_mean) else None
+            reference_baseline = is_baseline(baseline_name)
             row = {
                 "command": command,
                 "strategy": bucket["strategy"],
-                "is_baseline": command == baseline_name or is_baseline(command),
+                "is_baseline": reference_baseline and command == baseline_name,
                 "mean_s": m,
                 "mean_ms": m * 1000.0,
                 "stddev_s": sd,
@@ -132,7 +131,7 @@ def finalize(suites: dict[str, dict[str, dict[str, Any]]], baselines: dict[str, 
             rows.append(row)
 
         ranked = sorted(rows, key=lambda r: (r["score"], r["mean_s"]))
-        candidate_rows = [r for r in ranked if not r["is_baseline"] and r["success_rate"] >= 1.0]
+        candidate_rows = [r for r in ranked if r["success_rate"] >= 1.0]
         winner = candidate_rows[0] if candidate_rows else ranked[0]
         if winner:
             strategy = winner["strategy"]

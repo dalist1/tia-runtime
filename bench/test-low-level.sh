@@ -135,46 +135,56 @@ assert obj['firstResponseMs'] is not None
 assert obj['firstResponseMs'] >= 0
 PY
 
-printf '[low-level 9/12] benchmark compiled vs bun edit path\n'
+printf '[low-level 9/12] benchmark retained edit candidates\n'
+edit_commands=(
+	--command-name 'fast (compiled+native)'
+	"${ROOT_DIR}/bin/pi-tool-override-burst fast edit 12"
+)
+if [[ -x "${ROOT_DIR}/bin/fastedit-zigcc" ]]; then
+	edit_commands+=(
+		--command-name 'fast (compiled+zigcc)'
+		"env TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast edit 12"
+	)
+fi
 hyperfine \
 	--shell=none \
 	--warmup 1 \
 	--runs 4 \
 	--export-json "${TMP_DIR}/edit-bench.json" \
-	--command-name 'stock (bun)' \
-	"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts stock edit 12" \
-	--command-name 'fast (bun+native)' \
-	"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts fast edit 12" \
-	--command-name 'fast (compiled+native)' \
-	"${ROOT_DIR}/bin/pi-tool-override-burst fast edit 12" >/dev/null
+	"${edit_commands[@]}" >/dev/null
 python3 - <<'PY' "${TMP_DIR}/edit-bench.json"
 import json, sys
 with open(sys.argv[1], 'r', encoding='utf-8') as f:
     obj = json.load(f)
-results = {item['command']: item['mean'] for item in obj['results']}
-assert results['fast (bun+native)'] < results['stock (bun)']
-assert results['fast (compiled+native)'] < results['stock (bun)']
+for item in obj['results']:
+    assert item['mean'] > 0
+    assert all(code == 0 for code in item.get('exit_codes', []))
 PY
 
-printf '[low-level 10/12] benchmark compiled + native bash path\n'
+printf '[low-level 10/12] benchmark retained bash candidates\n'
+bash_commands=(
+	--command-name 'fast (compiled+native)'
+	"${ROOT_DIR}/bin/pi-tool-override-burst fast bash 8"
+)
+if [[ -x "${ROOT_DIR}/bin/fastdrain-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" ]]; then
+	bash_commands+=(
+		--command-name 'fast (compiled+zigcc)'
+		"env TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast bash 8"
+	)
+fi
 hyperfine \
 	--shell=none \
 	--warmup 1 \
 	--runs 4 \
 	--export-json "${TMP_DIR}/bash-bench.json" \
-	--command-name 'stock (bun)' \
-	"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts stock bash 8" \
-	--command-name 'fast (bun+native)' \
-	"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts fast bash 8" \
-	--command-name 'fast (compiled+native)' \
-	"${ROOT_DIR}/bin/pi-tool-override-burst fast bash 8" >/dev/null
+	"${bash_commands[@]}" >/dev/null
 python3 - <<'PY' "${TMP_DIR}/bash-bench.json"
 import json, sys
 with open(sys.argv[1], 'r', encoding='utf-8') as f:
     obj = json.load(f)
-results = {item['command']: item['mean'] for item in obj['results']}
-assert results['fast (bun+native)'] < results['stock (bun)']
-assert results['fast (compiled+native)'] < results['stock (bun)']
+for item in obj['results']:
+    assert item['mean'] > 0
+    assert all(code == 0 for code in item.get('exit_codes', []))
 PY
 
 printf '[low-level 11/12] benchmark warm daemon vs cold spawn\n'
@@ -195,26 +205,30 @@ results = {item['command']: item['mean'] for item in obj['results']}
 assert results['fast (compiled warm daemon + native helpers)'] < results['fast (compiled cold spawn-per-request)']
 PY
 
-printf '[low-level 12/12] benchmark compiled streaming path emits results\n'
+printf '[low-level 12/12] benchmark retained streaming candidates emit results\n'
+stream_commands=(
+	--command-name 'fast (compiled+native)'
+	"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read 8"
+)
+if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" ]]; then
+	stream_commands+=(
+		--command-name 'fast (compiled+zigcc)'
+		"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc ${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read 8"
+	)
+fi
 hyperfine \
 	--shell=none \
 	--warmup 1 \
 	--runs 3 \
 	--export-json "${TMP_DIR}/stream-bench.json" \
-	--command-name 'stock (bun)' \
-	"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts stock read 8" \
-	--command-name 'fast (bun+native)' \
-	"bun ${ROOT_DIR}/bench/pi-tool-override-stream-burst.ts fast read 8" \
-	--command-name 'fast (compiled+native)' \
-	"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read 8" >/dev/null
+	"${stream_commands[@]}" >/dev/null
 python3 - <<'PY' "${TMP_DIR}/stream-bench.json"
 import json, sys
 with open(sys.argv[1], 'r', encoding='utf-8') as f:
     obj = json.load(f)
-results = {item['command']: item['mean'] for item in obj['results']}
-assert list(results) == ['stock (bun)', 'fast (bun+native)', 'fast (compiled+native)']
-assert results['fast (bun+native)'] < results['stock (bun)']
-assert results['fast (compiled+native)'] < results['stock (bun)']
+for item in obj['results']:
+    assert item['mean'] > 0
+    assert all(code == 0 for code in item.get('exit_codes', []))
 PY
 
 bash "${ROOT_DIR}/bench/cleanup-processes.sh" >/dev/null

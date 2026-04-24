@@ -18,8 +18,8 @@ const mode = process.argv[3];
 const tool = process.argv[4];
 const iterations = Number(process.argv[5] ?? 20);
 
-if ((transport !== "spawn" && transport !== "daemon") || (mode !== "stock" && mode !== "fast") || !tool) {
-	throw new Error("Usage: pi-tool-request-loop.ts <spawn|daemon> <stock|fast> <tool> <iterations>");
+if ((transport !== "spawn" && transport !== "daemon") || mode !== "fast" || !tool) {
+	throw new Error("Usage: pi-tool-request-loop.ts <spawn|daemon> fast <tool> <iterations>");
 }
 
 if (!Number.isFinite(iterations) || iterations <= 0) {
