@@ -33,10 +33,10 @@ run_suite() {
 		"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast ${name} ${iterations}"
 	)
 
-	if [[ "${name}" != "write" && -x "${ROOT_DIR}/bin/fastread-window-zigcc" ]]; then
+	if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastdrain-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" && -x "${ROOT_DIR}/bin/fastwrite-zigcc" ]]; then
 		commands+=(
 			--command-name "fast (compiled + zigcc helpers)"
-			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${name} ${iterations}"
+			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc TIA_FASTWRITE_BIN=${ROOT_DIR}/bin/fastwrite-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${name} ${iterations}"
 		)
 	fi
 

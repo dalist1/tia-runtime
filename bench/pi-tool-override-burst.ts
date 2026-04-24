@@ -1,6 +1,6 @@
 process.env.PI_PACKAGE_DIR ??= "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent";
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { access, constants } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -24,6 +24,7 @@ const FASTREAD_BIN = process.env.TIA_FASTREAD_BIN ?? `${ROOT_DIR}/bin/fastread-w
 const FASTEDIT_BIN = process.env.TIA_FASTEDIT_BIN ?? `${ROOT_DIR}/bin/fastedit`;
 const FASTDRAIN_BIN = process.env.TIA_FASTDRAIN_BIN ?? `${ROOT_DIR}/bin/fastdrain`;
 const FASTCOPY_BIN = process.env.TIA_FASTCOPY_BIN ?? `${ROOT_DIR}/bin/fastcopy`;
+const FASTWRITE_BIN = process.env.TIA_FASTWRITE_BIN ?? `${ROOT_DIR}/bin/fastwrite`;
 const mode = process.argv[2];
 const tool = process.argv[3];
 const iterations = Number(process.argv[4] ?? 20);
@@ -80,7 +81,11 @@ async function fastWrite(contentFile: string) {
 		const content = readFileSync(contentFile, "utf8");
 		const targetFile = join(dir, "out.txt");
 		mkdirSync(dirname(targetFile), { recursive: true });
-		await Bun.write(targetFile, content);
+		if (existsSync(FASTWRITE_BIN)) {
+			await runBinaryWithInput(FASTWRITE_BIN, [targetFile], content);
+		} else {
+			await Bun.write(targetFile, content);
+		}
 		assertFileText(targetFile, content);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
@@ -96,6 +101,20 @@ async function fastEdit(templateFile: string, oldTextFile: string, newTextFile: 
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+}
+
+async function runBinaryWithInput(cmd: string, args: string[], input: string) {
+	const proc = Bun.spawn([cmd, ...args], {
+		cwd: ROOT_DIR,
+		stdin: "pipe",
+		stdout: "ignore",
+		stderr: "pipe",
+	});
+	const stderrPromise = new Response(proc.stderr).text();
+	await proc.stdin.write(input);
+	proc.stdin.end();
+	const [stderrText, exitCode] = await Promise.all([stderrPromise, proc.exited]);
+	if (exitCode !== 0) throw new Error(stderrText.trim() || `${cmd} exited with code ${exitCode}`);
 }
 
 async function runBinary(cmd: string, args: string[]) {

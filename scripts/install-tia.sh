@@ -20,6 +20,7 @@ TIA_PI_BIN="${TIA_ROOT}/bin/pi"
 TIA_PI_STREAM_BIN="${TIA_ROOT}/bin/pi-stream-fast"
 TIA_PI_AGENT_DIR="${TIA_ROOT}/pi-agent"
 TIA_EXTENSION_PATH="${TIA_PI_AGENT_DIR}/extensions/fast-tools.ts"
+TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 PACKAGE_NAME_PI="@mariozechner/pi-coding-agent"
 
 usage() {
@@ -101,6 +102,38 @@ find_pi_package_dir() {
 	return 1
 }
 
+
+install_fast_tool_helpers() {
+	mkdir -p "${TIA_FAST_TOOLS_DIR}"
+
+	local helper_names="fastdrain fastedit fastread-window fastcopy fastwrite"
+	local built_any=0
+	local helper
+
+	if [[ -d "${ROOT_DIR}/native" ]] && command -v gcc >/dev/null 2>&1; then
+		for helper in ${helper_names}; do
+			[[ -f "${ROOT_DIR}/native/${helper}.c" ]] || continue
+			gcc -O3 -pipe -march=native -s \
+				-o "${TIA_FAST_TOOLS_DIR}/${helper}" \
+				"${ROOT_DIR}/native/${helper}.c"
+			built_any=1
+		done
+	elif [[ -d "${ROOT_DIR}/bin" ]]; then
+		for helper in ${helper_names}; do
+			if [[ -x "${ROOT_DIR}/bin/${helper}" ]]; then
+				cp "${ROOT_DIR}/bin/${helper}" "${TIA_FAST_TOOLS_DIR}/${helper}"
+				built_any=1
+			fi
+		done
+	fi
+
+	if [[ "${built_any}" == "1" ]]; then
+		chmod +x "${TIA_FAST_TOOLS_DIR}"/* 2>/dev/null || true
+	elif [[ "${TIA_REQUIRE_FAST_HELPERS:-0}" == "1" ]]; then
+		die "native fast-tool helpers were not installed"
+	fi
+}
+
 install_pi_sandbox() {
 	need_cmd bun
 	mkdir -p "$(dirname -- "${TIA_PI_BIN}")" "$(dirname -- "${TIA_EXTENSION_PATH}")"
@@ -141,6 +174,7 @@ install_pi_sandbox() {
 	ln -sfn "${pi_package_dir}/docs" "${pi_bin_dir}/docs"
 	ln -sfn "${pi_package_dir}/examples" "${pi_bin_dir}/examples"
 	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
+	install_fast_tool_helpers
 
 	rm -f "${TIA_PI_AGENT_DIR}/auth.json" "${TIA_PI_AGENT_DIR}/models.json" "${TIA_PI_AGENT_DIR}/settings.json"
 	if [[ -f "${base_agent_dir}/auth.json" ]]; then

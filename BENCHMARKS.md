@@ -56,6 +56,7 @@ Defaults:
 - correctness gates before benchmarking
 - score = mean latency penalized by variance and failures
 - retained candidates: compiled/native helpers, compiled/Zig-built helpers, and warm daemon/native helpers
+- native helper coverage now includes read, verified write, edit, and optimized bash drain/copy paths
 - retired slow approaches: stock Bun tool baseline and Bun source-runner fast path
 - `bench/feedback-loop.sh` auto-installs Zig locally via `scripts/install-zig.sh` unless `SETUP_ZIG=0`
 - Zig is treated as a measured candidate only when `zig` can build helper variants and beat the current native helpers in this same loop

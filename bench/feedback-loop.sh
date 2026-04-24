@@ -162,7 +162,7 @@ bash "${ROOT_DIR}/bench/build-tool-fixtures.sh" >/dev/null
 bash "${ROOT_DIR}/bench/build-native.sh" >/dev/null
 bash "${ROOT_DIR}/bench/build-pi-tool-override-burst.sh" >/dev/null
 HAVE_ZIG_HELPERS=0
-if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastdrain-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" ]]; then
+if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastdrain-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" && -x "${ROOT_DIR}/bin/fastwrite-zigcc" ]]; then
 	HAVE_ZIG_HELPERS=1
 	log "zig helper candidate: enabled (zig cc built native helpers)"
 else
@@ -219,10 +219,10 @@ run_tool_suite() {
 		--command-name "fast warm-daemon/native"
 		"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast ${tool} ${iterations}"
 	)
-	if [[ "${HAVE_ZIG_HELPERS}" == "1" && "${tool}" != "write" ]]; then
+	if [[ "${HAVE_ZIG_HELPERS}" == "1" ]]; then
 		commands+=(
 			--command-name "fast compiled/zigcc-native"
-			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${tool} ${iterations}"
+			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc TIA_FASTWRITE_BIN=${ROOT_DIR}/bin/fastwrite-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${tool} ${iterations}"
 		)
 	fi
 	hyperfine \

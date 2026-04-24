@@ -1,6 +1,6 @@
 import { createReadStream, existsSync, lstatSync, mkdirSync, renameSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { Type } from "@sinclair/typebox";
 import {
@@ -15,6 +15,9 @@ import {
 const FAST_TOOLS_DIR = join(getAgentDir(), "fast-tools");
 const FASTDRAIN_BIN = join(FAST_TOOLS_DIR, "fastdrain");
 const FASTCOPY_BIN = join(FAST_TOOLS_DIR, "fastcopy");
+const FASTREAD_BIN = join(FAST_TOOLS_DIR, "fastread-window");
+const FASTEDIT_BIN = join(FAST_TOOLS_DIR, "fastedit");
+const FASTWRITE_BIN = join(FAST_TOOLS_DIR, "fastwrite");
 const READ_PROGRESS_MIN_LINES = 128;
 const READ_PROGRESS_MIN_BYTES = 8 * 1024;
 const READ_PROGRESS_MIN_INTERVAL_MS = 120;
@@ -167,6 +170,84 @@ function isSymlink(path: string) {
   }
 }
 
+async function runBinaryCapture(
+  cmd: string,
+  args: string[],
+  onChunk?: (chunk: Uint8Array) => void,
+) {
+  const proc = Bun.spawn([cmd, ...args], { stdout: "pipe", stderr: "pipe" });
+  const stderrPromise = new Response(proc.stderr).text();
+  const reader = proc.stdout.getReader();
+  const chunks: Uint8Array[] = [];
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    onChunk?.(value);
+  }
+
+  const stderrText = await stderrPromise;
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(stderrText.trim() || `${cmd} exited with code ${exitCode}`);
+  }
+
+  return new Blob(chunks).text();
+}
+
+async function runBinaryWithInput(cmd: string, args: string[], input: string) {
+  const proc = Bun.spawn([cmd, ...args], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  const stdoutPromise = new Response(proc.stdout).text();
+  const stderrPromise = new Response(proc.stderr).text();
+  await proc.stdin.write(input);
+  proc.stdin.end();
+  const [stdoutText, stderrText, exitCode] = await Promise.all([
+    stdoutPromise,
+    stderrPromise,
+    proc.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(stderrText.trim() || `${cmd} exited with code ${exitCode}`);
+  }
+  return stdoutText;
+}
+
+async function fastReadNative(
+  absolutePath: string,
+  startLine: number,
+  maxLines: number,
+  onUpdate?: ToolUpdateFn,
+) {
+  let output = "";
+  let lastProgressAt = 0;
+  let lastProgressBytes = 0;
+  const decoder = new TextDecoder();
+  return runBinaryCapture(
+    FASTREAD_BIN,
+    [absolutePath, String(startLine), String(maxLines)],
+    (chunk) => {
+      output += decoder.decode(chunk, { stream: true });
+      if (!onUpdate || output.length === 0) return;
+      const now = Date.now();
+      if (
+        output.length - lastProgressBytes < READ_PROGRESS_MIN_BYTES &&
+        now - lastProgressAt < READ_PROGRESS_MIN_INTERVAL_MS
+      ) {
+        return;
+      }
+      lastProgressAt = now;
+      lastProgressBytes = output.length;
+      emitTextUpdate(onUpdate, output);
+    },
+  ).then((text) => {
+    if (onUpdate && text.length > 0 && text.length !== lastProgressBytes) {
+      emitTextUpdate(onUpdate, text);
+    }
+    return { content: [{ type: "text", text }], details: undefined };
+  });
+}
+
 async function fastRead(
   cwd: string,
   pathArg: string,
@@ -180,6 +261,9 @@ async function fastRead(
   const absolutePath = resolvePath(cwd, pathArg);
   const startLine = Math.max(1, offset ?? 1);
   const maxLines = limit ?? DEFAULT_MAX_LINES;
+  if (existsSync(FASTREAD_BIN)) {
+    return fastReadNative(absolutePath, startLine, maxLines, onUpdate);
+  }
   let currentLine = 1;
   let output = "";
   let outputLines = 0;
@@ -325,7 +409,11 @@ async function fastWrite(cwd: string, pathArg: string, content: string, signal?:
     ensureNotAborted(signal);
     mkdirSync(dirname(absolutePath), { recursive: true });
 
-    if (isSymlink(absolutePath)) {
+    if (existsSync(FASTWRITE_BIN)) {
+      await runBinaryWithInput(FASTWRITE_BIN, [absolutePath], content);
+      ensureNotAborted(signal);
+      await verifyWrittenText(absolutePath, pathArg, content, "native write");
+    } else if (isSymlink(absolutePath)) {
       await Bun.write(absolutePath, content);
       ensureNotAborted(signal);
       await verifyWrittenText(absolutePath, pathArg, content, "symlink-preserving write");
@@ -390,6 +478,23 @@ async function fastEdit(
 
   return withFileMutationQueue(absolutePath, async () => {
     ensureNotAborted(signal);
+    if (existsSync(FASTEDIT_BIN) && edits.length === 1) {
+      const oldTextPath = join(tmpdir(), `tia-fastedit-old-${process.pid}-${randomUUID()}`);
+      const newTextPath = join(tmpdir(), `tia-fastedit-new-${process.pid}-${randomUUID()}`);
+      try {
+        await Bun.write(oldTextPath, edits[0].oldText);
+        await Bun.write(newTextPath, edits[0].newText);
+        await runBinary(FASTEDIT_BIN, [absolutePath, oldTextPath, newTextPath]);
+        return {
+          content: [{ type: "text", text: `Successfully replaced 1 block(s) in ${pathArg}.` }],
+          details: undefined,
+        };
+      } finally {
+        rmSync(oldTextPath, { force: true });
+        rmSync(newTextPath, { force: true });
+      }
+    }
+
     const content = await Bun.file(absolutePath).text();
     ensureNotAborted(signal);
 

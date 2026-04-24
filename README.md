@@ -53,6 +53,7 @@ This path is smoke-tested from outside the repo checkout.
   - compiled pi startup path
   - sandboxed pi agent dir
   - fast-tools extension enabled
+  - low-level helper binaries installed under `~/.local/share/tia/pi-agent/fast-tools` when building from a local checkout (`fastread-window`, `fastwrite`, `fastedit`, `fastdrain`, `fastcopy`)
   - current shell environment preserved for provider/model login env vars
   - auth/models/settings symlinks refreshed from the shell pi agent without self-linking the tia sandbox, preserving cliproxy model/provider linkage
 - combines runtime sandboxing with the pi fast path in one launcher
@@ -85,8 +86,14 @@ More detail:
 The active tool-runtime loop now keeps only the approaches that remain useful:
 
 1. **compiled runner + native helpers** — default retained fast path.
-2. **compiled runner + Zig-built helpers** — measured candidate for read/stream/bash/edit helper binaries.
+2. **compiled runner + Zig-built helpers** — measured candidate for read/stream/bash/edit/write helper binaries.
 3. **warm daemon + native helpers** — retained for repeated-call and verified-write workloads where amortizing startup can still win.
+
+The installed fast-tools extension now tries low-level helpers for every hot tool path:
+- `read` → `fastread-window`
+- `write` → `fastwrite` with exact verification
+- `edit` → `fastedit` for single exact replacements, JS multi-edit fallback otherwise
+- `bash` optimized drain/copy paths → `fastdrain` and `fastcopy`
 
 Removed from active tool benchmarking and harness code:
 

@@ -57,6 +57,7 @@ bash scripts/install-tia.sh uninstall
 - uses a sandboxed compiled pi binary
 - uses a sandboxed pi agent dir
 - loads the fast-tools extension automatically
+- installs low-level helper binaries for hot paths when building from a local checkout (`fastread-window`, `fastwrite`, `fastedit`, `fastdrain`, `fastcopy`)
 - reuses your current shell agent auth/settings/models via symlinks refreshed at launch time
 - avoids self-linking the tia sandbox if `PI_CODING_AGENT_DIR` already points there, preserving shell pi / cliproxy linkage
 - preserves the current shell environment for provider/model login env vars

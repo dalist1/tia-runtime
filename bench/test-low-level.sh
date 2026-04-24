@@ -66,8 +66,13 @@ with open(sys.argv[1], 'r', encoding='utf-8') as f:
 assert text.startswith('line-4500\nline-4501\nline-4502\n')
 assert 'Use offset=4504 to continue.' in text
 PY
+printf 'native write exactness ✓\n' > "${TMP_DIR}/fastwrite-expected.txt"
+"${ROOT_DIR}/bin/fastwrite" "${TMP_DIR}/fastwrite-target.txt" \
+	< "${TMP_DIR}/fastwrite-expected.txt" > "${TMP_DIR}/fastwrite.json"
+assert_json_field_eq "${TMP_DIR}/fastwrite.json" "ok" "True"
+cmp -s "${TMP_DIR}/fastwrite-expected.txt" "${TMP_DIR}/fastwrite-target.txt"
 
-if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" ]]; then
+if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" && -x "${ROOT_DIR}/bin/fastwrite-zigcc" ]]; then
 	printf '[low-level zig] verify zig-built native helpers\n'
 	"${ROOT_DIR}/bin/fastread-window-zigcc" "${ROOT_DIR}/payloads/lines-10k.txt" 4501 3 > "${TMP_DIR}/fastread-zig-slice.txt"
 	cmp -s "${TMP_DIR}/fastread-slice.txt" "${TMP_DIR}/fastread-zig-slice.txt"
@@ -76,6 +81,10 @@ if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit
 		"${TMP_DIR}/copy/zig-copied.txt" > "${TMP_DIR}/fastcopy-zig.json"
 	assert_json_field_eq "${TMP_DIR}/fastcopy-zig.json" "ok" "True"
 	cmp -s "${ROOT_DIR}/payloads/tiny.txt" "${TMP_DIR}/copy/zig-copied.txt"
+	"${ROOT_DIR}/bin/fastwrite-zigcc" "${TMP_DIR}/fastwrite-zig-target.txt" \
+		< "${TMP_DIR}/fastwrite-expected.txt" > "${TMP_DIR}/fastwrite-zig.json"
+	assert_json_field_eq "${TMP_DIR}/fastwrite-zig.json" "ok" "True"
+	cmp -s "${TMP_DIR}/fastwrite-expected.txt" "${TMP_DIR}/fastwrite-zig-target.txt"
 	cp "${ROOT_DIR}/payloads/lines-10k.txt" "${TMP_DIR}/edit-zig-target.txt"
 	"${ROOT_DIR}/bin/fastedit-zigcc" \
 		"${TMP_DIR}/edit-zig-target.txt" \

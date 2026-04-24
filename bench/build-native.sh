@@ -28,12 +28,12 @@ build_zigcc() {
 		"${ROOT_DIR}/native/${name}.c"
 }
 
-for name in fastdrain fastedit fastread-window fastcopy; do
+for name in fastdrain fastedit fastread-window fastcopy fastwrite; do
 	build_gcc "${name}"
 done
 
 if command -v zig >/dev/null 2>&1; then
-	for name in fastdrain fastedit fastread-window fastcopy; do
+	for name in fastdrain fastedit fastread-window fastcopy fastwrite; do
 		build_zigcc "${name}"
 	done
 	printf 'Built native helpers with gcc and zig cc in %s/bin\n' "${ROOT_DIR}"
