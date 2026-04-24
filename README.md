@@ -200,7 +200,7 @@ Opt out only if needed:
 TIA_DISABLE_FAST_STREAM=1 tia pi --mode json --no-session "Reply in five words."
 ```
 
-This path is intentionally optimized for speed over stock JSON event compatibility.
+This path is intentionally optimized for speed over stock JSON event compatibility. It uses a compiled slim runner that calls pi's provider streaming layer directly, bypassing the full CLI, AgentSession, tools, extensions, skills, prompt templates, themes, and context-file discovery. Unsupported flags or sessionful JSON runs fall back to the normal compiled `tia pi` binary.
 
 ## Release asset staging
 

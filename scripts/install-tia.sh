@@ -209,6 +209,15 @@ install_pi_sandbox() {
 
 	bun build --compile "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
+	python3 - "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}" <<'PY'
+import sys
+path, package_dir = sys.argv[1], sys.argv[2]
+with open(path, 'r', encoding='utf-8') as f:
+    data = f.read()
+data = data.replace('__PI_PACKAGE_DIR__', package_dir)
+with open(path, 'w', encoding='utf-8') as f:
+    f.write(data)
+PY
 	bun build --compile "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}"
 	ln -sfn "${pi_package_dir}/dist/modes/interactive/theme" "${pi_bin_dir}/theme"
 	ln -sfn "${pi_package_dir}/dist/modes/interactive/assets" "${pi_bin_dir}/assets"
@@ -254,19 +263,51 @@ TIA_FFF_STATE_DIR="${TIA_FFF_STATE_DIR}"
 
 should_use_fast_stream() {
   [[ "\${TIA_DISABLE_FAST_STREAM:-0}" != "1" ]] || return 1
-  local arg prev=""
+  local arg expect=""
   local has_json=0
   local has_rpc=0
+  local has_no_session=0
   for arg in "\$@"; do
-    if [[ "\${arg}" == "json" && "\${prev}" == "--mode" ]]; then
-      has_json=1
+    if [[ -n "\${expect}" ]]; then
+      case "\${expect}" in
+        mode)
+          [[ "\${arg}" == "json" ]] && has_json=1
+          [[ "\${arg}" == "rpc" ]] && has_rpc=1
+          ;;
+      esac
+      expect=""
+      continue
     fi
-    if [[ "\${arg}" == "rpc" && "\${prev}" == "--mode" ]]; then
-      has_rpc=1
-    fi
-    prev="\${arg}"
+
+    case "\${arg}" in
+      --mode)
+        expect="mode"
+        ;;
+      --mode=json)
+        has_json=1
+        ;;
+      --mode=rpc)
+        has_rpc=1
+        ;;
+      --no-session)
+        has_no_session=1
+        ;;
+      --provider|--model|--thinking)
+        expect="value"
+        ;;
+      --provider=*|--model=*|--thinking=*)
+        ;;
+      --no-extensions|--no-skills|--no-prompt-templates|--no-themes|--no-tools|--no-context-files|--print|-p)
+        ;;
+      --*)
+        return 1
+        ;;
+      @*)
+        return 1
+        ;;
+    esac
   done
-  [[ "\${has_json}" == "1" && "\${has_rpc}" != "1" ]]
+  [[ -z "\${expect}" && "\${has_json}" == "1" && "\${has_no_session}" == "1" && "\${has_rpc}" != "1" ]]
 }
 
 ensure_cliproxy_started() {
