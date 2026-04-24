@@ -2,9 +2,10 @@
   "name": "tia",
   "private": true,
   "scripts": {
-    "lint": "oxlint scripts/*.ts --deny-warnings",
-    "format": "oxfmt --check scripts/*.ts package.json",
-    "format:write": "oxfmt --write scripts/*.ts package.json"
+    "bench:feedback": "bash bench/feedback-loop.sh",
+    "lint": "oxlint -c .oxlintrc.json scripts/*.ts --deny-warnings",
+    "format": "oxfmt --check scripts/*.ts package.json .oxlintrc.json",
+    "format:write": "oxfmt --write scripts/*.ts package.json .oxlintrc.json"
   },
   "devDependencies": {
     "oxfmt": "latest",

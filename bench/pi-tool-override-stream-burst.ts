@@ -1,22 +1,25 @@
 process.env.PI_PACKAGE_DIR ??= "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent";
 
-import { createReadStream } from "node:fs";
 import { access, constants } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
 import { createReadTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/read.js";
-import {
-	DEFAULT_MAX_BYTES,
-	DEFAULT_MAX_LINES,
-	formatSize,
-} from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/truncate.js";
+import { DEFAULT_MAX_LINES } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/truncate.js";
 
-const ROOT_DIR = "/home/frensiqatipi1/bun-stdin-bench";
+function detectRootDir() {
+	if (process.env.TIA_BENCH_ROOT_DIR) return resolve(process.env.TIA_BENCH_ROOT_DIR);
+	const moduleDir = dirname(fileURLToPath(import.meta.url));
+	if (basename(moduleDir) === "bench") return dirname(moduleDir);
+	const executableDir = dirname(process.execPath);
+	if (basename(executableDir) === "bin") return dirname(executableDir);
+	return process.cwd();
+}
+
+const ROOT_DIR = detectRootDir();
 const mode = process.argv[2];
 const tool = process.argv[3];
 const iterations = Number(process.argv[4] ?? 20);
-const READ_PROGRESS_MIN_LINES = 128;
-const READ_PROGRESS_MIN_BYTES = 8 * 1024;
 const READ_PROGRESS_MIN_INTERVAL_MS = 120;
 
 if (!mode || !tool || !Number.isFinite(iterations) || iterations <= 0) {
@@ -46,92 +49,46 @@ async function fastRead(pathArg: string, offset?: number, limit?: number, onUpda
 	const absolutePath = resolve(ROOT_DIR, pathArg);
 	const startLine = Math.max(1, offset ?? 1);
 	const maxLines = limit ?? DEFAULT_MAX_LINES;
-	let currentLine = 1;
+	const proc = Bun.spawn([`${ROOT_DIR}/bin/fastread-window`, absolutePath, String(startLine), String(maxLines)], {
+		cwd: ROOT_DIR,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const stderrPromise = new Response(proc.stderr).text();
+	const reader = proc.stdout.getReader();
+	const decoder = new TextDecoder();
 	let output = "";
-	let outputLines = 0;
-	let outputBytes = 0;
-	let carry = "";
 	let lastProgressAt = 0;
-	let lastProgressLines = 0;
 	let lastProgressBytes = 0;
 
-	const maybeEmitProgress = (force = false) => {
-		if (!onUpdate || outputLines === 0) {
-			return;
+	while (true) {
+		const { value, done } = await reader.read();
+		if (done) {
+			output += decoder.decode();
+			break;
+		}
+		output += decoder.decode(value, { stream: true });
+		if (!onUpdate || output.length === 0) {
+			continue;
 		}
 		const now = Date.now();
-		if (
-			!force &&
-			outputLines - lastProgressLines < READ_PROGRESS_MIN_LINES &&
-			outputBytes - lastProgressBytes < READ_PROGRESS_MIN_BYTES &&
-			now - lastProgressAt < READ_PROGRESS_MIN_INTERVAL_MS
-		) {
-			return;
+		if (output.length - lastProgressBytes < 8 * 1024 && now - lastProgressAt < READ_PROGRESS_MIN_INTERVAL_MS) {
+			continue;
 		}
 		lastProgressAt = now;
-		lastProgressLines = outputLines;
-		lastProgressBytes = outputBytes;
+		lastProgressBytes = output.length;
 		onUpdate({ content: [{ type: "text", text: output }] });
-	};
-
-	const appendLine = (line: string) => {
-		if (currentLine >= startLine) {
-			if (outputLines >= maxLines) {
-				return output;
-			}
-
-			const nextBytes = Buffer.byteLength(line, "utf8");
-			if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
-				if (outputLines === 0) {
-					return `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit.]`;
-				}
-				return output;
-			}
-
-			output += line;
-			outputLines += 1;
-			outputBytes += nextBytes;
-			maybeEmitProgress();
-		}
-
-		currentLine += 1;
-		return null;
-	};
-
-	for await (const chunk of createReadStream(absolutePath, { encoding: "utf8", highWaterMark: 64 * 1024 })) {
-		const combined = carry + chunk;
-		let lineStart = 0;
-
-		while (true) {
-			const newlineIndex = combined.indexOf("\n", lineStart);
-			if (newlineIndex === -1) {
-				carry = combined.slice(lineStart);
-				break;
-			}
-
-			const line = combined.slice(lineStart, newlineIndex + 1);
-			const result = appendLine(line);
-			if (result !== null) {
-				return result;
-			}
-
-			lineStart = newlineIndex + 1;
-		}
 	}
 
-	if (carry && currentLine >= startLine) {
-		const nextBytes = Buffer.byteLength(carry, "utf8");
-		if (outputLines === 0 && nextBytes > DEFAULT_MAX_BYTES) {
-			return `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit.]`;
-		}
-		if (outputBytes + nextBytes <= DEFAULT_MAX_BYTES && outputLines < maxLines) {
-			output += carry;
-			outputLines += 1;
-			outputBytes += nextBytes;
-			maybeEmitProgress(true);
-		}
+	if (onUpdate && output.length > 0 && output.length !== lastProgressBytes) {
+		onUpdate({ content: [{ type: "text", text: output }] });
 	}
 
+	const stderrText = await stderrPromise;
+	const exitCode = await proc.exited;
+	if (exitCode !== 0) {
+		throw new Error(stderrText.trim() || `fastread-window exited with code ${exitCode}`);
+	}
 	return output;
 }
 

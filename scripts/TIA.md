@@ -6,12 +6,10 @@ Supported tia runtime subcommands from this project are:
 
 ```bash
 tia pi
-tia opencode
 ```
 
 Today:
 - `tia pi` combines compiled startup improvements, sandboxed runtime wiring, and fast tool overrides
-- `tia opencode` adds sandboxed runtime wiring for opencode using tia-managed XDG directories
 
 ## Install
 
@@ -64,12 +62,6 @@ bash scripts/install-tia.sh uninstall
 - supports an opt-in slim stream runtime for `--mode json --no-session`
 - covers both startup and tool-runtime optimization in one launcher path
 
-### `tia opencode`
-- runs your installed `opencode` command via the tia launcher
-- uses tia-managed XDG wrapper dirs that point back to your shell opencode dirs
-- preserves the exact same shell opencode config/data/cache/state contents, including auth and session databases
-- preserves the current shell environment for provider/model login env vars
-
 ## Benchmarks
 
 ### `tia pi`
@@ -85,9 +77,8 @@ bash scripts/install-tia.sh uninstall
 ## Notes
 
 - `tia pi` remains the benchmarked performance path today.
-- `tia opencode` currently focuses on exact credential/session preservation rather than a separate benchmark fast path.
 - Direct compiled `pi` remains useful as a benchmark reference, not as a separate supported mode.
 - The slim stream path is enabled by default for `--mode json --no-session`.
 - Set `TIA_DISABLE_FAST_STREAM=1` if you need to opt out.
 - `tia-runtime` does not add startup-time session/history cleanup logic.
-- Re-run the installer after updating pi or opencode.
+- Re-run the installer after updating pi.

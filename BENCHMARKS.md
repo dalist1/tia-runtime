@@ -18,7 +18,6 @@ These are the latest benchmark highlights from the tia research harness.
 
 Supported user-facing tia runtime subcommands from this project are:
 - `tia pi`
-- `tia opencode`
 
 `pi` compiled direct remains a benchmark reference, not a separate supported install mode.
 Current benchmark results below focus on `tia pi`.
@@ -43,15 +42,39 @@ Current benchmark results below focus on `tia pi`.
 - `results-pi-tools-persistent-smoke/edit.md`
 - `results-pi-tools-persistent-smoke/bash.md`
 
+## Feedback-loop harness
+
+Use the feedback loop when comparing optimization ideas across both speed and reliability:
+
+```bash
+bash bench/feedback-loop.sh
+```
+
+Defaults:
+- 5 smoke rounds
+- repeated `hyperfine` runs per round
+- correctness gates before benchmarking
+- score = mean latency penalized by variance and failures
+- top candidates: native helpers, compiled runner path, warm daemon transport
+- Zig is treated as an optional candidate only when `zig` is available and can beat the current native helpers in this same loop
+
+Results are written under `results-feedback-loop/<run-id>/summary.md` and `summary.json`.
+
+For a heavier confirmation pass:
+
+```bash
+TIER=full ROUNDS=5 bash bench/feedback-loop.sh
+```
+
 ## How to reproduce
 
 ### tia pi startup
 ```bash
 hyperfine --runs 4 --warmup 1 \
   --command-name 'pi original rpc' \
-  'pi-node --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes < ./payloads-rpc/empty.get-state.jsonl' \
+  'env -u PI_PACKAGE_DIR -u PI_CODING_AGENT_DIR ANTHROPIC_API_KEY=dummy pi-node --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes < ./payloads-rpc/empty.get-state.jsonl' \
   --command-name 'tia pi rpc' \
-  'tia pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes < ./payloads-rpc/empty.get-state.jsonl'
+  'env -u PI_PACKAGE_DIR ANTHROPIC_API_KEY=dummy tia pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes < ./payloads-rpc/empty.get-state.jsonl'
 ```
 
 ### tia fast tools burst

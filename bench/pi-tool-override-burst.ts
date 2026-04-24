@@ -1,22 +1,28 @@
 process.env.PI_PACKAGE_DIR ??= "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent";
 
-import { createReadStream, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { access, constants } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { createBashTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/bash.js";
 import { createEditTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/edit.js";
 import { createReadTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/read.js";
 import { createWriteTool } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/write.js";
-import {
-	DEFAULT_MAX_BYTES,
-	DEFAULT_MAX_LINES,
-	formatSize,
-} from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/truncate.js";
+import { DEFAULT_MAX_LINES } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/truncate.js";
 
-const ROOT_DIR = "/home/frensiqatipi1/bun-stdin-bench";
+function detectRootDir() {
+	if (process.env.TIA_BENCH_ROOT_DIR) return resolve(process.env.TIA_BENCH_ROOT_DIR);
+	const moduleDir = dirname(fileURLToPath(import.meta.url));
+	if (basename(moduleDir) === "bench") return dirname(moduleDir);
+	const executableDir = dirname(process.execPath);
+	if (basename(executableDir) === "bin") return dirname(executableDir);
+	return process.cwd();
+}
+
+const ROOT_DIR = detectRootDir();
 const mode = process.argv[2];
 const tool = process.argv[3];
 const iterations = Number(process.argv[4] ?? 20);
@@ -31,71 +37,31 @@ const tempDir = () => {
 	return dir;
 };
 
+async function runBinaryCapture(cmd: string, args: string[]) {
+	const proc = Bun.spawn([cmd, ...args], {
+		cwd: ROOT_DIR,
+		stdout: "pipe",
+		stderr: "pipe",
+	});
+	const [stdoutText, stderrText, exitCode] = await Promise.all([
+		new Response(proc.stdout).text(),
+		new Response(proc.stderr).text(),
+		proc.exited,
+	]);
+	if (exitCode !== 0) {
+		throw new Error(stderrText.trim() || `${cmd} exited with code ${exitCode}`);
+	}
+	return stdoutText;
+}
+
 async function fastRead(pathArg: string, offset?: number, limit?: number) {
 	const absolutePath = resolve(ROOT_DIR, pathArg);
 	const startLine = Math.max(1, offset ?? 1);
 	const maxLines = limit ?? DEFAULT_MAX_LINES;
-	let currentLine = 1;
-	let output = "";
-	let outputLines = 0;
-	let outputBytes = 0;
-	let carry = "";
-
-	const appendLine = (line: string) => {
-		if (currentLine >= startLine) {
-			if (outputLines >= maxLines) {
-				return output;
-			}
-
-			const nextBytes = Buffer.byteLength(line, "utf8");
-			if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
-				if (outputLines === 0) {
-					return `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit.]`;
-				}
-				return output;
-			}
-
-			output += line;
-			outputLines += 1;
-			outputBytes += nextBytes;
-		}
-
-		currentLine += 1;
-		return null;
-	};
-
-	for await (const chunk of createReadStream(absolutePath, { encoding: "utf8", highWaterMark: 64 * 1024 })) {
-		const combined = carry + chunk;
-		let lineStart = 0;
-
-		while (true) {
-			const newlineIndex = combined.indexOf("\n", lineStart);
-			if (newlineIndex === -1) {
-				carry = combined.slice(lineStart);
-				break;
-			}
-
-			const line = combined.slice(lineStart, newlineIndex + 1);
-			const result = appendLine(line);
-			if (result !== null) {
-				return result;
-			}
-
-			lineStart = newlineIndex + 1;
-		}
+	if (startLine >= 1 && maxLines >= 1) {
+		return await runBinaryCapture(`${ROOT_DIR}/bin/fastread-window`, [absolutePath, String(startLine), String(maxLines)]);
 	}
-
-	if (carry && currentLine >= startLine) {
-		const nextBytes = Buffer.byteLength(carry, "utf8");
-		if (outputLines === 0 && nextBytes > DEFAULT_MAX_BYTES) {
-			return `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit.]`;
-		}
-		if (outputBytes + nextBytes <= DEFAULT_MAX_BYTES && outputLines < maxLines) {
-			output += carry;
-		}
-	}
-
-	return output;
+	return await runBinaryCapture(`${ROOT_DIR}/bin/fastread-window`, [absolutePath, "1", String(DEFAULT_MAX_LINES)]);
 }
 
 async function fastWrite(contentFile: string) {
@@ -114,14 +80,7 @@ async function fastEdit(templateFile: string, oldTextFile: string, newTextFile: 
 	try {
 		const targetFile = join(dir, "edit-target.txt");
 		writeFileSync(targetFile, readFileSync(templateFile, "utf8"), "utf8");
-		const oldText = readFileSync(oldTextFile, "utf8");
-		const newText = readFileSync(newTextFile, "utf8");
-		const content = await Bun.file(targetFile).text();
-		const firstIndex = content.indexOf(oldText);
-		if (firstIndex === -1) throw new Error("oldText not found");
-		const secondIndex = content.indexOf(oldText, firstIndex + oldText.length);
-		if (secondIndex !== -1) throw new Error("oldText not unique");
-		await Bun.write(targetFile, content.slice(0, firstIndex) + newText + content.slice(firstIndex + oldText.length));
+		await runBinary(`${ROOT_DIR}/bin/fastedit`, [targetFile, oldTextFile, newTextFile]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -153,8 +112,12 @@ async function stockEdit(templateFile: string, oldTextFile: string, newTextFile:
 			"stock-edit",
 			{
 				path: "edit-target.txt",
-				oldText: readFileSync(oldTextFile, "utf8"),
-				newText: readFileSync(newTextFile, "utf8"),
+				edits: [
+					{
+						oldText: readFileSync(oldTextFile, "utf8"),
+						newText: readFileSync(newTextFile, "utf8"),
+					},
+				],
 			},
 			undefined as any,
 		);
@@ -206,7 +169,7 @@ async function tryOptimizedBash(command: string) {
 			const dst = resolve(ROOT_DIR, cpMatch[2]);
 			actions.push(async () => {
 				mkdirSync(dirname(dst), { recursive: true });
-				await Bun.write(dst, Bun.file(src));
+				await runBinary(`${ROOT_DIR}/bin/fastcopy`, [src, dst]);
 			});
 			continue;
 		}

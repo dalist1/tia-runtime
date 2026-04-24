@@ -5,9 +5,7 @@ Private research repo for **tia-runtime**, the Terminal Interactive Agents runti
 Goal:
 - make terminal coding agents faster without patching upstream agent codebases
 - keep the fast path simple and sandboxed
-- expose user-facing tia runtime subcommands from this project:
-  - `tia pi`
-  - `tia opencode`
+- expose the user-facing `tia pi` runtime from this project
 
 Reference baselines still exist for comparison:
 - stock/native `pi`
@@ -25,7 +23,6 @@ Then use:
 
 ```bash
 tia pi
-tia opencode
 tia status
 ```
 
@@ -57,10 +54,6 @@ This path is smoke-tested from outside the repo checkout.
   - sandboxed pi agent dir
   - fast-tools extension enabled
   - current shell environment preserved for provider/model login env vars
-- runs `tia opencode` with:
-  - tia-managed XDG wrapper dirs
-  - the shell opencode config/data/cache/state directories linked in at launch time
-  - the exact same opencode credentials, session database, login state, and shell env vars preserved
 - combines runtime sandboxing with the pi fast path in one launcher
 
 ## Current benchmark highlights
@@ -77,7 +70,6 @@ This path is smoke-tested from outside the repo checkout.
 Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
 - benchmark highlights below currently focus on `tia pi`.
-- `tia opencode` currently focuses on preserving the exact same shell credentials/session wiring rather than a separate benchmark fast path.
 - `tia-runtime` does not add startup-time session/history cleanup logic.
 
 More detail:
@@ -98,6 +90,18 @@ Run the low-level optimization checks only:
 bash bench/test-low-level.sh
 ```
 
+Run the iterative speed/reliability feedback loop (defaults to 5 smoke rounds):
+
+```bash
+bash bench/feedback-loop.sh
+```
+
+For a heavier confirmation pass:
+
+```bash
+TIER=full ROUNDS=5 bash bench/feedback-loop.sh
+```
+
 ## Linting and formatting
 
 ```bash
@@ -110,7 +114,6 @@ bun run format:write
 What it covers:
 - local `tia` install/status
 - `tia pi` shell-agent link refresh
-- `tia opencode` exact credential/session dir linking and env preservation when `opencode` is installed
 - rejection of deprecated top-level modes
 - `tia pi` RPC health
 - real curl/bootstrap install from outside the repo checkout
@@ -121,6 +124,7 @@ What it covers:
 ## Main benchmark commands
 
 ```bash
+bash bench/feedback-loop.sh
 bash bench/hyperfine-tia-pi.sh
 bash bench/hyperfine-pi-rpc-direct.sh
 bash bench/hyperfine-pi-tools-fast-burst.sh
@@ -155,5 +159,4 @@ This writes clearly named `tia-*` files into `release-assets/`.
 ## Notes
 
 - `tia pi` is the strongest performance-focused path today.
-- `tia opencode` adds the same tia-style sandbox launcher flow for opencode.
 - Generated payloads, benchmark results, release-assets, compiled binaries, and `node_modules` are gitignored.

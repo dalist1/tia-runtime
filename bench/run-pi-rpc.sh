@@ -7,6 +7,8 @@ PI_CLI="/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-co
 TIMEOUT_SECONDS="${PI_RPC_TIMEOUT_SECONDS:-20}"
 
 export PI_SKIP_VERSION_CHECK=1
+export PI_PACKAGE_DIR="$(cd -- "$(dirname -- "${PI_CLI}")/.." && pwd)"
+unset PI_CODING_AGENT_DIR
 
 exec timeout "${TIMEOUT_SECONDS}s" \
 	bun "${PI_CLI}" \

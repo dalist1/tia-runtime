@@ -3,13 +3,12 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-RESULT_DIR="${RESULT_DIR:-${ROOT_DIR}/results-pi-tools-fast-burst-smoke}"
+RESULT_DIR="${RESULT_DIR:-${ROOT_DIR}/results-pi-tools-persistent-smoke}"
 RUNS="${RUNS:-6}"
 WARMUP="${WARMUP:-1}"
-READ_ITERATIONS="${READ_ITERATIONS:-60}"
-WRITE_ITERATIONS="${WRITE_ITERATIONS:-25}"
-EDIT_ITERATIONS="${EDIT_ITERATIONS:-30}"
-BASH_ITERATIONS="${BASH_ITERATIONS:-20}"
+READ_ITERATIONS="${READ_ITERATIONS:-20}"
+EDIT_ITERATIONS="${EDIT_ITERATIONS:-12}"
+BASH_ITERATIONS="${BASH_ITERATIONS:-8}"
 
 mkdir -p "${RESULT_DIR}"
 
@@ -33,20 +32,17 @@ run_suite() {
 		--runs "${RUNS}" \
 		--export-json "${RESULT_DIR}/${name}.json" \
 		--export-markdown "${RESULT_DIR}/${name}.md" \
-		--command-name "stock (bun)" \
-		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts stock ${name} ${iterations}" \
-		--command-name "fast (bun + native helpers)" \
-		"bun ${ROOT_DIR}/bench/pi-tool-override-burst.ts fast ${name} ${iterations}" \
-		--command-name "fast (compiled + native helpers)" \
-		"${ROOT_DIR}/bin/pi-tool-override-burst fast ${name} ${iterations}"
+		--command-name "fast (compiled cold spawn-per-request)" \
+		"${ROOT_DIR}/bin/pi-tool-request-loop spawn fast ${name} ${iterations}" \
+		--command-name "fast (compiled warm daemon + native helpers)" \
+		"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast ${name} ${iterations}"
 }
 
-printf 'Running fast override burst benchmarks into %s (runs=%s warmup=%s)\n' \
+printf 'Running persistent tool benchmarks into %s (runs=%s warmup=%s)\n' \
 	"${RESULT_DIR}" "${RUNS}" "${WARMUP}"
 
 run_suite "read" "${READ_ITERATIONS}"
-run_suite "write" "${WRITE_ITERATIONS}"
 run_suite "edit" "${EDIT_ITERATIONS}"
 run_suite "bash" "${BASH_ITERATIONS}"
 
-printf 'Wrote fast override burst benchmark results to %s\n' "${RESULT_DIR}"
+printf 'Wrote persistent tool benchmark results to %s\n' "${RESULT_DIR}"

@@ -8,11 +8,12 @@ RPC_PAYLOAD_DIR="${ROOT_DIR}/payloads-rpc"
 
 mkdir -p "${PAYLOAD_DIR}" "${RPC_PAYLOAD_DIR}"
 
-python3 - <<'PY'
-from pathlib import Path
+TIA_BENCH_ROOT_DIR="${ROOT_DIR}" python3 - <<'PY'
 import json
+import os
+from pathlib import Path
 
-root = Path("/home/frensiqatipi1/bun-stdin-bench")
+root = Path(os.environ["TIA_BENCH_ROOT_DIR"])
 payload_dir = root / "payloads"
 rpc_payload_dir = root / "payloads-rpc"
 payload_dir.mkdir(parents=True, exist_ok=True)

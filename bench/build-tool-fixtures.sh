@@ -6,10 +6,11 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PAYLOAD_DIR="${ROOT_DIR}/payloads"
 mkdir -p "${PAYLOAD_DIR}"
 
-python3 - <<'PY'
+TIA_BENCH_ROOT_DIR="${ROOT_DIR}" python3 - <<'PY'
+import os
 from pathlib import Path
 
-root = Path("/home/frensiqatipi1/bun-stdin-bench")
+root = Path(os.environ["TIA_BENCH_ROOT_DIR"])
 payload_dir = root / "payloads"
 payload_dir.mkdir(parents=True, exist_ok=True)
 

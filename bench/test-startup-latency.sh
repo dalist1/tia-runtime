@@ -1,12 +1,10 @@
 #!/usr/bin/env bash
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# Universal startup latency tests — works with pi, opencode,
-# or both.  Auto-detects which agents are installed and runs
-# the appropriate REAL tests for each.  Nothing is mocked.
+# Startup latency tests for the supported tia pi runtime.
+# Auto-detects pi and runs REAL tests. Nothing is mocked.
 #
 # pi tests:      real tia pi / stock pi via --mode rpc
-# opencode tests: real tia opencode / stock opencode via CLI
 # native tests:  always run (agent-agnostic)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -17,14 +15,12 @@ TMP_DIR="$(mktemp -d)"
 
 # ── Agent detection ──────────────────────────────────────────
 HAS_PI=0
-HAS_OPENCODE=0
 HAS_TIA=0
 if command -v pi >/dev/null 2>&1; then HAS_PI=1; fi
-if command -v opencode >/dev/null 2>&1; then HAS_OPENCODE=1; fi
 if command -v tia >/dev/null 2>&1; then HAS_TIA=1; fi
 
-if [[ "${HAS_PI}" == "0" && "${HAS_OPENCODE}" == "0" ]]; then
-	printf 'SKIP: no agents found (need pi or opencode on PATH)\n' >&2
+if [[ "${HAS_PI}" == "0" ]]; then
+	printf 'SKIP: pi not found on PATH\n' >&2
 	exit 0
 fi
 
@@ -64,11 +60,6 @@ count_steps() {
 		# pi: 6 rpc + 1 rpc-startup-cmp + 1 version + 2 compiled + 1 daemon
 		#   + 1 hyperfine rpc + 1 daemon amort + 1 hyperfine bash = 14
 		TOTAL=$((TOTAL + 14))
-	fi
-	if [[ "${HAS_OPENCODE}" == "1" ]]; then
-		# opencode: 1 tia-oc-startup + 1 stock-oc-startup + 1 oc-debug-paths
-		#   + 1 oc-session-list + 1 hyperfine-oc = 5
-		TOTAL=$((TOTAL + 5))
 	fi
 }
 count_steps
@@ -396,91 +387,6 @@ PY
 fi  # end HAS_PI
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# OPENCODE AGENT TESTS (skipped if opencode not installed)
-# All tests go through the REAL opencode binary via its CLI.
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-if [[ "${HAS_OPENCODE}" == "1" ]]; then
-
-	OC_BUDGET_MS=8000
-
-	# ── Real tia opencode startup via debug paths ─────────────
-	# This exercises: tia wrapper -> refresh_shell_opencode_links
-	# -> XDG var export -> exec opencode -> config/db loading ->
-	# real output of sandboxed paths.
-	step "real tia opencode startup (debug paths)"
-	if [[ "${HAS_TIA}" == "1" ]]; then
-		ms="$(time_real_cmd "${TMP_DIR}/tia-oc-paths.txt" tia opencode debug paths)"
-		assert_latency_under_ms "tia-opencode-debug-paths" "${ms}" "${OC_BUDGET_MS}"
-		assert_file_not_empty "${TMP_DIR}/tia-oc-paths.txt"
-		# Verify real sandboxed paths appear in output (not stock paths).
-		assert_file_contains "${TMP_DIR}/tia-oc-paths.txt" "tia/opencode"
-	else
-		printf 'skipped (tia not on PATH)\n'
-	fi
-
-	# ── Real stock opencode startup via debug paths ───────────
-	step "real stock opencode startup (debug paths)"
-	ms_stock_oc="$(time_real_cmd "${TMP_DIR}/stock-oc-paths.txt" opencode debug paths)"
-	assert_latency_under_ms "stock-opencode-debug-paths" "${ms_stock_oc}" "${OC_BUDGET_MS}"
-	assert_file_not_empty "${TMP_DIR}/stock-oc-paths.txt"
-	# Stock paths should NOT contain tia sandbox.
-	python3 - <<'PY' "${TMP_DIR}/stock-oc-paths.txt"
-import sys
-with open(sys.argv[1]) as f: text = f.read()
-assert 'data' in text.lower() or 'config' in text.lower(), "Expected path labels in output"
-PY
-
-	# ── Real tia opencode debug config ────────────────────────
-	# Verifies config loading through the full tia sandbox path.
-	step "real tia opencode config loading (debug config)"
-	if [[ "${HAS_TIA}" == "1" ]]; then
-		ms="$(time_real_cmd "${TMP_DIR}/tia-oc-config.txt" tia opencode debug config)"
-		assert_latency_under_ms "tia-opencode-debug-config" "${ms}" "${OC_BUDGET_MS}"
-		assert_file_not_empty "${TMP_DIR}/tia-oc-config.txt"
-	else
-		printf 'skipped (tia not on PATH)\n'
-	fi
-
-	# ── Real opencode session list ────────────────────────────
-	# Verifies the real SQLite database connection works and
-	# the session manager initializes.
-	step "real opencode session database (session list)"
-	ms="$(time_real_cmd "${TMP_DIR}/oc-session-list.txt" opencode session list)"
-	assert_latency_under_ms "opencode-session-list" "${ms}" "${OC_BUDGET_MS}"
-	# Output should contain either session rows or a header.
-	assert_file_not_empty "${TMP_DIR}/oc-session-list.txt"
-
-	# ── Hyperfine: tia opencode vs stock opencode ─────────────
-	step "hyperfine: real tia opencode vs stock opencode startup"
-	if [[ "${HAS_TIA}" == "1" ]]; then
-		hyperfine --shell=none --warmup 1 --runs 3 \
-			--export-json "${TMP_DIR}/oc-startup-bench.json" \
-			--command-name 'stock opencode' \
-			"opencode debug paths" \
-			--command-name 'tia opencode' \
-			"tia opencode debug paths" \
-			>/dev/null
-		python3 - <<'PY' "${TMP_DIR}/oc-startup-bench.json"
-import json, sys
-with open(sys.argv[1]) as f: obj = json.load(f)
-results = {r['command']: r['mean'] for r in obj['results']}
-stock = results['stock opencode']
-tia = results['tia opencode']
-for r in obj['results']:
-    for c in r.get('exit_codes', []):
-        assert c == 0, f"FAIL {r['command']}: exit code {c}"
-print(f"  stock opencode: {stock*1000:.0f}ms")
-print(f"  tia opencode:   {tia*1000:.0f}ms")
-print(f"  ratio:          {stock/tia:.2f}x")
-PY
-	else
-		printf 'skipped (tia not on PATH)\n'
-	fi
-
-fi  # end HAS_OPENCODE
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # UNIVERSAL: Hyperfine native binary micro-benchmarks
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -513,5 +419,4 @@ bash "${ROOT_DIR}/bench/cleanup-processes.sh" >/dev/null
 
 AGENTS_TESTED=""
 [[ "${HAS_PI}" == "1" ]] && AGENTS_TESTED="${AGENTS_TESTED} pi"
-[[ "${HAS_OPENCODE}" == "1" ]] && AGENTS_TESTED="${AGENTS_TESTED} opencode"
 printf 'Startup latency tests passed (%d/%d).  Agents tested:%s\n' "${STEP}" "${TOTAL}" "${AGENTS_TESTED}"

@@ -30,6 +30,11 @@ type OptimizedBashStep = {
   run: () => Promise<void>;
 };
 
+type ReplacementEdit = {
+  oldText: string;
+  newText: string;
+};
+
 const readSchema = Type.Object({
   path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
   offset: Type.Optional(
@@ -43,10 +48,28 @@ const writeSchema = Type.Object({
   content: Type.String({ description: "Content to write to the file" }),
 });
 
+const replacementEditSchema = Type.Object({
+  oldText: Type.String({
+    description:
+      "Exact text for one targeted replacement. It must be unique in the original file and must not overlap with another edit.",
+  }),
+  newText: Type.String({ description: "Replacement text for this targeted edit." }),
+});
+
 const editSchema = Type.Object({
   path: Type.String({ description: "Path to the file to edit (relative or absolute)" }),
-  oldText: Type.String({ description: "Exact text to find and replace (must match exactly)" }),
-  newText: Type.String({ description: "New text to replace the old text with" }),
+  edits: Type.Optional(
+    Type.Array(replacementEditSchema, {
+      description:
+        "One or more exact-text replacements. Each oldText is matched against the original file, not incrementally.",
+    }),
+  ),
+  oldText: Type.Optional(
+    Type.String({ description: "Deprecated compatibility field. Prefer edits[].oldText." }),
+  ),
+  newText: Type.Optional(
+    Type.String({ description: "Deprecated compatibility field. Prefer edits[].newText." }),
+  ),
 });
 
 const bashSchema = Type.Object({
@@ -243,38 +266,95 @@ async function fastWrite(cwd: string, pathArg: string, content: string, signal?:
   };
 }
 
+function normalizeEditParams(params: any): ReplacementEdit[] {
+  const edits: ReplacementEdit[] = [];
+
+  if (Array.isArray(params.edits)) {
+    for (const edit of params.edits) {
+      if (typeof edit?.oldText !== "string" || typeof edit?.newText !== "string") {
+        throw new Error("Edit tool input is invalid. Each edit needs string oldText and newText.");
+      }
+      edits.push({ oldText: edit.oldText, newText: edit.newText });
+    }
+  }
+
+  if (typeof params.oldText === "string" || typeof params.newText === "string") {
+    if (typeof params.oldText !== "string" || typeof params.newText !== "string") {
+      throw new Error("Edit tool input is invalid. oldText and newText must be provided together.");
+    }
+    edits.push({ oldText: params.oldText, newText: params.newText });
+  }
+
+  if (edits.length === 0) {
+    throw new Error("Edit tool input is invalid. edits must contain at least one replacement.");
+  }
+
+  return edits;
+}
+
 async function fastEdit(
   cwd: string,
   pathArg: string,
-  oldText: string,
-  newText: string,
+  edits: ReplacementEdit[],
   signal?: AbortSignal,
 ) {
   ensureNotAborted(signal);
   const absolutePath = resolvePath(cwd, pathArg);
   const content = await Bun.file(absolutePath).text();
   ensureNotAborted(signal);
-  const firstIndex = content.indexOf(oldText);
-  if (firstIndex === -1) {
-    throw new Error(
-      `Could not find the exact text in ${pathArg}. The old text must match exactly including all whitespace and newlines.`,
-    );
+
+  const replacements = edits.map((edit, index) => {
+    if (edit.oldText.length === 0) {
+      throw new Error(`Edit ${index + 1} in ${pathArg} has empty oldText.`);
+    }
+
+    const firstIndex = content.indexOf(edit.oldText);
+    if (firstIndex === -1) {
+      throw new Error(
+        `Could not find edit ${index + 1} in ${pathArg}. The old text must match exactly including all whitespace and newlines.`,
+      );
+    }
+
+    const secondIndex = content.indexOf(edit.oldText, firstIndex + edit.oldText.length);
+    if (secondIndex !== -1) {
+      throw new Error(
+        `Found multiple occurrences for edit ${index + 1} in ${pathArg}. The old text must be unique.`,
+      );
+    }
+
+    return {
+      index,
+      start: firstIndex,
+      end: firstIndex + edit.oldText.length,
+      newText: edit.newText,
+    };
+  });
+
+  replacements.sort((a, b) => a.start - b.start || a.index - b.index);
+  let updated = "";
+  let cursor = 0;
+  for (const replacement of replacements) {
+    if (replacement.start < cursor) {
+      throw new Error(
+        `Edit ${replacement.index + 1} in ${pathArg} overlaps another replacement. Merge nearby changes into one edit.`,
+      );
+    }
+    updated += content.slice(cursor, replacement.start);
+    updated += replacement.newText;
+    cursor = replacement.end;
   }
-  const secondIndex = content.indexOf(oldText, firstIndex + oldText.length);
-  if (secondIndex !== -1) {
-    throw new Error(
-      `Found multiple occurrences of the text in ${pathArg}. The text must be unique.`,
-    );
-  }
-  const updated =
-    content.slice(0, firstIndex) + newText + content.slice(firstIndex + oldText.length);
+  updated += content.slice(cursor);
+
   if (updated === content) {
     throw new Error(`No changes made to ${pathArg}. The replacement produced identical content.`);
   }
+
   await Bun.write(absolutePath, updated);
   ensureNotAborted(signal);
   return {
-    content: [{ type: "text", text: `Successfully replaced text in ${pathArg}.` }],
+    content: [
+      { type: "text", text: `Successfully replaced ${edits.length} block(s) in ${pathArg}.` },
+    ],
     details: undefined,
   };
 }
@@ -382,14 +462,8 @@ export default function (pi: ExtensionAPI) {
       "Read the contents of a file using a fast streaming implementation. Supports text files and returns truncated output with continuation hints.",
     parameters: readSchema,
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
-      return fastRead(
-        ctx.cwd,
-        params.path,
-        params.offset,
-        params.limit,
-        signal,
-        onUpdate as ToolUpdateFn,
-      );
+      const typedOnUpdate: ToolUpdateFn = onUpdate;
+      return fastRead(ctx.cwd, params.path, params.offset, params.limit, signal, typedOnUpdate);
     },
   });
 
@@ -409,7 +483,7 @@ export default function (pi: ExtensionAPI) {
     description: "Edit a file by replacing exact text using a fast Bun-based implementation.",
     parameters: editSchema,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      return fastEdit(ctx.cwd, params.path, params.oldText, params.newText, signal);
+      return fastEdit(ctx.cwd, params.path, normalizeEditParams(params), signal);
     },
   });
 
@@ -420,7 +494,8 @@ export default function (pi: ExtensionAPI) {
       "Execute bash commands with fast paths for common file drain/copy/remove commands and a stock fallback for everything else.",
     parameters: bashSchema,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      if (await tryOptimizedBash(ctx.cwd, params.command, signal, onUpdate as ToolUpdateFn)) {
+      const typedOnUpdate: ToolUpdateFn = onUpdate;
+      if (await tryOptimizedBash(ctx.cwd, params.command, signal, typedOnUpdate)) {
         return { content: [{ type: "text", text: "(no output)" }], details: undefined };
       }
 

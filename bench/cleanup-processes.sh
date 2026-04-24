@@ -8,12 +8,18 @@ PARENT_PID="${PPID:-0}"
 
 patterns=(
 	'^hyperfine( |$)'
-	"^bun ${ROOT_DIR}/bench/opencode-e2e-run.ts( |$)"
-	'^opencode serve( |$)'
 	"^${ROOT_DIR}/bin/fastdrain( |$)"
+	"^${ROOT_DIR}/bin/fastcopy( |$)"
+	"^${ROOT_DIR}/bin/fastedit( |$)"
+	"^${ROOT_DIR}/bin/fastread-window( |$)"
 	"^${ROOT_DIR}/bin/pi-rpc-direct( |$)"
-	"^${ROOT_DIR}/opencode-optimized/bin/fastcopy( |$)"
-	'^bun /home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/cli.js --mode rpc( |$)'
+	"^${ROOT_DIR}/bin/pi-tool-override-daemon( |$)"
+	'^pi-node --mode rpc( |$)'
+	'^tia pi --mode rpc( |$)'
+	'^bun .*/pi-coding-agent/dist/cli.js --mode rpc( |$)'
+	'^timeout .*pi-node --mode rpc( |$)'
+	'^timeout .*tia pi --mode rpc( |$)'
+	'^timeout .*pi-coding-agent/dist/cli.js --mode rpc( |$)'
 )
 
 kill_matches() {

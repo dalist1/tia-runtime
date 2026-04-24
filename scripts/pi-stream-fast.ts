@@ -12,12 +12,18 @@ import {
 } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/index.js";
 import { createExtensionRuntime } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/extensions/index.js";
 
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
 type ParsedArgs = {
   provider?: string;
   modelId?: string;
-  thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  thinkingLevel?: ThinkingLevel;
   messages: string[];
 };
+
+function isThinkingLevel(value: string): value is ThinkingLevel {
+  return ["off", "minimal", "low", "medium", "high", "xhigh"].includes(value);
+}
 
 function parseArgs(argv: string[]): ParsedArgs {
   const parsed: ParsedArgs = { messages: [] };
@@ -37,7 +43,9 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
     if (arg === "--thinking") {
-      parsed.thinkingLevel = argv[++i] as ParsedArgs["thinkingLevel"];
+      const value = argv[++i];
+      if (!isThinkingLevel(value)) throw new Error(`Unsupported thinking level: ${value}`);
+      parsed.thinkingLevel = value;
       continue;
     }
     if (
@@ -155,7 +163,7 @@ const agentDir = getAgentDir();
 const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
 const modelRegistry = new ModelRegistry(authStorage, join(agentDir, "models.json"));
 const settingsManager = SettingsManager.create(cwd, agentDir);
-const resourceLoader = {
+const resourceLoader: any = {
   getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
   getSkills: () => ({ skills: [], diagnostics: [] }),
   getPrompts: () => ({ prompts: [], diagnostics: [] }),
@@ -182,7 +190,7 @@ const { session, modelFallbackMessage } = await createAgentSession({
   model,
   thinkingLevel: parsed.thinkingLevel,
   tools: [],
-  resourceLoader: resourceLoader as any,
+  resourceLoader,
   sessionManager: SessionManager.inMemory(cwd),
   settingsManager,
 });
