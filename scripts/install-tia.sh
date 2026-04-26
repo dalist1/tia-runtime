@@ -325,9 +325,16 @@ refresh_shell_agent_links() {
   mkdir -p "\${TIA_PI_AGENT_DIR}"
 
   for name in auth.json models.json settings.json; do
-    rm -f "\${TIA_PI_AGENT_DIR}/\${name}"
-    if [[ -f "\${shell_agent_dir}/\${name}" ]]; then
-      ln -s "\${shell_agent_dir}/\${name}" "\${TIA_PI_AGENT_DIR}/\${name}"
+    local src="\${shell_agent_dir}/\${name}"
+    local dest="\${TIA_PI_AGENT_DIR}/\${name}"
+    if [[ -f "\${src}" ]]; then
+      local tmp
+      tmp="\$(mktemp "\${dest}.tmp.XXXXXX")"
+      rm -f "\${tmp}"
+      ln -s "\${src}" "\${tmp}"
+      mv -f "\${tmp}" "\${dest}"
+    else
+      rm -f "\${dest}"
     fi
   done
 }
@@ -373,6 +380,8 @@ case "\${subcommand}" in
     ensure_cliproxy_started
     refresh_shell_agent_links
     configure_fff_env "\$@"
+    export TIA_ACTIVE=1
+    export TIA_COMMAND="tia pi"
     export PI_CODING_AGENT_DIR="\${TIA_PI_AGENT_DIR}"
     export PI_PACKAGE_DIR="${TIA_ROOT}/bin"
     if should_use_fast_stream "\$@"; then
