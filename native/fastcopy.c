@@ -8,7 +8,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef __linux__
 #include <sys/sendfile.h>
+#endif
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -76,6 +78,7 @@ static bool copy_copy_file_range(int src_fd, int dst_fd) {
 }
 
 static bool copy_sendfile_loop(int src_fd, int dst_fd, off_t total_size) {
+#ifdef __linux__
 	if (lseek(src_fd, 0, SEEK_SET) < 0) {
 		if (errno == ESPIPE) return false;
 		fail("lseek src");
@@ -94,6 +97,12 @@ static bool copy_sendfile_loop(int src_fd, int dst_fd, off_t total_size) {
 		}
 	}
 	return true;
+#else
+	(void)src_fd;
+	(void)dst_fd;
+	(void)total_size;
+	return false;
+#endif
 }
 
 int main(int argc, char **argv) {
