@@ -24,6 +24,7 @@ TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
 TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-0.6.4}"
+TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.70.6}"
 PACKAGE_NAME_PI="@mariozechner/pi-coding-agent"
 
 usage() {
@@ -105,6 +106,44 @@ find_pi_package_dir() {
 	return 1
 }
 
+pi_package_version() {
+	local dir="$1"
+	python3 - "${dir}/package.json" <<'PY'
+import json, sys
+with open(sys.argv[1], 'r', encoding='utf-8') as f:
+    data = json.load(f)
+print(data.get('version', ''))
+PY
+}
+
+bun_global_pi_package_dir() {
+	local global_bin global_root
+	global_bin="$(bun pm bin -g 2>/dev/null || true)"
+	if [[ -n "${global_bin}" && "$(basename -- "${global_bin}")" == "bin" ]]; then
+		global_root="$(dirname -- "${global_bin}")"
+	else
+		global_root="${HOME}/.bun"
+	fi
+	printf '%s\n' "${global_root}/install/global/node_modules/${PACKAGE_NAME_PI}"
+}
+
+ensure_pi_package_version() {
+	local package_dir="$1"
+
+	[[ "${TIA_SKIP_PI_PACKAGE_INSTALL:-0}" != "1" ]] || return 0
+	[[ -z "${PI_PACKAGE_DIR:-}" ]] || return 0
+
+	if [[ "${TIA_PI_PACKAGE_VERSION}" != "latest" ]] && is_pi_package_dir "${package_dir}"; then
+		local installed_version
+		installed_version="$(pi_package_version "${package_dir}")"
+		if [[ "${installed_version}" == "${TIA_PI_PACKAGE_VERSION}" ]]; then
+			return 0
+		fi
+	fi
+
+	printf 'Installing %s@%s\n' "${PACKAGE_NAME_PI}" "${TIA_PI_PACKAGE_VERSION}" >&2
+	bun install -g "${PACKAGE_NAME_PI}@${TIA_PI_PACKAGE_VERSION}" >/dev/null
+}
 
 install_fast_tool_helpers() {
 	mkdir -p "${TIA_FAST_TOOLS_DIR}"
@@ -183,7 +222,14 @@ install_pi_sandbox() {
 	need_cmd bun
 	mkdir -p "$(dirname -- "${TIA_PI_BIN}")" "$(dirname -- "${TIA_EXTENSION_PATH}")"
 
-	local pi_path pi_resolved pi_package_dir pi_bin_dir base_agent_dir
+	local pi_path pi_resolved pi_package_dir pi_bin_dir base_agent_dir bun_global_pi_dir prefer_bun_global
+	bun_global_pi_dir="$(bun_global_pi_package_dir)"
+	prefer_bun_global=1
+	if [[ "${TIA_SKIP_PI_PACKAGE_INSTALL:-0}" == "1" ]]; then
+		prefer_bun_global=0
+	fi
+	ensure_pi_package_version "${bun_global_pi_dir}"
+
 	pi_path="$(command -v pi 2>/dev/null || true)"
 	pi_resolved=""
 	if [[ -n "${pi_path}" ]]; then
@@ -192,6 +238,8 @@ install_pi_sandbox() {
 	pi_package_dir=""
 	if [[ -n "${PI_PACKAGE_DIR:-}" ]] && is_pi_package_dir "${PI_PACKAGE_DIR}"; then
 		pi_package_dir="${PI_PACKAGE_DIR}"
+	elif [[ "${prefer_bun_global}" == "1" ]] && is_pi_package_dir "${bun_global_pi_dir}"; then
+		pi_package_dir="${bun_global_pi_dir}"
 	elif pi_package_dir="$(find_pi_package_dir "${pi_resolved}" 2>/dev/null)"; then
 		:
 	elif is_pi_package_dir "${HOME}/.bun/install/global/node_modules/${PACKAGE_NAME_PI}"; then
