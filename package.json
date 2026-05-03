@@ -1,16 +1,16 @@
 {
-  "name": "tia",
-  "private": true,
-  "scripts": {
-    "bench:feedback": "bash bench/feedback-loop.sh",
-    "install:zig": "bash scripts/install-zig.sh",
-    "lint": "oxlint -c .oxlintrc.json scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts --deny-warnings",
-    "format": "oxfmt --check scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json",
-    "format:write": "oxfmt --write scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json"
-  },
-  "devDependencies": {
-    "oxfmt": "latest",
-    "oxlint": "latest"
-  },
-  "packageManager": "bun@1.3.11"
+ "name": "tia",
+ "private": true,
+ "scripts": {
+  "bench:feedback": "bash bench/feedback-loop.sh",
+  "install:zig": "bash scripts/install-zig.sh",
+  "lint": "oxlint -c .oxlintrc.json scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts --deny-warnings",
+  "format": "oxfmt --check scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json",
+  "format:write": "oxfmt --write scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json"
+ },
+ "devDependencies": {
+  "oxfmt": "latest",
+  "oxlint": "latest"
+ },
+ "packageManager": "bun@1.3.11"
 }
