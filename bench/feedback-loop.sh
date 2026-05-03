@@ -49,17 +49,7 @@ log() {
 }
 
 json_assert_field() {
-	python3 - <<'PY' "$1" "$2" "$3"
-import json, sys
-path, field, expected = sys.argv[1:4]
-with open(path, 'r', encoding='utf-8') as f:
-    obj = json.load(f)
-value = obj
-for part in field.split('.'):
-    value = value[part]
-if str(value) != expected:
-    raise SystemExit(f"Expected {field}={expected}, got {value}")
-PY
+	bun -e 'const fs=require("node:fs"); const [path, field, expected]=process.argv.slice(1); let value=JSON.parse(fs.readFileSync(path,"utf8")); for (const part of field.split(".")) value=value[part]; if (String(value) !== expected) { console.error(`Expected ${field}=${expected}, got ${value}`); process.exit(1); }' "$1" "$2" "$3"
 }
 
 cleanup() {
@@ -71,7 +61,6 @@ need_cmd bash
 need_cmd bun
 need_cmd gcc
 need_cmd hyperfine
-need_cmd python3
 
 export PATH="${HOME}/.local/bin:${PATH}"
 if [[ "${SETUP_ZIG}" != "0" && -z "$(command -v zig 2>/dev/null || true)" ]]; then
@@ -96,62 +85,7 @@ if [[ "${RUN_STARTUP}" == "auto" ]]; then
 	fi
 fi
 
-python3 - <<'PY' "${RESULT_DIR}/config.json" "${ROOT_DIR}" "${RUN_ID}" "${ROUNDS}" "${RUNS}" "${WARMUP}" "${TIER}" "${RUN_STARTUP}" "${ZIG_STATUS}" "${READ_ITERATIONS}" "${WRITE_ITERATIONS}" "${EDIT_ITERATIONS}" "${BASH_ITERATIONS}" "${STREAM_ITERATIONS}"
-import json, sys
-(
-    path,
-    root,
-    run_id,
-    rounds,
-    runs,
-    warmup,
-    tier,
-    run_startup,
-    zig,
-    read_iterations,
-    write_iterations,
-    edit_iterations,
-    bash_iterations,
-    stream_iterations,
-) = sys.argv[1:]
-config = {
-    "root_dir": root,
-    "run_id": run_id,
-    "rounds": int(rounds),
-    "runs": int(runs),
-    "warmup": int(warmup),
-    "tier": tier,
-    "run_startup": run_startup == "1",
-    "zig": zig,
-    "iterations": {
-        "read": int(read_iterations),
-        "write": int(write_iterations),
-        "edit": int(edit_iterations),
-        "bash": int(bash_iterations),
-        "stream": int(stream_iterations),
-    },
-    "top_ideas": [
-        {
-            "name": "compiled runner + native helpers",
-            "hypothesis": "Compiled Bun runner plus native helper binaries is the default retained fast path.",
-        },
-        {
-            "name": "warm daemon transport",
-            "hypothesis": "A persistent worker amortizes cold starts across repeated tool calls, especially verified-write loops.",
-        },
-        {
-            "name": "Zig toolchain gate",
-            "hypothesis": "Build native helpers with Zig and only promote the Zig-built path when this same loop proves it faster and at least as reliable.",
-        },
-    ],
-    "removed_approaches": [
-        "stock Bun tool baseline",
-        "Bun source-runner fast path",
-    ],
-}
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(config, f, indent=2)
-PY
+bun -e 'const fs=require("node:fs"); const [path, root, runId, rounds, runs, warmup, tier, runStartup, zig, readIterations, writeIterations, editIterations, bashIterations, streamIterations]=process.argv.slice(1); const config={root_dir:root, run_id:runId, rounds:Number(rounds), runs:Number(runs), warmup:Number(warmup), tier, run_startup:runStartup==="1", zig, iterations:{read:Number(readIterations), write:Number(writeIterations), edit:Number(editIterations), bash:Number(bashIterations), stream:Number(streamIterations)}, top_ideas:[{name:"compiled runner + native helpers", hypothesis:"Compiled Bun runner plus native helper binaries is the default retained fast path."},{name:"warm daemon transport", hypothesis:"A persistent worker amortizes cold starts across repeated tool calls, especially verified-write loops."},{name:"Zig toolchain gate", hypothesis:"Build native helpers with Zig and only promote the Zig-built path when this same loop proves it faster and at least as reliable."}], removed_approaches:["stock Bun tool baseline", "Bun source-runner fast path"]}; fs.writeFileSync(path, JSON.stringify(config, null, 2));' "${RESULT_DIR}/config.json" "${ROOT_DIR}" "${RUN_ID}" "${ROUNDS}" "${RUNS}" "${WARMUP}" "${TIER}" "${RUN_STARTUP}" "${ZIG_STATUS}" "${READ_ITERATIONS}" "${WRITE_ITERATIONS}" "${EDIT_ITERATIONS}" "${BASH_ITERATIONS}" "${STREAM_ITERATIONS}"
 
 log "results: ${RESULT_DIR}"
 log "retained ideas: compiled/native, warm daemon, zig-built helpers"
@@ -273,12 +207,7 @@ run_startup_suite() {
 for round in $(seq 1 "${ROUNDS}"); do
 	round_dir="${RESULT_DIR}/round-$(printf '%02d' "${round}")"
 	mkdir -p "${round_dir}"
-	python3 - <<'PY' "${round_dir}/meta.json" "${round}" "${ROUNDS}"
-import json, sys, time
-path, round_no, rounds = sys.argv[1:]
-with open(path, "w", encoding="utf-8") as f:
-    json.dump({"round": int(round_no), "rounds": int(rounds), "started_at": time.time()}, f, indent=2)
-PY
+	bun -e 'const fs=require("node:fs"); const [path, roundNo, rounds]=process.argv.slice(1); fs.writeFileSync(path, JSON.stringify({round:Number(roundNo), rounds:Number(rounds), started_at:Date.now()/1000}, null, 2));' "${round_dir}/meta.json" "${round}" "${ROUNDS}"
 	cleanup
 	run_tool_suite "${round_dir}" read "${READ_ITERATIONS}"
 	run_tool_suite "${round_dir}" write "${WRITE_ITERATIONS}"
@@ -288,20 +217,11 @@ PY
 	if [[ "${RUN_STARTUP}" == "1" ]]; then
 		run_startup_suite "${round_dir}"
 	fi
-	python3 - <<'PY' "${round_dir}/meta.json"
-import json, sys, time
-path = sys.argv[1]
-with open(path, "r", encoding="utf-8") as f:
-    data = json.load(f)
-data["finished_at"] = time.time()
-data["elapsed_s"] = data["finished_at"] - data["started_at"]
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2)
-PY
-	python3 "${ROOT_DIR}/bench/summarize-feedback-loop.py" "${RESULT_DIR}" >/dev/null
+	bun -e 'const fs=require("node:fs"); const path=process.argv[1]; const data=JSON.parse(fs.readFileSync(path,"utf8")); data.finished_at=Date.now()/1000; data.elapsed_s=data.finished_at-data.started_at; fs.writeFileSync(path, JSON.stringify(data, null, 2));' "${round_dir}/meta.json"
+	bun "${ROOT_DIR}/bench/summarize-feedback-loop.ts" "${RESULT_DIR}" >/dev/null
 	log "round ${round}/${ROUNDS} complete"
 done
 
-summary_path="$(python3 "${ROOT_DIR}/bench/summarize-feedback-loop.py" "${RESULT_DIR}")"
+summary_path="$(bun "${ROOT_DIR}/bench/summarize-feedback-loop.ts" "${RESULT_DIR}")"
 log "summary: ${summary_path}"
 cat "${summary_path}"

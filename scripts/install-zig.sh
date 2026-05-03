@@ -28,17 +28,8 @@ need_cmd() {
 }
 
 if [[ "${ZIG_VERSION}" == "stable" || "${ZIG_VERSION}" == "latest" ]]; then
-	need_cmd python3
-	ZIG_VERSION="$(python3 - <<'PY'
-import json, urllib.request
-with urllib.request.urlopen('https://ziglang.org/download/index.json', timeout=20) as r:
-    data = json.load(r)
-for key in data:
-    if key != 'master':
-        print(key)
-        break
-PY
-)"
+	need_cmd bun
+	ZIG_VERSION="$(bun -e 'const data = await fetch("https://ziglang.org/download/index.json").then((r) => r.json()); console.log(Object.keys(data).find((key) => key !== "master"));')"
 	ZIG_DIR="${INSTALL_ROOT}/zig-${ZIG_ARCHIVE_PLATFORM}-${ZIG_VERSION}"
 	ZIG_BIN="${ZIG_DIR}/zig"
 fi

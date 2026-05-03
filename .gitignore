@@ -15,7 +15,3 @@ node_modules/
 # Misc
 .DS_Store
 *.log
-
-# Python cache
-__pycache__/
-*.pyc

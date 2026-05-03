@@ -20,6 +20,7 @@ TIA_PI_BIN="${TIA_ROOT}/bin/pi"
 TIA_PI_STREAM_BIN="${TIA_ROOT}/bin/pi-stream-fast"
 TIA_PI_AGENT_DIR="${TIA_ROOT}/pi-agent"
 TIA_EXTENSION_PATH="${TIA_PI_AGENT_DIR}/extensions/fast-tools.ts"
+TIA_NATIVE_SEARCH_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/native-search"
 TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
@@ -65,11 +66,8 @@ copy_or_fetch_script_asset() {
 	curl -fsSL "${INSTALL_BASE_URL}/${relative_path}" > "${destination}"
 }
 
-realpath_py() {
-	python3 - "$1" <<'PY'
-import os, sys
-print(os.path.realpath(sys.argv[1]))
-PY
+realpath_bun() {
+	bun -e 'console.log(require("node:fs").realpathSync(process.argv[1]))' "$1"
 }
 
 is_pi_package_dir() {
@@ -77,12 +75,7 @@ is_pi_package_dir() {
 	local package_json="${dir}/package.json"
 	[[ -f "${package_json}" ]] || return 1
 	[[ -f "${dir}/dist/cli.js" ]] || return 1
-	python3 - "${package_json}" <<'PY'
-import json, sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    data = json.load(f)
-raise SystemExit(0 if data.get('name') == '@mariozechner/pi-coding-agent' else 1)
-PY
+	bun -e 'const data=require(process.argv[1]); process.exit(data.name === "@mariozechner/pi-coding-agent" ? 0 : 1)' "${package_json}"
 }
 
 find_pi_package_dir() {
@@ -108,12 +101,7 @@ find_pi_package_dir() {
 
 pi_package_version() {
 	local dir="$1"
-	python3 - "${dir}/package.json" <<'PY'
-import json, sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    data = json.load(f)
-print(data.get('version', ''))
-PY
+	bun -e 'const data=require(process.argv[1]); console.log(data.version ?? "")' "${dir}/package.json"
 }
 
 bun_global_pi_package_dir() {
@@ -176,6 +164,43 @@ install_fast_tool_helpers() {
 	fi
 }
 
+install_native_search_extension() {
+	if [[ "${TIA_ENABLE_NATIVE_SEARCH:-1}" == "0" ]]; then
+		rm -rf "${TIA_NATIVE_SEARCH_EXTENSION_DIR}"
+		return 0
+	fi
+
+	rm -rf "${TIA_NATIVE_SEARCH_EXTENSION_DIR}"
+	mkdir -p "${TIA_NATIVE_SEARCH_EXTENSION_DIR}"
+	local file
+	for file in \
+		config.ts \
+		discover.ts \
+		http.ts \
+		index.ts \
+		text.ts \
+		tool.ts \
+		types.ts \
+		native-search.zig; do
+		copy_or_fetch_script_asset \
+			"native-search-extension/${file}" \
+			"${TIA_NATIVE_SEARCH_EXTENSION_DIR}/${file}"
+	done
+
+	if command -v zig >/dev/null 2>&1; then
+		zig build-exe \
+			-O ReleaseFast \
+			-fsingle-threaded \
+			-fstrip \
+			--cache-dir "${TIA_ROOT}/zig-cache" \
+			--global-cache-dir "${HOME}/.cache/zig" \
+			"${TIA_NATIVE_SEARCH_EXTENSION_DIR}/native-search.zig" \
+			-femit-bin="${TIA_FAST_TOOLS_DIR}/native-search-zig" >/dev/null
+	elif [[ -x "${ROOT_DIR}/bin/native-search-zig" ]]; then
+		cp "${ROOT_DIR}/bin/native-search-zig" "${TIA_FAST_TOOLS_DIR}/native-search-zig"
+	fi
+}
+
 install_fff_extension() {
 	if [[ "${TIA_ENABLE_FFF:-1}" == "0" ]]; then
 		rm -rf "${TIA_FFF_EXTENSION_DIR}"
@@ -233,7 +258,7 @@ install_pi_sandbox() {
 	pi_path="$(command -v pi 2>/dev/null || true)"
 	pi_resolved=""
 	if [[ -n "${pi_path}" ]]; then
-		pi_resolved="$(realpath_py "${pi_path}")"
+		pi_resolved="$(realpath_bun "${pi_path}")"
 	fi
 	pi_package_dir=""
 	if [[ -n "${PI_PACKAGE_DIR:-}" ]] && is_pi_package_dir "${PI_PACKAGE_DIR}"; then
@@ -257,15 +282,7 @@ install_pi_sandbox() {
 
 	bun build --compile "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
-	python3 - "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}" <<'PY'
-import sys
-path, package_dir = sys.argv[1], sys.argv[2]
-with open(path, 'r', encoding='utf-8') as f:
-    data = f.read()
-data = data.replace('__PI_PACKAGE_DIR__', package_dir)
-with open(path, 'w', encoding='utf-8') as f:
-    f.write(data)
-PY
+	bun -e 'const fs=require("node:fs"); const [path, packageDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}"
 	bun build --compile "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}"
 	ln -sfn "${pi_package_dir}/dist/modes/interactive/theme" "${pi_bin_dir}/theme"
 	ln -sfn "${pi_package_dir}/dist/modes/interactive/assets" "${pi_bin_dir}/assets"
@@ -277,6 +294,7 @@ PY
 	ln -sfn "${pi_package_dir}/examples" "${pi_bin_dir}/examples"
 	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
 	install_fast_tool_helpers
+	install_native_search_extension
 	install_fff_extension
 
 	rm -f "${TIA_PI_AGENT_DIR}/auth.json" "${TIA_PI_AGENT_DIR}/models.json" "${TIA_PI_AGENT_DIR}/settings.json"
@@ -451,6 +469,11 @@ case "\${subcommand}" in
     echo "history mode:        \tunchanged by tia pi startup"
     echo "cliproxy auto-start:\tenabled for tia pi when systemd user services are available"
     echo "fast stream:         \tenabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)"
+    if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/native-search/index.ts" ]]; then
+      echo "native search:       \tenabled (site-bounded, vanilla fetch)"
+    else
+      echo "native search:       \tnot installed"
+    fi
     if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/index.ts" ]]; then
       echo "fff extension:       \tenabled (default mode: \${PI_FFF_MODE:-override})"
     else
@@ -469,7 +492,6 @@ EOF2
 }
 
 install_all() {
-	need_cmd python3
 	need_cmd bun
 	cleanup_removed_features
 	install_pi_sandbox
@@ -505,6 +527,11 @@ status_all() {
 	printf 'history mode:        unchanged by tia pi startup\n'
 	printf 'cliproxy auto-start: enabled for tia pi when systemd user services are available\n'
 	printf 'fast stream:         enabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)\n'
+	if [[ -f "${TIA_NATIVE_SEARCH_EXTENSION_DIR}/index.ts" ]]; then
+		printf 'native search:       enabled (site-bounded, vanilla fetch)\n'
+	else
+		printf 'native search:       not installed\n'
+	fi
 	if [[ -f "${TIA_FFF_EXTENSION_DIR}/index.ts" ]]; then
 		printf 'fff extension:       enabled (default mode: %s)\n' "${PI_FFF_MODE:-override}"
 	else

@@ -22,17 +22,7 @@ assert_json_field_eq() {
 	local path="$1"
 	local field="$2"
 	local expected="$3"
-	python3 - <<'PY' "${path}" "${field}" "${expected}"
-import json, sys
-path, field, expected = sys.argv[1:4]
-with open(path, 'r', encoding='utf-8') as f:
-    obj = json.load(f)
-value = obj
-for part in field.split('.'):
-    value = value[part]
-if str(value) != expected:
-    raise SystemExit(f"Expected {field}={expected}, got {value}")
-PY
+	bun -e 'const fs=require("node:fs"); const [path, field, expectedRaw]=process.argv.slice(1); let value=JSON.parse(fs.readFileSync(path,"utf8")); for (const part of field.split(".")) value=value[part]; const expected = expectedRaw === "True" ? "true" : expectedRaw === "False" ? "false" : expectedRaw; if (String(value) !== expected) { console.error(`Expected ${field}=${expectedRaw}, got ${value}`); process.exit(1); }' "${path}" "${field}" "${expected}"
 }
 
 printf '[low-level 1/12] build fixtures and native helpers\n'
@@ -59,13 +49,7 @@ assert_json_field_eq "${TMP_DIR}/fastedit.json" "ok" "True"
 
 printf '[low-level 4/12] verify native fastread-window exact slice\n'
 "${ROOT_DIR}/bin/fastread-window" "${ROOT_DIR}/payloads/lines-10k.txt" 4501 3 > "${TMP_DIR}/fastread-slice.txt"
-python3 - <<'PY' "${TMP_DIR}/fastread-slice.txt"
-import sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    text = f.read()
-assert text.startswith('line-4500\nline-4501\nline-4502\n')
-assert 'Use offset=4504 to continue.' in text
-PY
+bun -e 'const text=require("node:fs").readFileSync(process.argv[1],"utf8"); if (!text.startsWith("line-4500\nline-4501\nline-4502\n") || !text.includes("Use offset=4504 to continue.")) process.exit(1);' "${TMP_DIR}/fastread-slice.txt"
 printf 'native write exactness ✓\n' > "${TMP_DIR}/fastwrite-expected.txt"
 "${ROOT_DIR}/bin/fastwrite" "${TMP_DIR}/fastwrite-target.txt" \
 	< "${TMP_DIR}/fastwrite-expected.txt" > "${TMP_DIR}/fastwrite.json"
@@ -119,15 +103,7 @@ printf '[low-level 7/12] verify compiled streaming runner\n'
 "${ROOT_DIR}/bin/pi-tool-override-stream-burst" fast read 2 > "${TMP_DIR}/compiled-stream.json"
 assert_json_field_eq "${TMP_DIR}/compiled-stream.json" "mode" "fast"
 assert_json_field_eq "${TMP_DIR}/compiled-stream.json" "tool" "read"
-python3 - <<'PY' "${TMP_DIR}/compiled-stream.json"
-import json, sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    obj = json.load(f)
-assert obj['iterations'] == 2
-assert obj['updatesPerIteration'] > 0
-assert obj['avgFirstUpdateMs'] is not None
-assert obj['avgFirstUpdateMs'] >= 0
-PY
+bun -e 'const obj=require(process.argv[1]); if (obj.iterations !== 2 || obj.updatesPerIteration <= 0 || obj.avgFirstUpdateMs == null || obj.avgFirstUpdateMs < 0) process.exit(1);' "${TMP_DIR}/compiled-stream.json"
 
 printf '[low-level 8/12] verify compiled warm daemon loop\n'
 "${ROOT_DIR}/bin/pi-tool-request-loop" daemon fast read 4 > "${TMP_DIR}/daemon-read.json"
@@ -135,14 +111,7 @@ assert_json_field_eq "${TMP_DIR}/daemon-read.json" "transport" "daemon"
 assert_json_field_eq "${TMP_DIR}/daemon-read.json" "mode" "fast"
 assert_json_field_eq "${TMP_DIR}/daemon-read.json" "tool" "read"
 assert_json_field_eq "${TMP_DIR}/daemon-read.json" "iterations" "4"
-python3 - <<'PY' "${TMP_DIR}/daemon-read.json"
-import json, sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    obj = json.load(f)
-assert obj['daemonReadyMs'] is not None
-assert obj['firstResponseMs'] is not None
-assert obj['firstResponseMs'] >= 0
-PY
+bun -e 'const obj=require(process.argv[1]); if (obj.daemonReadyMs == null || obj.firstResponseMs == null || obj.firstResponseMs < 0) process.exit(1);' "${TMP_DIR}/daemon-read.json"
 
 printf '[low-level 9/12] benchmark retained edit candidates\n'
 edit_commands=(
@@ -161,14 +130,7 @@ hyperfine \
 	--runs 4 \
 	--export-json "${TMP_DIR}/edit-bench.json" \
 	"${edit_commands[@]}" >/dev/null
-python3 - <<'PY' "${TMP_DIR}/edit-bench.json"
-import json, sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    obj = json.load(f)
-for item in obj['results']:
-    assert item['mean'] > 0
-    assert all(code == 0 for code in item.get('exit_codes', []))
-PY
+bun -e 'const obj=require(process.argv[1]); for (const item of obj.results) if (item.mean <= 0 || !(item.exit_codes ?? []).every((code) => code === 0)) process.exit(1);' "${TMP_DIR}/edit-bench.json"
 
 printf '[low-level 10/12] benchmark retained bash candidates\n'
 bash_commands=(
@@ -187,14 +149,7 @@ hyperfine \
 	--runs 4 \
 	--export-json "${TMP_DIR}/bash-bench.json" \
 	"${bash_commands[@]}" >/dev/null
-python3 - <<'PY' "${TMP_DIR}/bash-bench.json"
-import json, sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    obj = json.load(f)
-for item in obj['results']:
-    assert item['mean'] > 0
-    assert all(code == 0 for code in item.get('exit_codes', []))
-PY
+bun -e 'const obj=require(process.argv[1]); for (const item of obj.results) if (item.mean <= 0 || !(item.exit_codes ?? []).every((code) => code === 0)) process.exit(1);' "${TMP_DIR}/bash-bench.json"
 
 printf '[low-level 11/12] benchmark warm daemon vs cold spawn\n'
 hyperfine \
@@ -206,13 +161,7 @@ hyperfine \
 	"${ROOT_DIR}/bin/pi-tool-request-loop spawn fast read 8" \
 	--command-name 'fast (compiled warm daemon + native helpers)' \
 	"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast read 8" >/dev/null
-python3 - <<'PY' "${TMP_DIR}/persistent-bench.json"
-import json, sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    obj = json.load(f)
-results = {item['command']: item['mean'] for item in obj['results']}
-assert results['fast (compiled warm daemon + native helpers)'] < results['fast (compiled cold spawn-per-request)']
-PY
+bun -e 'const obj=require(process.argv[1]); const results=Object.fromEntries(obj.results.map((item)=>[item.command,item.mean])); if (!(results["fast (compiled warm daemon + native helpers)"] < results["fast (compiled cold spawn-per-request)"])) process.exit(1);' "${TMP_DIR}/persistent-bench.json"
 
 printf '[low-level 12/12] benchmark retained streaming candidates emit results\n'
 stream_commands=(
@@ -231,14 +180,7 @@ hyperfine \
 	--runs 3 \
 	--export-json "${TMP_DIR}/stream-bench.json" \
 	"${stream_commands[@]}" >/dev/null
-python3 - <<'PY' "${TMP_DIR}/stream-bench.json"
-import json, sys
-with open(sys.argv[1], 'r', encoding='utf-8') as f:
-    obj = json.load(f)
-for item in obj['results']:
-    assert item['mean'] > 0
-    assert all(code == 0 for code in item.get('exit_codes', []))
-PY
+bun -e 'const obj=require(process.argv[1]); for (const item of obj.results) if (item.mean <= 0 || !(item.exit_codes ?? []).every((code) => code === 0)) process.exit(1);' "${TMP_DIR}/stream-bench.json"
 
 bash "${ROOT_DIR}/bench/cleanup-processes.sh" >/dev/null
 

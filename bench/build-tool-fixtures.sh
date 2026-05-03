@@ -6,29 +6,18 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PAYLOAD_DIR="${ROOT_DIR}/payloads"
 mkdir -p "${PAYLOAD_DIR}"
 
-TIA_BENCH_ROOT_DIR="${ROOT_DIR}" python3 - <<'PY'
-import os
-from pathlib import Path
-
-root = Path(os.environ["TIA_BENCH_ROOT_DIR"])
-payload_dir = root / "payloads"
-payload_dir.mkdir(parents=True, exist_ok=True)
-
-(payload_dir / "tiny.txt").write_text("hello stdin\n", encoding="utf-8")
-(payload_dir / "lines-10k.txt").write_text("".join(f"line-{i}\n" for i in range(10000)), encoding="utf-8")
-(payload_dir / "blob-1m.txt").write_text("x" * (1024 * 1024), encoding="utf-8")
-(payload_dir / "jsonl-5m.txt").write_text(
-    "".join(
-        '{"id":%d,"name":"item-%d","active":true,"tags":["a","b","c"]}\n' % (i, i)
-        for i in range(75000)
-    ),
-    encoding="utf-8",
-)
-
-old_text = "line-4500\nline-4501\nline-4502\n"
-new_text = "line-4500-updated\nline-4501-updated\nline-4502-updated\n"
-(payload_dir / "edit-old.txt").write_text(old_text, encoding="utf-8")
-(payload_dir / "edit-new.txt").write_text(new_text, encoding="utf-8")
-PY
+TIA_BENCH_ROOT_DIR="${ROOT_DIR}" bun -e '
+const fs = require("node:fs");
+const path = require("node:path");
+const root = process.env.TIA_BENCH_ROOT_DIR;
+const payloadDir = path.join(root, "payloads");
+fs.mkdirSync(payloadDir, { recursive: true });
+fs.writeFileSync(path.join(payloadDir, "tiny.txt"), "hello stdin\n");
+fs.writeFileSync(path.join(payloadDir, "lines-10k.txt"), Array.from({ length: 10000 }, (_, i) => `line-${i}\n`).join(""));
+fs.writeFileSync(path.join(payloadDir, "blob-1m.txt"), "x".repeat(1024 * 1024));
+fs.writeFileSync(path.join(payloadDir, "jsonl-5m.txt"), Array.from({ length: 75000 }, (_, i) => `{"id":${i},"name":"item-${i}","active":true,"tags":["a","b","c"]}\n`).join(""));
+fs.writeFileSync(path.join(payloadDir, "edit-old.txt"), "line-4500\nline-4501\nline-4502\n");
+fs.writeFileSync(path.join(payloadDir, "edit-new.txt"), "line-4500-updated\nline-4501-updated\nline-4502-updated\n");
+'
 
 printf 'Built tool benchmark fixtures in %s\n' "${PAYLOAD_DIR}"

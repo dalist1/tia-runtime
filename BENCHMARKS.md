@@ -14,6 +14,8 @@ These are the latest benchmark highlights from the tia research harness.
 | `tia pi` fast tools | `write` burst | 195.5 ms | 193.0 ms | **1.01x** |
 | `tia pi` fast tools | `edit` burst | 378.3 ms | 151.0 ms | **2.50x** |
 | `tia pi` fast tools | `bash` burst | 513.7 ms | 322.5 ms | **1.59x** |
+| `native_search` + Zig | full local fixture generation + extraction + ranking | 2k raw docs | 11.3 ms | zero network |
+| `native_search` + Zig | live exact URL smoke + full Zig fetch/extraction/ranking | 3 distinct origins, opt-in | writes `zig-search.md` | bounded live fetches |
 
 ## Supported runtime subcommands
 
@@ -45,6 +47,10 @@ Current benchmark results below focus on `tia pi`.
 - `results-pi-tools-persistent-smoke/read.md`
 - `results-pi-tools-persistent-smoke/edit.md`
 - `results-pi-tools-persistent-smoke/bash.md`
+
+### native search
+- `results-native-search-zig-smoke/native-search-zig.md`
+- `results-native-search-live-smoke/summary.md` (only when explicitly run with `TIA_NATIVE_SEARCH_LIVE=1`)
 
 ## Feedback-loop harness
 
@@ -128,6 +134,25 @@ This compares:
 - `fast (compiled cold spawn-per-request)`
 - `fast (compiled warm daemon + native helpers)`
 
+### native search extraction/ranking
+```bash
+bash bench/hyperfine-native-search-zig.sh
+```
+
+This benchmark performs zero network requests and uses Zig only: `bin/native-search-zig --fixture` generates the raw fixture corpus, then `bin/native-search-zig` decodes, extracts, ranks, and formats results.
+
+Recent local result:
+- Full Zig fixture path: **11.3 ± 6.2 ms** for 500 repeats × 4 docs = 2,000 raw docs (about 177k docs/s), including Zig fixture generation, base64 decode, readable extraction, ranking, and output generation.
+
+For a responsible opt-in live smoke with full Zig fetch/extraction/ranking:
+
+```bash
+bash bench/build-native-search-zig.sh
+TIA_NATIVE_SEARCH_LIVE=1 bash bench/native-search-live-smoke.sh
+```
+
+The live phase passes exact URLs from distinct origins to `bin/native-search-zig --urls`, which applies the configured inter-request delay and performs fetch, extraction, ranking, and output in Zig. Recent responsible smoke fetched 3/3 exact documentation URLs in about 10.5 s with a 2.5 s inter-request delay and wrote `zig-search.md`.
+
 ## Interpretation
 
 - `tia pi` is the strongest path today.
@@ -142,3 +167,4 @@ This compares:
 - `write` improves less dramatically than `read` and `edit`; current feedback-loop write candidates perform exact post-write verification so text mismatches fail the run instead of being counted as success.
 - The slim JSON stream path routes `tia pi --mode json --no-session` to a direct provider-streaming runner. In the local no-prompt startup benchmark, it measured 506.0 ms versus 1.200 s for the full compiled JSON path with `TIA_DISABLE_FAST_STREAM=1` (**2.37x** faster).
 - In the direct tool streaming runner, fast `read` delivered about 7 partial updates per iteration with about 1.29 ms average time-to-first-update across 60 iterations.
+- `native_search` now requires the compiled Zig backend for fetch/decode/extract/rank/output. TypeScript is kept to pi tool registration plus bounded site discovery orchestration only; the benchmark path for native search is Zig-only.

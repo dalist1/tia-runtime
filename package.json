@@ -4,9 +4,9 @@
   "scripts": {
     "bench:feedback": "bash bench/feedback-loop.sh",
     "install:zig": "bash scripts/install-zig.sh",
-    "lint": "oxlint -c .oxlintrc.json scripts/*.ts --deny-warnings",
-    "format": "oxfmt --check scripts/*.ts package.json .oxlintrc.json",
-    "format:write": "oxfmt --write scripts/*.ts package.json .oxlintrc.json"
+    "lint": "oxlint -c .oxlintrc.json scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts --deny-warnings",
+    "format": "oxfmt --check scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json",
+    "format:write": "oxfmt --write scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json"
   },
   "devDependencies": {
     "oxfmt": "latest",

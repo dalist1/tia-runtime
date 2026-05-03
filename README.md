@@ -61,7 +61,7 @@ This path is smoke-tested from outside the repo checkout.
 
 ## Current benchmark highlights
 
-Recent local feedback-loop runs show:
+Recent local benchmark runs show:
 
 | Path | Workload | Result |
 |---|---|---:|
@@ -71,6 +71,7 @@ Recent local feedback-loop runs show:
 | retained tool path | `edit` burst | about **2.1x** faster than stock in smoke loops |
 | retained tool path | verified `write` burst | about **1.5–1.6x** faster than stock in smoke loops |
 | retained tool path | `bash` drain/copy burst | about **1.9x** faster than stock in smoke loops |
+| `native_search` | full local Zig fixture/extract/rank | 2k raw docs in **11.3 ms** (zero network benchmark) |
 
 Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
@@ -95,6 +96,15 @@ The installed fast-tools extension now tries low-level helpers for every hot too
 - `write` → `fastwrite` with exact verification
 - `edit` → `fastedit` for single exact replacements, JS multi-edit fallback otherwise
 - `bash` optimized drain/copy paths → `fastdrain` and `fastcopy`
+
+The installer also adds a modular native search extension:
+- `native_search` performs bounded website search from provided URLs/sites only; query-only URLs use exact direct-URL mode without discovery
+- vanilla implementation: no third-party extraction libraries and no search-engine/tool APIs
+- discovers `llms.txt`, sitemaps, and same-origin links in bounded site mode
+- final exact URL fetch, markdown/html extraction, ranking, and output are handled by the compiled Zig backend
+- default `balanced` planning uses divide-and-conquer round-robin candidate selection across origins; `deep` and `direct` strategies are available
+- stays bounded by explicit sites/URLs, caps pages/results, and applies a per-origin/inter-request delay
+- live smoke benchmarking is opt-in and runs exact URL fetch/extract/rank through Zig only
 
 The installer also attempts to add the official FFF pi extension:
 - `find`/`grep` are backed by FFF in the default `override` mode
@@ -186,6 +196,9 @@ bash bench/hyperfine-pi-rpc-direct.sh
 bash bench/hyperfine-pi-tools-fast-burst.sh
 bash bench/hyperfine-pi-tools-fast-stream.sh
 bash bench/hyperfine-pi-tools-persistent.sh
+bash bench/hyperfine-native-search-zig.sh
+bash bench/build-native-search-zig.sh
+TIA_NATIVE_SEARCH_LIVE=1 bash bench/native-search-live-smoke.sh
 ```
 
 ## Fast stream path
