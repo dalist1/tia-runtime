@@ -33,11 +33,12 @@ cleanup() {
 trap cleanup EXIT
 
 printf '[1/11] install tia runtime\n'
-TIA_ENABLE_FFF=0 bash "${ROOT_DIR}/install.sh" >/dev/null
+TIA_REQUIRE_FFF=1 bash "${ROOT_DIR}/install.sh" tia install --search >/dev/null
 
 printf '[2/11] check tia status\n'
 tia status > "${TMP_DIR}/tia-status.txt"
 rg -n "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
+rg -n "fff extension:.*enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
 ! rg -n "opencode" "${TMP_DIR}/tia-status.txt" >/dev/null
 
 printf '[3/11] verify tia refreshes shell pi agent links at launch\n'
@@ -100,7 +101,6 @@ bun -e 'const obj=require(process.argv[1]); if (obj.ok !== true || obj.writes <=
 printf '[9/11] verify native search extension and Zig backend\n'
 assert_clean_native_search_dir "${HOME}/.local/share/tia/pi-agent/extensions/native-search"
 ! grep -q -- 'set -- --search' "${HOME}/.local/bin/tia"
-tia pi --help | grep -q -- '--search'
 while IFS= read -r file; do
 	lines="$(wc -l < "${file}")"
 	[[ "${lines}" -le 400 ]]
@@ -132,7 +132,7 @@ mkdir -p "${TMP_DIR}/bootstrap-cwd"
 	INSTALL_BASE_URL="$(bun -e 'const { pathToFileURL } = require("node:url"); console.log(pathToFileURL(process.argv[1]).href)' "${ROOT_DIR}/scripts")" \
 	PI_PACKAGE_DIR="${HOST_PI_PACKAGE_DIR}" \
 	TIA_ENABLE_FFF=0 \
-	bash -s -- tia install > "${TMP_DIR}/bootstrap-install.txt"
+	bash -s -- tia install --search > "${TMP_DIR}/bootstrap-install.txt"
 )
 HOME="${BOOTSTRAP_HOME}" \
 XDG_BIN_HOME="${BOOTSTRAP_BIN_HOME}" \

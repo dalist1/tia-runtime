@@ -62,47 +62,27 @@ const nativeSearchSchema = {
 };
 
 export default function (pi: any) {
-  let registered = false;
-
-  pi.registerFlag("search", {
-    description: "Enable native site-bounded website search guidance and native_search tool use.",
-    type: "boolean",
-    default: false,
+  pi.registerTool({
+    name: "native_search",
+    label: "native_search",
+    description:
+      "Vanilla site-bounded web search with a divide-and-conquer planner. Broadens across supplied sites/URLs, balances candidate fetches across origins, uses a Zig backend for fetch/extract/rank/output, and uses no third-party search APIs/tools/libraries.",
+    promptSnippet:
+      "Search bounded websites/URLs with local Zig fetch/extract/rank; no third-party search APIs.",
+    promptGuidelines: [
+      "Use native_search for website/documentation research when the user provides URLs, site roots, or asks for broader web context within supplied sources.",
+      "When using native_search, prefer the default balanced strategy to broaden across multiple supplied origins instead of repeatedly probing one site.",
+      "native_search is bounded and cannot discover the open web by itself; provide sites/URLs/seeds or ask the user for scope if none are available.",
+    ],
+    parameters: nativeSearchSchema,
+    async execute(_toolCallId: string, params: any, signal?: AbortSignal, onUpdate?: any) {
+      return runNativeSearchTool(params, signal, (text, details) => {
+        onUpdate?.({ content: [{ type: "text", text }], details });
+      });
+    },
   });
 
-  function registerNativeSearchTool() {
-    if (registered) return;
-    registered = true;
-    pi.registerTool({
-      name: "native_search",
-      label: "native_search",
-      description:
-        "Vanilla site-bounded web search with a divide-and-conquer planner. Broadens across supplied sites/URLs, balances candidate fetches across origins, uses a Zig backend for fetch/extract/rank/output, and uses no third-party search APIs/tools/libraries.",
-      promptSnippet:
-        "Search bounded websites/URLs with local Zig fetch/extract/rank; no third-party search APIs.",
-      promptGuidelines: [
-        "Use native_search for website/documentation research when the user provides URLs, site roots, or asks for broader web context within supplied sources.",
-        "When using native_search, prefer the default balanced strategy to broaden across multiple origins before going deep on one site.",
-        "native_search is bounded and cannot discover the open web by itself; provide sites/URLs/seeds or ask the user for scope if none are available.",
-      ],
-      parameters: nativeSearchSchema,
-      async execute(_toolCallId: string, params: any, signal?: AbortSignal, onUpdate?: any) {
-        return runNativeSearchTool(params, signal, (text, details) => {
-          onUpdate?.({ content: [{ type: "text", text }], details });
-        });
-      },
-    });
-  }
-
-  pi.on("session_start", async () => {
-    if (pi.getFlag("search") === true) registerNativeSearchTool();
-  });
-
-  pi.on("before_agent_start", async (event: any) => {
-    if (pi.getFlag("search") !== true) return;
-    registerNativeSearchTool();
-    return {
-      systemPrompt: `${event.systemPrompt}\n\n[--search enabled]\nUse native_search for current website/documentation research when the user provides URLs/sites or asks for broader web context. Prefer balanced divide-and-conquer searches across multiple supplied origins instead of repeatedly probing one site. native_search is bounded: it uses provided URLs/sites/seeds only and no third-party search APIs.`,
-    };
-  });
+  pi.on("before_agent_start", async (event: any) => ({
+    systemPrompt: `${event.systemPrompt}\n\n[native_search installed]\nUse native_search for current website/documentation research when the user provides URLs/sites or asks for broader web context. Prefer balanced divide-and-conquer searches across multiple supplied origins instead of repeatedly probing one site. native_search is bounded: it uses provided URLs/sites/seeds only and no third-party search APIs.`,
+  }));
 }

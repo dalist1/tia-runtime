@@ -97,7 +97,7 @@ The installed fast-tools extension now tries low-level helpers for every hot too
 - `edit` → `fastedit` for single exact replacements, JS multi-edit fallback otherwise
 - `bash` optimized drain/copy paths → `fastdrain` and `fastcopy`
 
-The installer also adds a modular native search extension. Users opt in per session with `tia pi --search`:
+Pass `--search` at install time to add the modular native search extension. Runtime sessions then use the installed `native_search` tool automatically; do not pass `--search` to `tia pi`:
 - `native_search` performs bounded website search from provided URLs/sites only; query-only URLs use exact direct-URL mode without discovery
 - vanilla implementation: no third-party extraction libraries and no search-engine/tool APIs
 - discovers `llms.txt`, sitemaps, and same-origin links in bounded site mode
@@ -114,7 +114,7 @@ The installer also attempts to add the official FFF pi extension:
 
 The installer ensures `@mariozechner/pi-coding-agent` is installed at the pinned latest version before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pin, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
 
-Set `TIA_ENABLE_FFF=0` to skip installing it, `TIA_REQUIRE_FFF=1` to make installation failure fatal, `TIA_FFF_PACKAGE_VERSION=<version>` to pin a different package version, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change mode.
+Set `TIA_ENABLE_FFF=0` to skip installing it, `TIA_REQUIRE_FFF=1` to make installation failure fatal, `TIA_FFF_PACKAGE_VERSION=<version>` to pin a different package version, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change mode. Set `TIA_ENABLE_NATIVE_SEARCH=1` or pass `bash install.sh tia install --search` to install native search; omit it or pass `--no-search` to leave runtime behavior to whatever global/user extensions are already installed. At launch, `tia pi` links extensions from the shell/global pi agent into the tia agent when there is no tia-managed extension with the same name.
 
 Removed from active tool benchmarking and harness code:
 
