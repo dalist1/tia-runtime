@@ -42,7 +42,7 @@ TIA_NATIVE_SEARCH_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/native-search"
 TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
-TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-0.6.4}"
+TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-nightly}"
 TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.70.6}"
 PACKAGE_NAME_PI="@mariozechner/pi-coding-agent"
 
@@ -248,15 +248,16 @@ EOF2
 
 	local install_log="${TIA_ROOT}/pi-fff-install.log"
 	: > "${install_log}"
-	if (cd "${TIA_FFF_EXTENSION_DIR}" && bun install --production --omit=peer >> "${install_log}" 2>&1); then
-		return 0
-	fi
-
 	if command -v npm >/dev/null 2>&1; then
 		rm -rf "${TIA_FFF_EXTENSION_DIR}/node_modules" "${TIA_FFF_EXTENSION_DIR}/bun.lock" "${TIA_FFF_EXTENSION_DIR}/package-lock.json"
 		if (cd "${TIA_FFF_EXTENSION_DIR}" && npm install --omit=dev --legacy-peer-deps >> "${install_log}" 2>&1); then
 			return 0
 		fi
+	fi
+
+	rm -rf "${TIA_FFF_EXTENSION_DIR}/node_modules" "${TIA_FFF_EXTENSION_DIR}/bun.lock" "${TIA_FFF_EXTENSION_DIR}/package-lock.json"
+	if (cd "${TIA_FFF_EXTENSION_DIR}" && bun install --production --omit=peer >> "${install_log}" 2>&1); then
+		return 0
 	fi
 
 	rm -rf "${TIA_FFF_EXTENSION_DIR}"
