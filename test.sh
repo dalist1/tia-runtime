@@ -99,6 +99,8 @@ bun -e 'const obj=require(process.argv[1]); if (obj.ok !== true || obj.writes <=
 
 printf '[9/11] verify native search extension and Zig backend\n'
 assert_clean_native_search_dir "${HOME}/.local/share/tia/pi-agent/extensions/native-search"
+! grep -q -- 'set -- --search' "${HOME}/.local/bin/tia"
+tia pi --help | grep -q -- '--search'
 while IFS= read -r file; do
 	lines="$(wc -l < "${file}")"
 	[[ "${lines}" -le 400 ]]
@@ -139,6 +141,7 @@ XDG_DATA_HOME="${BOOTSTRAP_DATA_HOME}" \
 rg -n "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
 ! rg -n "opencode" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
 assert_clean_native_search_dir "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/extensions/native-search"
+! grep -q -- 'set -- --search' "${BOOTSTRAP_BIN_HOME}/tia"
 [[ ! -e "${BOOTSTRAP_BIN_HOME}/max" ]]
 
 printf '[11/11] cleanup tia benchmark helper processes\n'

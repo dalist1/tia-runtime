@@ -1,6 +1,6 @@
 # native search extension
 
-Vanilla, site-bounded search extension for `tia pi`.
+Vanilla, site-bounded search extension for `tia pi --search`.
 
 Rules:
 - no third-party search APIs
@@ -12,7 +12,7 @@ Rules:
 
 Module map:
 - `native-search.zig` fetches exact URLs, decodes fixture corpora, extracts readable text, ranks, and formats output
-- `index.ts` registers the `native_search` tool
+- `index.ts` registers the `--search` flag and enables the `native_search` tool only for `tia pi --search` sessions
 - `tool.ts` orchestrates bounded discovery, balanced/deep/direct planning, and launches the Zig backend
 - `discover.ts` reads `llms.txt`, sitemaps, and same-origin page links for site mode
 - `http.ts` is used only for discovery fetches

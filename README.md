@@ -97,7 +97,7 @@ The installed fast-tools extension now tries low-level helpers for every hot too
 - `edit` → `fastedit` for single exact replacements, JS multi-edit fallback otherwise
 - `bash` optimized drain/copy paths → `fastdrain` and `fastcopy`
 
-The installer also adds a modular native search extension:
+The installer also adds a modular native search extension. Users opt in per session with `tia pi --search`:
 - `native_search` performs bounded website search from provided URLs/sites only; query-only URLs use exact direct-URL mode without discovery
 - vanilla implementation: no third-party extraction libraries and no search-engine/tool APIs
 - discovers `llms.txt`, sitemaps, and same-origin links in bounded site mode

@@ -470,7 +470,7 @@ case "\${subcommand}" in
     echo "cliproxy auto-start:\tenabled for tia pi when systemd user services are available"
     echo "fast stream:         \tenabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)"
     if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/native-search/index.ts" ]]; then
-      echo "native search:       \tenabled (site-bounded, vanilla fetch)"
+      echo "native search:       \tinstalled (enable per run with --search)"
     else
       echo "native search:       \tnot installed"
     fi
@@ -528,7 +528,7 @@ status_all() {
 	printf 'cliproxy auto-start: enabled for tia pi when systemd user services are available\n'
 	printf 'fast stream:         enabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)\n'
 	if [[ -f "${TIA_NATIVE_SEARCH_EXTENSION_DIR}/index.ts" ]]; then
-		printf 'native search:       enabled (site-bounded, vanilla fetch)\n'
+		printf 'native search:       installed (enable per run with --search)\n'
 	else
 		printf 'native search:       not installed\n'
 	fi
