@@ -427,28 +427,6 @@ refresh_shell_agent_links() {
       rm -f "\${dest}"
     fi
   done
-
-  local src_ext_dir="\${shell_agent_dir}/extensions"
-  local dest_ext_dir="\${TIA_PI_AGENT_DIR}/extensions"
-  mkdir -p "\${dest_ext_dir}"
-  [[ -d "\${src_ext_dir}" ]] || return 0
-
-  local src entry dest
-  shopt -s nullglob
-  for src in "\${src_ext_dir}"/*.ts "\${src_ext_dir}"/*.js; do
-    entry="\$(basename -- "\${src}")"
-    dest="\${dest_ext_dir}/\${entry}"
-    [[ -e "\${dest}" || -L "\${dest}" ]] && continue
-    ln -s "\${src}" "\${dest}" 2>/dev/null || true
-  done
-  for src in "\${src_ext_dir}"/*/index.ts "\${src_ext_dir}"/*/package.json; do
-    src="\$(dirname -- "\${src}")"
-    entry="\$(basename -- "\${src}")"
-    dest="\${dest_ext_dir}/\${entry}"
-    [[ -e "\${dest}" || -L "\${dest}" ]] && continue
-    ln -s "\${src}" "\${dest}" 2>/dev/null || true
-  done
-  shopt -u nullglob
 }
 
 configure_fff_env() {
@@ -513,7 +491,6 @@ case "\${subcommand}" in
     echo "tia pi agent:        \t\${TIA_PI_AGENT_DIR}"
     echo "shell pi agent:      \t\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
     echo "history mode:        \tunchanged by tia pi startup"
-    echo "global extensions:  \tlinked from shell pi agent when present"
     echo "cliproxy auto-start:\tenabled for tia pi when systemd user services are available"
     echo "fast stream:         \tenabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)"
     if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/native-search/index.ts" ]]; then
@@ -572,7 +549,6 @@ status_all() {
 	printf 'tia pi agent:        %s\n' "${TIA_PI_AGENT_DIR}"
 	printf 'shell pi agent:      %s\n' "${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}"
 	printf 'history mode:        unchanged by tia pi startup\n'
-	printf 'global extensions:  linked from shell pi agent when present\n'
 	printf 'cliproxy auto-start: enabled for tia pi when systemd user services are available\n'
 	printf 'fast stream:         enabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)\n'
 	if [[ -f "${TIA_NATIVE_SEARCH_EXTENSION_DIR}/index.ts" ]]; then
