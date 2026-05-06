@@ -112,9 +112,21 @@ The installer also attempts to add the official FFF pi extension, using the upst
 - interactive `@` file autocomplete is fed by FFF's frecency-ranked index
 - state lives under `~/.local/share/tia/pi-agent/fff`
 
+You can also opt into a [FFF fork](https://github.com/edxeth/fff) (kept in sync with upstream) that brings quality-of-life improvements to `find` and `grep`. When you use the `path` argument, the fork creates a search index rooted at the correct directory instead of always searching from the workspace root. This means path constraints match more intuitively, absolute paths work correctly, invalid paths return clear error messages, and searches across different directories in the same session behave independently.
+
+```bash
+# Install with the forked FFF
+TIA_FFF_SOURCE=fork bash install.sh tia install
+
+# Switch back to the official version any time
+TIA_FFF_SOURCE=vanilla bash install.sh tia install
+```
+
+Verify which source is active with `tia status | grep fff`.
+
 The installer ensures `@mariozechner/pi-coding-agent` is installed at the pinned latest version before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pin, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
 
-Set `TIA_ENABLE_FFF=0` to skip installing it, `TIA_REQUIRE_FFF=1` to make installation failure fatal, `TIA_FFF_PACKAGE_VERSION=<version|latest|nightly>` to pin a different package version or dist-tag, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change mode. Set `TIA_ENABLE_NATIVE_SEARCH=1` or pass `bash install.sh tia install --search` to install native search; omit it or pass `--no-search` to leave runtime behavior to whatever global/user extensions are already installed. Extensions from the shell/global pi agent are loaded via the shared `settings.json` packages list.
+Set `TIA_ENABLE_FFF=0` to skip FFF entirely, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior. Set `TIA_ENABLE_NATIVE_SEARCH=1` or pass `bash install.sh tia install --search` to install native search; omit it or pass `--no-search` to leave runtime behavior to whatever global/user extensions are already installed. Extensions from the shell/global pi agent are loaded via the shared `settings.json` packages list.
 
 Removed from active tool benchmarking and harness code:
 

@@ -43,6 +43,7 @@ TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
 TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-nightly}"
+TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
 TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.70.6}"
 PACKAGE_NAME_PI="@mariozechner/pi-coding-agent"
 
@@ -59,6 +60,10 @@ Installs the tia-runtime launcher command so you can run:
 Options:
   --search     Install the native_search extension. Runtime invocations do not need --search.
   --no-search  Remove/skip the native_search extension (default unless TIA_ENABLE_NATIVE_SEARCH=1).
+
+Environment:
+  TIA_FFF_SOURCE  FFF source: vanilla (npm @ff-labs/pi-fff) or fork (edxeth/fff GitHub).
+                  Set to "fork" to use the forked FFF pi-fff extension.
 EOF2
 }
 
@@ -230,6 +235,17 @@ install_fff_extension() {
 		return 0
 	fi
 
+	# Clean stale marker files when switching between fork and vanilla
+	rm -f "${TIA_FFF_EXTENSION_DIR}/fff-extension.ts" "${TIA_FFF_EXTENSION_DIR}/query.ts"
+
+	if [[ "${TIA_FFF_SOURCE}" == "fork" ]]; then
+		install_fff_extension_fork
+	else
+		install_fff_extension_vanilla
+	fi
+}
+
+install_fff_extension_vanilla() {
 	mkdir -p "${TIA_FFF_EXTENSION_DIR}" "${TIA_FFF_STATE_DIR}"
 	cat > "${TIA_FFF_EXTENSION_DIR}/package.json" <<EOF2
 {
@@ -246,6 +262,44 @@ EOF2
 export { default } from "@ff-labs/pi-fff/src/index.ts";
 EOF2
 
+	install_fff_extension_install
+}
+
+install_fff_extension_fork() {
+	mkdir -p "${TIA_FFF_EXTENSION_DIR}" "${TIA_FFF_STATE_DIR}"
+
+	cat > "${TIA_FFF_EXTENSION_DIR}/package.json" <<EOF2
+{
+  "name": "tia-pi-fff-extension",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ff-labs/fff-node": "${TIA_FFF_PACKAGE_VERSION}"
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  }
+}
+EOF2
+
+	need_cmd curl
+	curl -fsSL \
+		"https://raw.githubusercontent.com/edxeth/fff/main/packages/pi-fff/src/index.ts" \
+		-o "${TIA_FFF_EXTENSION_DIR}/fff-extension.ts"
+	curl -fsSL \
+		"https://raw.githubusercontent.com/edxeth/fff/main/packages/pi-fff/src/query.ts" \
+		-o "${TIA_FFF_EXTENSION_DIR}/query.ts"
+
+	cat > "${TIA_FFF_EXTENSION_DIR}/index.ts" <<'EOF2'
+export { default } from "./fff-extension.ts";
+EOF2
+
+	install_fff_extension_install
+}
+
+install_fff_extension_install() {
 	local install_log="${TIA_ROOT}/pi-fff-install.log"
 	: > "${install_log}"
 	if command -v npm >/dev/null 2>&1; then
@@ -304,7 +358,23 @@ install_pi_sandbox() {
 		base_agent_dir="${HOME}/.pi/agent"
 	fi
 
+	# Resolve symlinks in pi_package_dir — when PI_PACKAGE_DIR is inherited from
+	# a running tia shell it may point at the sandbox bin dir instead of the real
+	# pi package. resolve dist/cli.js up two levels to find the actual package root.
+	if [[ -L "${pi_package_dir}/dist" ]]; then
+		local real_cli
+		real_cli="$(realpath_bun "${pi_package_dir}/dist/cli.js" 2>/dev/null)" || true
+		if [[ -n "${real_cli}" ]]; then
+			pi_package_dir="$(dirname "$(dirname "${real_cli}")")"
+		fi
+	fi
+
 	bun build --compile "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
+	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
+	install_fast_tool_helpers
+	install_native_search_extension
+	install_fff_extension
+
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
 	bun -e 'const fs=require("node:fs"); const [path, packageDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}"
 	bun build --compile "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}"
@@ -316,11 +386,6 @@ install_pi_sandbox() {
 	ln -sfn "${pi_package_dir}/CHANGELOG.md" "${pi_bin_dir}/CHANGELOG.md"
 	ln -sfn "${pi_package_dir}/docs" "${pi_bin_dir}/docs"
 	ln -sfn "${pi_package_dir}/examples" "${pi_bin_dir}/examples"
-	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
-	install_fast_tool_helpers
-	install_native_search_extension
-	install_fff_extension
-
 	rm -f "${TIA_PI_AGENT_DIR}/auth.json" "${TIA_PI_AGENT_DIR}/models.json" "${TIA_PI_AGENT_DIR}/settings.json"
 	if [[ -f "${base_agent_dir}/auth.json" ]]; then
 		ln -s "${base_agent_dir}/auth.json" "${TIA_PI_AGENT_DIR}/auth.json"
@@ -499,7 +564,11 @@ case "\${subcommand}" in
       echo "native search:       \tnot installed"
     fi
     if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/index.ts" ]]; then
-      echo "fff extension:       \tenabled (default mode: \${PI_FFF_MODE:-override})"
+      fff_source="vanilla"
+      if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/fff-extension.ts" ]]; then
+        fff_source="fork (edxeth/fff)"
+      fi
+      echo "fff extension:       \tenabled (source: \${fff_source}, mode: \${PI_FFF_MODE:-override})"
     else
       echo "fff extension:       \tnot installed"
     fi
@@ -557,7 +626,11 @@ status_all() {
 		printf 'native search:       not installed\n'
 	fi
 	if [[ -f "${TIA_FFF_EXTENSION_DIR}/index.ts" ]]; then
-		printf 'fff extension:       enabled (default mode: %s)\n' "${PI_FFF_MODE:-override}"
+		local fff_source="vanilla"
+		if [[ -f "${TIA_FFF_EXTENSION_DIR}/fff-extension.ts" ]]; then
+			fff_source="fork (edxeth/fff)"
+		fi
+		printf 'fff extension:       enabled (source: %s, mode: %s)\n' "${fff_source}" "${PI_FFF_MODE:-override}"
 	else
 		printf 'fff extension:       not installed\n'
 	fi
