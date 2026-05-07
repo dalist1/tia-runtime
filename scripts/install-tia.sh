@@ -386,7 +386,7 @@ install_pi_sandbox() {
 	ln -sfn "${pi_package_dir}/CHANGELOG.md" "${pi_bin_dir}/CHANGELOG.md"
 	ln -sfn "${pi_package_dir}/docs" "${pi_bin_dir}/docs"
 	ln -sfn "${pi_package_dir}/examples" "${pi_bin_dir}/examples"
-	rm -f "${TIA_PI_AGENT_DIR}/auth.json" "${TIA_PI_AGENT_DIR}/models.json" "${TIA_PI_AGENT_DIR}/settings.json"
+	rm -f "${TIA_PI_AGENT_DIR}/auth.json" "${TIA_PI_AGENT_DIR}/models.json" "${TIA_PI_AGENT_DIR}/settings.json" "${TIA_PI_AGENT_DIR}/keybindings.json"
 	if [[ -f "${base_agent_dir}/auth.json" ]]; then
 		ln -s "${base_agent_dir}/auth.json" "${TIA_PI_AGENT_DIR}/auth.json"
 	fi
@@ -395,6 +395,9 @@ install_pi_sandbox() {
 	fi
 	if [[ -f "${base_agent_dir}/settings.json" ]]; then
 		ln -s "${base_agent_dir}/settings.json" "${TIA_PI_AGENT_DIR}/settings.json"
+	fi
+	if [[ -f "${base_agent_dir}/keybindings.json" ]]; then
+		ln -s "${base_agent_dir}/keybindings.json" "${TIA_PI_AGENT_DIR}/keybindings.json"
 	fi
 
 	printf '%s\n' "${pi_package_dir}" > "${TIA_ROOT}/pi-package-dir.txt"
@@ -479,7 +482,7 @@ refresh_shell_agent_links() {
   fi
   mkdir -p "\${TIA_PI_AGENT_DIR}"
 
-  for name in auth.json models.json settings.json; do
+  for name in auth.json models.json settings.json keybindings.json; do
     local src="\${shell_agent_dir}/\${name}"
     local dest="\${TIA_PI_AGENT_DIR}/\${name}"
     if [[ -f "\${src}" ]]; then
