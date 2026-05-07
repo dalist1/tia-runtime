@@ -1,4 +1,32 @@
-import {runNativeSearchTool} from './tool.ts'
+import {createRequire} from 'node:module'
+import {buildNativeSearchRenderText, runNativeSearchTool} from './tool.ts'
+
+const require = createRequire(import.meta.url)
+
+class PlainText {
+ constructor(private content: string) {}
+ render(width: number) {
+  const maxWidth = Math.max(1, width)
+  return this.content.split('\n').flatMap(line => wrapPlainLine(line, maxWidth))
+ }
+ invalidate() {}
+}
+
+function wrapPlainLine(line: string, width: number) {
+ if (line.length <= width) return [line]
+ const lines: string[] = []
+ for (let index = 0; index < line.length; index += width) lines.push(line.slice(index, index + width))
+ return lines
+}
+
+function expandHint() {
+ try {
+  const {keyHint} = require('@mariozechner/pi-coding-agent')
+  return keyHint('app.tools.expand', 'to expand')
+ } catch {
+  return 'Ctrl+O to expand'
+ }
+}
 
 const nativeSearchSchema = {
  type: 'object',
@@ -35,6 +63,11 @@ export default function (pi: any) {
    return runNativeSearchTool(params, signal, (text, details) => {
     onUpdate?.({content: [{type: 'text', text}], details})
    })
+  },
+  renderResult(result: any, {expanded, isPartial}: any, theme: any) {
+   const text = buildNativeSearchRenderText(result, {expanded, expandHint: expandHint(), isPartial})
+   const color = isPartial ? 'warning' : 'dim'
+   return new PlainText(theme.fg(color, text))
   }
  })
 
