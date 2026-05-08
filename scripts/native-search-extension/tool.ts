@@ -103,11 +103,20 @@ async function runNativeSearchToolInner(params: NativeSearchParams, signal?: Abo
   const quality = searchQualityFromDetails(response.details)
   const enoughQuality = quality ? isEnoughQuality(quality, maxResults) : true
   const exhausted = fetchedCount >= rankedUrls.length
+  const recover = shouldRecoverFetchBatch({directUrlMode, adaptive: fetchPolicy.adaptive, enoughQuality, exhausted, fetchedUrlCount: Number(response.details?.fetchedUrlCount ?? 0), batchesFetched})
   response.details = {
    ...response.details,
-   adaptive: {enabled: fetchPolicy.adaptive && !directUrlMode, batchesFetched, initialFetchCount, policy: fetchPolicy.reason, stoppedReason: directUrlMode ? 'direct_url_mode' : enoughQuality ? 'enough_quality' : exhausted || !fetchPolicy.adaptive ? 'exhausted_candidates' : 'fetch_more', quality}
+   adaptive: {
+    enabled: (fetchPolicy.adaptive || recover) && !directUrlMode,
+    batchesFetched,
+    initialFetchCount,
+    policy: fetchPolicy.reason,
+    stoppedReason: directUrlMode ? 'direct_url_mode' : enoughQuality && !recover ? 'enough_quality' : exhausted ? 'exhausted_candidates' : fetchPolicy.adaptive || recover ? 'fetch_more' : 'exhausted_candidates',
+    quality,
+    recover
+   }
   }
-  if (directUrlMode || !fetchPolicy.adaptive || enoughQuality || exhausted) return response
+  if (directUrlMode || exhausted || (!fetchPolicy.adaptive && !recover) || (enoughQuality && !recover)) return response
   fetchedCount = Math.min(rankedUrls.length, fetchedCount + fetchPolicy.batchSize)
  }
 }
@@ -174,6 +183,12 @@ export function resolveFetchPolicy(input: {query: string; queryTerms: string[]; 
  const batchSize = Math.max(input.maxResults, initialFetchCount)
  const adaptive = input.adaptiveFetch === true
  return {initialFetchCount, batchSize, adaptive, intent, reason: input.explicitFetchPages ? `explicit fetchPages=${input.fetchPages}` : `${intent} intent derived from query and maxResults`}
+}
+
+export function shouldRecoverFetchBatch(input: {directUrlMode: boolean; adaptive: boolean; enoughQuality: boolean; exhausted: boolean; fetchedUrlCount: number; batchesFetched: number}) {
+ if (input.directUrlMode || input.exhausted || input.adaptive || input.batchesFetched > 2) return false
+ if (input.fetchedUrlCount === 0) return true
+ return !input.enoughQuality && input.fetchedUrlCount < 2
 }
 
 export function classifySearchIntent(query: string, queryTerms: string[], strategy: SearchStrategy): SearchIntent {

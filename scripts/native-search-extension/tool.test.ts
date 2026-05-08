@@ -1,6 +1,6 @@
 import {describe, expect, test} from 'bun:test'
 import {parseZigSearchResults} from './results.ts'
-import {classifySearchIntent, fetchPriority, likelyDocUrls, resolveFetchPolicy} from './tool.ts'
+import {classifySearchIntent, fetchPriority, likelyDocUrls, resolveFetchPolicy, shouldRecoverFetchBatch} from './tool.ts'
 
 describe('native search result metadata', () => {
  test('parses structured result metadata from Zig text output', () => {
@@ -79,6 +79,24 @@ describe('native search URL pre-ranking', () => {
   const unrelatedLlms = {url: 'https://developers.cloudflare.com/cloudflare-challenges/llms.txt', source: 'llms', priority: 110}
 
   expect(fetchPriority(workersSeed, queryTerms)).toBeGreaterThan(fetchPriority(unrelatedLlms, queryTerms))
+ })
+})
+
+describe('native search fetch recovery', () => {
+ test('recovers after an empty non-direct first batch even when adaptive fetch is disabled', () => {
+  expect(shouldRecoverFetchBatch({directUrlMode: false, adaptive: false, enoughQuality: true, exhausted: false, fetchedUrlCount: 0, batchesFetched: 1})).toBe(true)
+ })
+
+ test('does not recover direct URL mode beyond explicit caller-owned URLs', () => {
+  expect(shouldRecoverFetchBatch({directUrlMode: true, adaptive: false, enoughQuality: true, exhausted: false, fetchedUrlCount: 0, batchesFetched: 1})).toBe(false)
+ })
+
+ test('recovers after a sparse weak-quality batch', () => {
+  expect(shouldRecoverFetchBatch({directUrlMode: false, adaptive: false, enoughQuality: false, exhausted: false, fetchedUrlCount: 1, batchesFetched: 1})).toBe(true)
+ })
+
+ test('does not recover after successful result fetches when quality is enough', () => {
+  expect(shouldRecoverFetchBatch({directUrlMode: false, adaptive: false, enoughQuality: true, exhausted: false, fetchedUrlCount: 3, batchesFetched: 1})).toBe(false)
  })
 })
 
