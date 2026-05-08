@@ -206,6 +206,10 @@ install_native_search_extension() {
 		discover.ts \
 		http.ts \
 		index.ts \
+		observability.ts \
+		pipeline.ts \
+		results.ts \
+		scoring.zig \
 		text.ts \
 		tool.ts \
 		types.ts \
@@ -254,7 +258,9 @@ install_fff_extension_vanilla() {
   "type": "module",
   "dependencies": {
     "@ff-labs/pi-fff": "${TIA_FFF_PACKAGE_VERSION}",
-    "@ff-labs/fff-node": "${TIA_FFF_PACKAGE_VERSION}"
+    "@ff-labs/fff-node": "${TIA_FFF_PACKAGE_VERSION}",
+    "@earendil-works/pi-coding-agent": "npm:@mariozechner/pi-coding-agent@${TIA_PI_PACKAGE_VERSION}",
+    "@earendil-works/pi-tui": "npm:@mariozechner/pi-tui@${TIA_PI_PACKAGE_VERSION}"
   }
 }
 EOF2
@@ -490,6 +496,23 @@ refresh_shell_agent_links() {
   done
 }
 
+filter_tia_pi_runtime_args() {
+  local filtered=()
+  local arg
+  for arg in "$@"; do
+    case "\${arg}" in
+      --search|--no-search)
+        # Native search is installed at tia install time. Accept these at runtime as no-op
+        # compatibility flags so `tia pi --search` does not get forwarded to pi.
+        ;;
+      *)
+        filtered+=("\${arg}")
+        ;;
+    esac
+  done
+  TIA_FILTERED_ARGS=("\${filtered[@]}")
+}
+
 configure_fff_env() {
   mkdir -p "\${TIA_FFF_STATE_DIR}"
   local arg prev="" cli_mode=""
@@ -530,15 +553,16 @@ case "\${subcommand}" in
     }
     ensure_cliproxy_started
     refresh_shell_agent_links
-    configure_fff_env "\$@"
+    filter_tia_pi_runtime_args "\$@"
+    configure_fff_env "\${TIA_FILTERED_ARGS[@]}"
     export TIA_ACTIVE=1
     export TIA_COMMAND="tia pi"
     export PI_CODING_AGENT_DIR="\${TIA_PI_AGENT_DIR}"
     export PI_PACKAGE_DIR="${TIA_ROOT}/bin"
-    if should_use_fast_stream "\$@"; then
-      exec "\${TIA_PI_STREAM_BIN}" "\$@"
+    if should_use_fast_stream "\${TIA_FILTERED_ARGS[@]}"; then
+      exec "\${TIA_PI_STREAM_BIN}" "\${TIA_FILTERED_ARGS[@]}"
     fi
-    exec "\${TIA_PI_BIN}" "\$@"
+    exec "\${TIA_PI_BIN}" "\${TIA_FILTERED_ARGS[@]}"
     ;;
   status)
     echo "tia root:            \t\${TIA_ROOT}"

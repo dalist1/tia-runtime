@@ -13,15 +13,29 @@ elif command -v gtimeout >/dev/null 2>&1; then
 fi
 run_with_optional_timeout() {
 	if [[ -n "${TIMEOUT_BIN}" ]]; then
-		"${TIMEOUT_BIN}" 25s "$@"
+		"${TIMEOUT_BIN}" 60s "$@"
 	else
-		"$@"
+		"$@" &
+		local pid="$!"
+		local elapsed=0
+		while kill -0 "${pid}" 2>/dev/null; do
+			if [[ "${elapsed}" -ge 60 ]]; then
+				kill "${pid}" 2>/dev/null || true
+				wait "${pid}" 2>/dev/null || true
+				return 124
+			fi
+			sleep 1
+			elapsed="$((elapsed + 1))"
+		done
+		wait "${pid}"
 	fi
 }
 assert_clean_native_search_dir() {
 	local dir="$1"
 	[[ -f "${dir}/index.ts" ]]
 	[[ -f "${dir}/native-search.zig" ]]
+	[[ -f "${dir}/pipeline.ts" ]]
+	[[ -f "${dir}/observability.ts" ]]
 	local stale
 	for stale in robots.ts safety.ts extract.ts rank.ts candidates.ts; do
 		[[ ! -e "${dir}/${stale}" ]]
@@ -101,6 +115,7 @@ bun -e 'const obj=require(process.argv[1]); if (obj.ok !== true || obj.writes <=
 printf '[9/11] verify native search extension and Zig backend\n'
 assert_clean_native_search_dir "${HOME}/.local/share/tia/pi-agent/extensions/native-search"
 ! grep -q -- 'set -- --search' "${HOME}/.local/bin/tia"
+grep -q -- 'filter_tia_pi_runtime_args' "${HOME}/.local/bin/tia"
 while IFS= read -r file; do
 	lines="$(wc -l < "${file}")"
 	[[ "${lines}" -le 400 ]]
@@ -116,6 +131,42 @@ if command -v zig >/dev/null 2>&1; then
 	"${ROOT_DIR}/bin/native-search-zig" native,search 1 1000 "${TMP_DIR}/native-search-raw.tsv" > "${TMP_DIR}/native-search-zig.txt"
 	grep -q 'Native Zig search found 1 result' "${TMP_DIR}/native-search-zig.txt"
 	grep -q 'https://example.invalid' "${TMP_DIR}/native-search-zig.txt"
+	TIA_NATIVE_SEARCH_ZIG_BIN="${ROOT_DIR}/bin/native-search-zig" bun -e '
+		const { pathToFileURL } = require("node:url");
+		const server = Bun.serve({
+			port: 0,
+			fetch(request) {
+				const path = new URL(request.url).pathname;
+				if (path === "/a.md") return new Response("# Native Search\nmarkdown documentation native search concurrency", { headers: { "content-type": "text/markdown" } });
+				if (path === "/b.md") return new Response("# Secondary\nbounded fetch ranking documentation", { headers: { "content-type": "text/markdown" } });
+				return new Response("not found", { status: 404 });
+			},
+		});
+		try {
+			const logPath = `${process.argv[2]}/native-search-events.ndjson`;
+			process.env.TIA_NATIVE_SEARCH_LOG_PATH = logPath;
+			const { existsSync, readFileSync } = require("node:fs");
+			const { runNativeSearchTool } = await import(pathToFileURL(process.argv[1]).href);
+			const base = `http://127.0.0.1:${server.port}`;
+			const result = await runNativeSearchTool({
+				query: `native search documentation ${base}/a.md ${base}/b.md`,
+				strategy: "direct",
+				maxResults: 2,
+				fetchPages: 1,
+				contentChars: 1000,
+			});
+			const text = result.content.map((part) => part.text).join("\n");
+			if (!text.includes(`${base}/a.md`)) throw new Error("missing local direct URL result");
+			if (result.details.backend !== "bun-fetch-zig-extract-rank") throw new Error("unexpected backend");
+			if (result.details.fetchedUrlCount !== 2) throw new Error(`direct mode should fetch all explicit URLs, got ${result.details.fetchedUrlCount}`);
+			if (typeof result.details.timings.fetchMs !== "number") throw new Error("missing fetch timing");
+			if (!existsSync(logPath)) throw new Error("missing native search observability log");
+			const event = JSON.parse(readFileSync(logPath, "utf8").trim());
+			if (event.kind !== "native_search" || event.phase !== "complete") throw new Error("bad observability event");
+		} finally {
+			server.stop(true);
+		}
+	' "${ROOT_DIR}/scripts/native-search-extension/tool.ts" "${TMP_DIR}"
 fi
 
 printf '[10/11] verify installer bootstrap path\n'
@@ -142,6 +193,7 @@ rg -n "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:
 ! rg -n "opencode" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
 assert_clean_native_search_dir "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/extensions/native-search"
 ! grep -q -- 'set -- --search' "${BOOTSTRAP_BIN_HOME}/tia"
+grep -q -- 'filter_tia_pi_runtime_args' "${BOOTSTRAP_BIN_HOME}/tia"
 [[ ! -e "${BOOTSTRAP_BIN_HOME}/max" ]]
 
 printf '[11/11] cleanup tia benchmark helper processes\n'

@@ -1,14 +1,7 @@
 const std = @import("std");
+const scoring = @import("scoring.zig");
 const Io = std.Io;
-
-const Doc = struct {
-    url: []const u8,
-    content_type: []const u8,
-    title: []const u8,
-    content: []const u8,
-    kind: []const u8,
-    score: u64,
-};
+const Doc = scoring.Doc;
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -37,7 +30,7 @@ pub fn main(init: std.process.Init) !void {
     else
         try parseCorpus(arena, input, content_chars, terms);
 
-    std.mem.sort(Doc, docs, {}, moreRelevant);
+    std.mem.sort(Doc, docs, {}, scoring.moreRelevant);
 
     var stdout_buffer: [8192]u8 = undefined;
     var stdout_writer = Io.File.stdout().writer(io, &stdout_buffer);
@@ -47,13 +40,18 @@ pub fn main(init: std.process.Init) !void {
     var i: usize = 0;
     while (i < shown) : (i += 1) {
         const doc = docs[i];
-        try out.print("## {}. {s}\n\n{s}\n\nScore: {}; kind={s}; contentType={s}\n\n", .{
+        try out.print("## {}. {s}\n\n{s}\n\nScore: {}; kind={s}; contentType={s}\nScoreBreakdown: bm25={}; title={}; url={}; phrase={}; source={}\n\n", .{
             i + 1,
             if (doc.title.len > 0) doc.title else doc.url,
             doc.url,
             doc.score,
             doc.kind,
             doc.content_type,
+            doc.score_breakdown.bm25,
+            doc.score_breakdown.title,
+            doc.score_breakdown.url,
+            doc.score_breakdown.phrase,
+            doc.score_breakdown.source,
         });
         try writeSnippet(out, doc.content, terms);
         if (output_content) {
@@ -101,7 +99,8 @@ fn fetchUrls(arena: std.mem.Allocator, io: Io, urls_text: []const u8, max_chars:
         const fetched = fetchOne(arena, &client, url) catch continue;
         const extracted = try extract(arena, fetched.url, "", fetched.body, max_chars);
         docs[used] = extracted;
-        docs[used].score = scoreDoc(extracted, terms);
+        docs[used].score_breakdown = scoring.scoreDocDetailed(extracted, terms);
+        docs[used].score = docs[used].score_breakdown.total();
         used += 1;
     }
     return docs[0..used];
@@ -142,7 +141,8 @@ fn parseCorpus(arena: std.mem.Allocator, corpus: []const u8, max_chars: usize, t
         const raw = try decodeB64(arena, fields.next() orelse "");
         const extracted = try extract(arena, url, content_type, raw, max_chars);
         docs[used] = extracted;
-        docs[used].score = scoreDoc(extracted, terms);
+        docs[used].score_breakdown = scoring.scoreDocDetailed(extracted, terms);
+        docs[used].score = docs[used].score_breakdown.total();
         used += 1;
     }
     return docs[0..used];
@@ -267,18 +267,6 @@ fn splitTerms(arena: std.mem.Allocator, query: []const u8) ![]const []const u8 {
     return temp[0..used];
 }
 
-fn scoreDoc(doc: Doc, terms: []const []const u8) u64 {
-    var score: u64 = if (std.mem.eql(u8, doc.kind, "markdown")) 4 else 0;
-    var matched: usize = 0;
-    for (terms) |term| {
-        const term_score = countFold(doc.title, term) * 16 + countFold(doc.url, term) * 7 + @min(countFold(doc.content, term), 12) * 3;
-        if (term_score > 0) matched += 1;
-        score += term_score;
-    }
-    if (terms.len > 0 and matched == terms.len) score += 18;
-    return score;
-}
-
 fn writeSnippet(out: *Io.Writer, content: []const u8, terms: []const []const u8) !void {
     var at: usize = 0;
     for (terms) |term| if (indexOfFold(content, term)) |idx| {
@@ -292,20 +280,6 @@ fn writeSnippet(out: *Io.Writer, content: []const u8, terms: []const []const u8)
     try out.writeAll(content[start..end]);
     if (end < content.len) try out.writeAll("…");
     try out.writeAll("\n");
-}
-
-fn moreRelevant(_: void, a: Doc, b: Doc) bool {
-    return a.score > b.score;
-}
-
-fn countFold(haystack: []const u8, needle: []const u8) u64 {
-    if (needle.len == 0 or haystack.len < needle.len) return 0;
-    var count: u64 = 0;
-    var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
-        if (eqlFold(haystack[i .. i + needle.len], needle)) count += 1;
-    }
-    return count;
 }
 
 fn containsFold(haystack: []const u8, needle: []const u8) bool {

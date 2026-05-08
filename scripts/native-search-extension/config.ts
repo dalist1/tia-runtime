@@ -3,6 +3,7 @@ export const HARD_MAX_RESULTS = 10
 export const DEFAULT_PAGES_PER_SITE = 8
 export const HARD_MAX_PAGES_PER_SITE = 25
 export const DEFAULT_MAX_PAGES = 12
+export const DEFAULT_FETCH_PAGES = 5
 export const HARD_MAX_PAGES = 50
 export const DEFAULT_CONTENT_CHARS = 6000
 export const HARD_MAX_CONTENT_CHARS = 20000
