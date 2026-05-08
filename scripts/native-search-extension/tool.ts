@@ -69,7 +69,7 @@ async function runNativeSearchToolInner(params: NativeSearchParams, signal?: Abo
     })
  const discoveryMs = performance.now() - discoveryStarted
  const discoveries = discoveryRecords.map(record => record.discovery)
- const discovered = directUrlMode ? sites.map(url => ({url, source: 'direct URL', priority: 100})) : discoveries.flatMap(discovery => discovery.urls)
+ const discovered = directUrlMode ? sites.map(url => ({url, source: 'direct URL', priority: 100})) : [...discoveries.flatMap(discovery => discovery.urls), ...likelyDocUrls(sites, queryTerms)]
  const planningStarted = performance.now()
  const plannedUrls = planCandidateUrls(discovered, {strategy, maxPages: directUrlMode ? Math.min(maxPages, sites.length) : maxPages, perSiteCap: pagesPerSite})
  const rankedUrls = preRankFetchUrls(plannedUrls, queryTerms, plannedUrls.length)
@@ -211,6 +211,47 @@ function preRankFetchUrls(items: DiscoveredUrl[], queryTerms: string[], fetchPag
  return [...items].sort((a, b) => fetchPriority(b, queryTerms) - fetchPriority(a, queryTerms) || a.url.localeCompare(b.url)).slice(0, fetchPages)
 }
 
+export function likelyDocUrls(sites: string[], queryTerms: string[]): DiscoveredUrl[] {
+ const generated: DiscoveredUrl[] = []
+ for (const site of sites) {
+  const parsed = new URL(site)
+  const prefix = docsPrefix(parsed.pathname)
+  if (!prefix) continue
+  const slugs = new Set<string>()
+  for (const term of queryTerms) {
+   for (const slug of termSlugs(term, parsed.hostname)) slugs.add(slug)
+  }
+  for (const slug of slugs) {
+   generated.push({url: normalizeHttpUrl(`${parsed.origin}${prefix}/${slug}`), source: 'likely docs', priority: 132})
+  }
+ }
+ return unique(generated.map(item => item.url)).map(url => generated.find(item => item.url === url)!)
+}
+
+function docsPrefix(pathname: string) {
+ const match = pathname.match(/^\/(docs|documentation|guide|guides|learn|reference|api)(?:\/|$)/i)
+ if (!match) return ''
+ return `/${match[1].toLowerCase()}`
+}
+
+function termSlugs(term: string, hostname: string) {
+ const slug = slugToken(term)
+ if (!slug || slug.length < 4 || DOC_SLUG_STOP_WORDS.has(slug) || hostname.toLowerCase().includes(slug)) return []
+ const slugs = [slug]
+ if (slug.endsWith('y')) slugs.push(`${slug.slice(0, -1)}ies`)
+ else if (!slug.endsWith('s')) slugs.push(`${slug}s`)
+ return slugs
+}
+
+function slugToken(term: string) {
+ return term
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '')
+}
+
+const DOC_SLUG_STOP_WORDS = new Set(['documentation', 'documentations', 'docs', 'guide', 'guides', 'example', 'examples', 'auto', 'waiting'])
+
 export function fetchPriority(item: DiscoveredUrl, queryTerms: string[]) {
  let score = item.priority
  const parsed = new URL(item.url)
@@ -218,6 +259,7 @@ export function fetchPriority(item: DiscoveredUrl, queryTerms: string[]) {
  if (/\.(md|mdx|markdown|txt)(?:$|[?#])/i.test(item.url)) score += 12
  if (item.source === 'seed') score += 8
  if (item.source === 'llms') score += 6
+ if (item.source === 'likely docs') score += 10
  if (/docs|guide|manual|reference|api|learn|tutorial|examples|spec/i.test(item.url)) score += 10
  if (/\/($|[?#])/.test(parsed.pathname)) score -= 12
  let specificPathMatches = 0
