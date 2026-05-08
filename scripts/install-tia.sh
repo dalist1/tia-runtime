@@ -210,6 +210,7 @@ install_native_search_extension() {
 		pipeline.ts \
 		results.ts \
 		scoring.zig \
+		search-plan.ts \
 		text.ts \
 		tool.ts \
 		types.ts \
