@@ -274,7 +274,8 @@ install_fff_extension_fork() {
   "private": true,
   "type": "module",
   "dependencies": {
-    "@ff-labs/fff-node": "${TIA_FFF_PACKAGE_VERSION}"
+    "@edxeth/pi-fff": "${TIA_FFF_PACKAGE_VERSION}",
+    "@edxeth/fff-node": "${TIA_FFF_PACKAGE_VERSION}"
   },
   "peerDependencies": {
     "@mariozechner/pi-coding-agent": "*",
@@ -284,16 +285,8 @@ install_fff_extension_fork() {
 }
 EOF2
 
-	need_cmd curl
-	curl -fsSL \
-		"https://raw.githubusercontent.com/edxeth/fff/main/packages/pi-fff/src/index.ts" \
-		-o "${TIA_FFF_EXTENSION_DIR}/fff-extension.ts"
-	curl -fsSL \
-		"https://raw.githubusercontent.com/edxeth/fff/main/packages/pi-fff/src/query.ts" \
-		-o "${TIA_FFF_EXTENSION_DIR}/query.ts"
-
 	cat > "${TIA_FFF_EXTENSION_DIR}/index.ts" <<'EOF2'
-export { default } from "./fff-extension.ts";
+export { default } from "@edxeth/pi-fff/src/index.ts";
 EOF2
 
 	install_fff_extension_install
