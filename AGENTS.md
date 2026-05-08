@@ -14,6 +14,7 @@ Validation for runtime/install/streaming/tool changes:
 bash -n install.sh scripts/install-tia.sh test.sh
 bun run format
 bun run lint
+bun test
 bash test.sh
 ```
 

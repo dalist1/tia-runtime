@@ -94,7 +94,9 @@ export function buildNativeSearchRenderText(result: ToolTextResponse, options: R
  const compactResults = !options.expanded && renderedResults.length > 1
  for (const [index, item] of renderedResults.entries()) {
   if (compactResults) {
-   lines.push(`${index + 1}. ${truncateLine(`${item.title || item.url} — ${item.url}`, COLLAPSED_COMPACT_RESULT_CHARS)}`)
+   const display = `${item.title || item.url} — ${item.url}`
+   const deduped = item.title ? display : item.url
+   lines.push(`${index + 1}. ${truncateLine(deduped, COLLAPSED_COMPACT_RESULT_CHARS)}`)
   } else {
    lines.push(`${index + 1}. ${truncateLine(item.title || item.url, 120)}`)
    if (item.url) lines.push(`   ${truncateLine(item.url, 180)}`)
@@ -102,8 +104,10 @@ export function buildNativeSearchRenderText(result: ToolTextResponse, options: R
   }
  }
 
- if (options.expanded && parsed.results.length > renderedResults.length) {
-  lines.push(`… ${parsed.results.length - renderedResults.length} more result(s) hidden in terminal render`)
+ const hiddenCount = parsed.results.length - renderedResults.length
+ if (hiddenCount > 0) {
+  const hint = options.expandHint ? `, ${options.expandHint}` : ''
+  lines.push(`… ${hiddenCount} more result(s) hidden in terminal render${hint}`)
  }
 
  if (parsed.results.length === 0 && fullText.trim()) {
