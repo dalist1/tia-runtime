@@ -44,8 +44,8 @@ TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
 TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-nightly}"
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
-TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.73.0}"
-PACKAGE_NAME_PI="@mariozechner/pi-coding-agent"
+TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.74.0}"
+PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 
 usage() {
 	cat <<EOF2
@@ -102,7 +102,7 @@ is_pi_package_dir() {
 	local package_json="${dir}/package.json"
 	[[ -f "${package_json}" ]] || return 1
 	[[ -f "${dir}/dist/cli.js" ]] || return 1
-	bun -e 'const data=require(process.argv[1]); process.exit(data.name === "@mariozechner/pi-coding-agent" ? 0 : 1)' "${package_json}"
+	bun -e 'const data=require(process.argv[1]); process.exit(data.name === "@earendil-works/pi-coding-agent" ? 0 : 1)' "${package_json}"
 }
 
 find_pi_package_dir() {
