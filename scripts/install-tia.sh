@@ -43,7 +43,7 @@ TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
 TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-nightly}"
-TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
+TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-fork}"
 TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.74.0}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 
@@ -62,8 +62,8 @@ Options:
   --no-search  Remove/skip the native_search extension (default unless TIA_ENABLE_NATIVE_SEARCH=1).
 
 Environment:
-  TIA_FFF_SOURCE  FFF source: vanilla (npm @ff-labs/pi-fff) or fork (edxeth/fff GitHub).
-                  Set to "fork" to use the forked FFF pi-fff extension.
+  TIA_FFF_SOURCE  FFF source: fork (npm @edxeth/pi-fff + @edxeth/fff-node) or vanilla (npm @ff-labs/pi-fff).
+                  Default is "fork" so Rust-side FFF updates pull the matching forked fff-node binary.
 EOF2
 }
 
@@ -586,8 +586,8 @@ case "\${subcommand}" in
     fi
     if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/index.ts" ]]; then
       fff_source="vanilla"
-      if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/fff-extension.ts" ]]; then
-        fff_source="fork (edxeth/fff)"
+      if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/fff-extension.ts" ]] || grep -q '@edxeth/pi-fff' "\${TIA_PI_AGENT_DIR}/extensions/fff/index.ts" 2>/dev/null; then
+        fff_source="fork (@edxeth npm)"
       fi
       echo "fff extension:       \tenabled (source: \${fff_source}, mode: \${PI_FFF_MODE:-override})"
     else
@@ -648,8 +648,8 @@ status_all() {
 	fi
 	if [[ -f "${TIA_FFF_EXTENSION_DIR}/index.ts" ]]; then
 		local fff_source="vanilla"
-		if [[ -f "${TIA_FFF_EXTENSION_DIR}/fff-extension.ts" ]]; then
-			fff_source="fork (edxeth/fff)"
+		if [[ -f "${TIA_FFF_EXTENSION_DIR}/fff-extension.ts" ]] || grep -q '@edxeth/pi-fff' "${TIA_FFF_EXTENSION_DIR}/index.ts" 2>/dev/null; then
+			fff_source="fork (@edxeth npm)"
 		fi
 		printf 'fff extension:       enabled (source: %s, mode: %s)\n' "${fff_source}" "${PI_FFF_MODE:-override}"
 	else

@@ -87,6 +87,6 @@ bash scripts/install-tia.sh uninstall
 - Do not force tool-using coding subagents through slim mode; use full JSON pi for subagents that need tools or stock pi JSON events.
 - Set `TIA_DISABLE_FAST_STREAM=1` if you need to opt out.
 - Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pinned pi package version, `PI_PACKAGE_DIR=<path>` to use a local checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
-- Set `TIA_ENABLE_FFF=0` during install to skip FFF, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, `TIA_FFF_PACKAGE_VERSION=<version|latest|nightly>` to override the FFF package dist-tag/version, `TIA_FFF_SOURCE=vanilla|fork` to switch between the upstream `@ff-labs/pi-fff` npm package and the forked `@edxeth/pi-fff` / `@edxeth/fff-node` npm packages (default: `vanilla`), or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior.
+- Set `TIA_ENABLE_FFF=0` during install to skip FFF, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, `TIA_FFF_PACKAGE_VERSION=<version|latest|nightly>` to override the FFF package dist-tag/version, `TIA_FFF_SOURCE=fork|vanilla` to switch between the forked `@edxeth/pi-fff` / `@edxeth/fff-node` npm packages (default, including Rust-side binary updates) and upstream `@ff-labs/pi-fff`, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior.
 - `tia-runtime` does not add startup-time session/history cleanup logic.
 - Re-run the installer after updating pi.
