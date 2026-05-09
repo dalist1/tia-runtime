@@ -32,6 +32,28 @@ describe('SearchPlan candidate planning', () => {
 })
 
 describe('SearchPlan lifecycle', () => {
+ test('returns stable adaptive metadata for sparse weak-quality recovery', () => {
+  const plan = createSearchPlan({
+   candidates: [...candidates, {url: 'https://d.example/docs/one', source: 'seed', priority: 100}, {url: 'https://e.example/docs/one', source: 'seed', priority: 100}],
+   sites: ['https://a.example', 'https://b.example', 'https://c.example', 'https://d.example', 'https://e.example'],
+   query: 'compare docs one',
+   queryTerms: ['compare', 'docs', 'one'],
+   strategy: 'balanced',
+   directUrlMode: false,
+   maxResults: 2,
+   maxPages: 7,
+   pagesPerSite: 2,
+   explicitFetchPages: true,
+   fetchPages: 2,
+   adaptiveFetch: undefined
+  })
+
+  const decision = plan.decideNext({quality: {resultCount: 1, topScore: 12, avgTop3Score: 12, goodResultCount: 0, scoreSpread: 0}, fetchedUrlCount: 1})
+
+  expect(decision.done).toBe(false)
+  expect(decision.adaptive).toEqual({enabled: true, batchesFetched: 1, initialFetchCount: 2, policy: 'explicit fetchPages=2', stoppedReason: 'fetch_more', quality: {resultCount: 1, topScore: 12, avgTop3Score: 12, goodResultCount: 0, scoreSpread: 0}, recover: true})
+ })
+
  test('direct URL planning fetches explicit URLs once and stops as caller-owned', () => {
   const plan = createSearchPlan({
    candidates: candidates.slice(0, 2),

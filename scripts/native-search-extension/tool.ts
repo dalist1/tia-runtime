@@ -72,7 +72,6 @@ async function runNativeSearchToolInner(params: NativeSearchParams, signal?: Abo
  const planningStarted = performance.now()
  const searchPlan = createSearchPlan({candidates: discovered, sites, query, queryTerms, strategy, directUrlMode, maxResults, maxPages, pagesPerSite, explicitFetchPages, fetchPages, adaptiveFetch: params.adaptiveFetch})
  const plannedUrls = searchPlan.plannedUrls
- const initialFetchCount = searchPlan.fetchPolicy.initialFetchCount
  const planningMs = performance.now() - planningStarted
 
  assertZigBackendExists()
@@ -98,7 +97,7 @@ async function runNativeSearchToolInner(params: NativeSearchParams, signal?: Abo
   const response = await runNativeFetchAndRank({...baseOptions, urls: urlsToFetch})
   const quality = searchQualityFromDetails(response.details)
   const decision = searchPlan.decideNext({quality, fetchedUrlCount: Number(response.details?.fetchedUrlCount ?? 0)})
-  response.details = {...response.details, adaptive: {enabled: (searchPlan.fetchPolicy.adaptive || decision.recover) && !directUrlMode, batchesFetched: decision.batchesFetched, initialFetchCount, policy: decision.policy, stoppedReason: decision.stoppedReason, quality, recover: decision.recover}}
+  response.details = {...response.details, adaptive: decision.adaptive}
   if (decision.done) return response
   urlsToFetch = decision.urls
  }

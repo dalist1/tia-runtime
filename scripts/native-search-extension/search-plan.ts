@@ -10,7 +10,8 @@ export type StopReason = 'direct_url_mode' | 'enough_quality' | 'exhausted_candi
 
 export type SearchPlanInput = {candidates: DiscoveredUrl[]; sites: string[]; query: string; queryTerms: string[]; strategy: SearchStrategy; directUrlMode: boolean; maxResults: number; maxPages: number; pagesPerSite: number; explicitFetchPages: boolean; fetchPages: number | undefined; adaptiveFetch: boolean | undefined}
 
-export type SearchPlanDecision = {done: boolean; urls: DiscoveredUrl[]; batchesFetched: number; initialFetchCount: number; policy: string; stoppedReason: StopReason; recover: boolean; quality: SearchQuality | undefined}
+export type SearchPlanAdaptiveDetails = {enabled: boolean; batchesFetched: number; initialFetchCount: number; policy: string; stoppedReason: StopReason; quality: SearchQuality | undefined; recover: boolean}
+export type SearchPlanDecision = {done: boolean; urls: DiscoveredUrl[]; adaptive: SearchPlanAdaptiveDetails; batchesFetched: number; initialFetchCount: number; policy: string; stoppedReason: StopReason; recover: boolean; quality: SearchQuality | undefined}
 
 export function createSearchPlan(input: SearchPlanInput) {
  const discovered = input.directUrlMode ? input.candidates : [...input.candidates, ...likelyDocUrls(input.sites, input.queryTerms)]
@@ -47,7 +48,8 @@ export function createSearchPlan(input: SearchPlanInput) {
    const stoppedReason: StopReason = input.directUrlMode ? 'direct_url_mode' : enoughQuality && !recover ? 'enough_quality' : exhausted ? 'exhausted_candidates' : fetchPolicy.adaptive || recover ? 'fetch_more' : 'exhausted_candidates'
    const done = input.directUrlMode || exhausted || (!fetchPolicy.adaptive && !recover) || (enoughQuality && !recover)
    if (!done) fetchedCount = Math.min(rankedUrls.length, fetchedCount + fetchPolicy.batchSize)
-   return {done, urls: rankedUrls.slice(0, fetchedCount), batchesFetched, initialFetchCount: fetchPolicy.initialFetchCount, policy: fetchPolicy.reason, stoppedReason, recover, quality}
+   const adaptive = {enabled: (fetchPolicy.adaptive || recover) && !input.directUrlMode, batchesFetched, initialFetchCount: fetchPolicy.initialFetchCount, policy: fetchPolicy.reason, stoppedReason, quality, recover}
+   return {done, urls: rankedUrls.slice(0, fetchedCount), adaptive, batchesFetched, initialFetchCount: fetchPolicy.initialFetchCount, policy: fetchPolicy.reason, stoppedReason, recover, quality}
   }
  }
 }
