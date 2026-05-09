@@ -2,7 +2,7 @@ import {DEFAULT_CONTENT_CHARS, DEFAULT_FETCH_PAGES, DEFAULT_MAX_PAGES, DEFAULT_M
 import {discoverSiteUrls} from './discover.ts'
 import {logNativeSearchEvent} from './observability.ts'
 import {assertZigBackendExists, runNativeFetchAndRank} from './pipeline.ts'
-import {searchQualityFromDetails} from './results.ts'
+import {nativeSearchRoutingFromDetails, searchQualityFromDetails} from './results.ts'
 import {createSearchPlan, originOf} from './search-plan.ts'
 import type {SearchStrategy} from './search-plan.ts'
 import {extractUrls, normalizeHttpUrl, tokenizeQuery, unique} from './text.ts'
@@ -98,6 +98,7 @@ async function runNativeSearchToolInner(params: NativeSearchParams, signal?: Abo
   const quality = searchQualityFromDetails(response.details)
   const decision = searchPlan.decideNext({quality, fetchedUrlCount: Number(response.details?.fetchedUrlCount ?? 0)})
   response.details = {...response.details, adaptive: decision.adaptive}
+  response.details.routing = nativeSearchRoutingFromDetails(response.details)
   if (decision.done) return response
   urlsToFetch = decision.urls
  }

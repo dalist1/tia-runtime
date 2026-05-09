@@ -1,5 +1,5 @@
 import {describe, expect, test} from 'bun:test'
-import {analyzeSearchQuality, parseZigSearchResults, searchQualityFromDetails} from './results.ts'
+import {analyzeSearchQuality, nativeSearchRoutingFromDetails, parseZigSearchResults, searchQualityFromDetails} from './results.ts'
 
 describe('native search result metadata', () => {
  test('parses structured result metadata from Zig text output', () => {
@@ -64,5 +64,33 @@ describe('native search result metadata', () => {
 
   expect(quality).toEqual({resultCount: 3, topScore: 72, avgTop3Score: 42, goodResultCount: 2, scoreSpread: 31})
   expect(searchQualityFromDetails({quality})).toEqual(quality)
+ })
+
+ test('routes strong native results as good enough', () => {
+  expect(nativeSearchRoutingFromDetails({directUrlMode: false, candidateUrlCount: 8, fetchedUrlCount: 5, resultCount: 4, quality: {resultCount: 4, topScore: 72, avgTop3Score: 45, goodResultCount: 3, scoreSpread: 20}, adaptive: {stoppedReason: 'enough_quality'}})).toEqual({
+   label: 'native_good',
+   reason: 'quality threshold met'
+  })
+ })
+
+ test('routes planner fetch-more decisions explicitly', () => {
+  expect(nativeSearchRoutingFromDetails({directUrlMode: false, candidateUrlCount: 12, fetchedUrlCount: 1, resultCount: 1, quality: {resultCount: 1, topScore: 12, avgTop3Score: 12, goodResultCount: 0, scoreSpread: 0}, adaptive: {stoppedReason: 'fetch_more'}})).toEqual({
+   label: 'fetch_more',
+   reason: 'planner requested another fetch batch'
+  })
+ })
+
+ test('routes weak bounded results toward source packs before escalation', () => {
+  expect(nativeSearchRoutingFromDetails({directUrlMode: false, candidateUrlCount: 8, fetchedUrlCount: 0, resultCount: 0, quality: {resultCount: 0, topScore: 0, avgTop3Score: 0, goodResultCount: 0, scoreSpread: 0}, adaptive: {stoppedReason: 'exhausted_candidates'}})).toEqual({
+   label: 'try_source_pack',
+   reason: 'bounded search returned weak or empty results'
+  })
+ })
+
+ test('routes direct URL mode as done', () => {
+  expect(nativeSearchRoutingFromDetails({directUrlMode: true, candidateUrlCount: 1, fetchedUrlCount: 1, resultCount: 1, quality: {resultCount: 1, topScore: 10, avgTop3Score: 10, goodResultCount: 0, scoreSpread: 0}, adaptive: {stoppedReason: 'direct_url_mode'}})).toEqual({
+   label: 'direct_url_done',
+   reason: 'direct URL mode is caller-owned'
+  })
  })
 })

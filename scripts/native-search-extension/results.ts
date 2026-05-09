@@ -1,6 +1,8 @@
 import type {NativeSearchResultMetadata, ToolTextResponse} from './types.ts'
 
 export type SearchQuality = {resultCount: number; topScore: number; avgTop3Score: number; goodResultCount: number; scoreSpread: number}
+export type NativeSearchRoutingLabel = 'native_good' | 'fetch_more' | 'try_source_pack' | 'escalate' | 'direct_url_done'
+export type NativeSearchRouting = {label: NativeSearchRoutingLabel; reason: string}
 
 export function parseZigSearchResults(output: string): NativeSearchResultMetadata[] {
  const lines = output.split('\n')
@@ -27,6 +29,18 @@ export function parseZigSearchResults(output: string): NativeSearchResultMetadat
 export function isEnoughQuality(quality: SearchQuality, maxResults: number) {
  const targetGoodResults = Math.min(maxResults, 3)
  return quality.goodResultCount >= targetGoodResults && quality.topScore >= 45 && quality.avgTop3Score >= 30
+}
+
+export function nativeSearchRoutingFromDetails(details: ToolTextResponse['details']): NativeSearchRouting {
+ if (details?.directUrlMode === true || details?.adaptive?.stoppedReason === 'direct_url_mode') return {label: 'direct_url_done', reason: 'direct URL mode is caller-owned'}
+ if (details?.adaptive?.stoppedReason === 'fetch_more') return {label: 'fetch_more', reason: 'planner requested another fetch batch'}
+ const quality = searchQualityFromDetails(details)
+ if (quality && isEnoughQuality(quality, Number(details?.maxResults ?? 5))) return {label: 'native_good', reason: 'quality threshold met'}
+ const candidateCount = Number(details?.candidateUrlCount ?? 0)
+ const fetchedCount = Number(details?.fetchedUrlCount ?? 0)
+ const resultCount = Number(details?.resultCount ?? quality?.resultCount ?? 0)
+ if (candidateCount > 0 && (fetchedCount === 0 || resultCount === 0 || (quality && quality.goodResultCount === 0))) return {label: 'try_source_pack', reason: 'bounded search returned weak or empty results'}
+ return {label: 'escalate', reason: 'native bounded search confidence is low'}
 }
 
 export function searchQualityFromDetails(details: ToolTextResponse['details']): SearchQuality | undefined {
