@@ -1,6 +1,6 @@
 import {describe, expect, test} from 'bun:test'
 import {parseZigSearchResults} from './results.ts'
-import {classifySearchIntent, fetchPriority, likelyDocUrls, resolveFetchPolicy, shouldRecoverFetchBatch} from './tool.ts'
+import {classifySearchIntent, resolveFetchPolicy, shouldRecoverFetchBatch} from './search-plan.ts'
 
 describe('native search result metadata', () => {
  test('parses structured result metadata from Zig text output', () => {
@@ -58,27 +58,6 @@ describe('native search result metadata', () => {
 
   expect(results).toHaveLength(1)
   expect(results[0].title).toBe('Actual Result')
- })
-})
-
-describe('native search URL pre-ranking', () => {
- test('generates likely docs slugs from docs seeds and query terms', () => {
-  const urls = likelyDocUrls(['https://playwright.dev/docs'], ['playwright', 'locator', 'getbyrole', 'auto', 'waiting', 'assertions', 'documentation'])
-
-  expect(urls.map(item => item.url)).toContain('https://playwright.dev/docs/locators')
-  expect(urls.map(item => item.url)).not.toContain('https://playwright.dev/docs/playwright')
-  expect(urls.map(item => item.url)).not.toContain('https://playwright.dev/docs/auto-waiting')
-  expect(fetchPriority(urls.find(item => item.url === 'https://playwright.dev/docs/locators')!, ['locator', 'getbyrole', 'auto', 'waiting', 'assertions'])).toBeGreaterThan(
-   fetchPriority({url: 'https://playwright.dev/docs/api/class-locatorassertions', source: 'page links', priority: 126}, ['locator', 'getbyrole', 'auto', 'waiting', 'assertions'])
-  )
- })
-
- test('prefers seed path query matches over unrelated llms product indexes', () => {
-  const queryTerms = ['cloudflare', 'workers', 'nodejs', 'compatibility', 'module', 'not', 'found', 'error', 'fix']
-  const workersSeed = {url: 'https://developers.cloudflare.com/workers', source: 'seed', priority: 100}
-  const unrelatedLlms = {url: 'https://developers.cloudflare.com/cloudflare-challenges/llms.txt', source: 'llms', priority: 110}
-
-  expect(fetchPriority(workersSeed, queryTerms)).toBeGreaterThan(fetchPriority(unrelatedLlms, queryTerms))
  })
 })
 

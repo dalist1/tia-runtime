@@ -1,5 +1,5 @@
 import {describe, expect, test} from 'bun:test'
-import {createSearchPlan} from './search-plan.ts'
+import {createSearchPlan, fetchPriority, likelyDocUrls} from './search-plan.ts'
 import type {DiscoveredUrl} from './types.ts'
 
 const candidates: DiscoveredUrl[] = [
@@ -9,6 +9,27 @@ const candidates: DiscoveredUrl[] = [
  {url: 'https://b.example/docs/two', source: 'page links', priority: 90},
  {url: 'https://c.example/docs/one', source: 'seed', priority: 100}
 ]
+
+describe('SearchPlan candidate planning', () => {
+ test('generates likely docs slugs from docs seeds and query terms', () => {
+  const urls = likelyDocUrls(['https://playwright.dev/docs'], ['playwright', 'locator', 'getbyrole', 'auto', 'waiting', 'assertions', 'documentation'])
+
+  expect(urls.map(item => item.url)).toContain('https://playwright.dev/docs/locators')
+  expect(urls.map(item => item.url)).not.toContain('https://playwright.dev/docs/playwright')
+  expect(urls.map(item => item.url)).not.toContain('https://playwright.dev/docs/auto-waiting')
+  expect(fetchPriority(urls.find(item => item.url === 'https://playwright.dev/docs/locators')!, ['locator', 'getbyrole', 'auto', 'waiting', 'assertions'])).toBeGreaterThan(
+   fetchPriority({url: 'https://playwright.dev/docs/api/class-locatorassertions', source: 'page links', priority: 126}, ['locator', 'getbyrole', 'auto', 'waiting', 'assertions'])
+  )
+ })
+
+ test('prefers seed path query matches over unrelated llms product indexes', () => {
+  const queryTerms = ['cloudflare', 'workers', 'nodejs', 'compatibility', 'module', 'not', 'found', 'error', 'fix']
+  const workersSeed = {url: 'https://developers.cloudflare.com/workers', source: 'seed', priority: 100}
+  const unrelatedLlms = {url: 'https://developers.cloudflare.com/cloudflare-challenges/llms.txt', source: 'llms', priority: 110}
+
+  expect(fetchPriority(workersSeed, queryTerms)).toBeGreaterThan(fetchPriority(unrelatedLlms, queryTerms))
+ })
+})
 
 describe('SearchPlan lifecycle', () => {
  test('direct URL planning fetches explicit URLs once and stops as caller-owned', () => {

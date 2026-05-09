@@ -8,8 +8,6 @@ import type {SearchStrategy} from './search-plan.ts'
 import {extractUrls, normalizeHttpUrl, tokenizeQuery, unique} from './text.ts'
 import type {DiscoveredUrl, NativeSearchParams, ProgressEmitter, ToolTextResponse} from './types.ts'
 
-export {classifySearchIntent, fetchPriority, likelyDocUrls, resolveFetchPolicy, shouldRecoverFetchBatch} from './search-plan.ts'
-
 const COLLAPSED_RESULT_LIMIT = 3
 const EXPANDED_RESULT_LIMIT = 8
 const COLLAPSED_SNIPPET_CHARS = 140
