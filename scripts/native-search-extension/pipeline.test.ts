@@ -62,6 +62,8 @@ describe('native search pipeline source packs', () => {
     sourcePackSnapshot: snapshot
    })
 
+   expect(response.details?.resultCount).toBe(1)
+   expect(response.details?.requestedResultCount).toBe(1)
    expect(response.details?.sourcePackUrlCount).toBe(1)
    expect(response.details?.liveFetchedUrlCount).toBe(0)
    expect(response.details?.fetchedUrlCount).toBe(1)

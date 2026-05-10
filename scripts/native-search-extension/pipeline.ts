@@ -74,17 +74,19 @@ async function runZigExtractAndRank(options: NativeFetchAndRankOptions & {fetche
   if (exitCode !== 0) throw new Error(stderrText.trim() || `native-search-zig exited with code ${exitCode}`)
   const zigMs = performance.now() - zigStarted
   const totalMs = performance.now() - options.started
+  const results = parseZigSearchResults(stdoutText)
   return {
    content: [{type: 'text', text: options.includePlan ? `${options.plan}\n\n${stdoutText.trimEnd()}` : stdoutText.trimEnd()}],
    details: {
     backend: 'bun-fetch-zig-extract-rank',
     query: options.query,
-    resultCount: options.maxResults,
+    resultCount: results.length,
+    requestedResultCount: options.maxResults,
     candidateUrlCount: options.plannedUrlCount,
     fetchedUrlCount: options.fetchedPages.length,
     sourcePackUrlCount: options.sourcePackUrlCount,
     liveFetchedUrlCount: options.liveFetchedUrlCount,
-    results: parseZigSearchResults(stdoutText),
+    results,
     elapsedMs: totalMs,
     directUrlMode: options.directUrlMode,
     outputContent: options.outputContent,
