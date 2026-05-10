@@ -6,6 +6,8 @@ import {searchConcurrency} from './config.ts'
 import {discoverSiteUrls} from './discover.ts'
 import {fetchTextUrl} from './http.ts'
 import {analyzeSearchQuality, parseZigSearchResults} from './results.ts'
+import {resolveSourcePackPage} from './source-pack.ts'
+import type {SourcePackSnapshot} from './source-pack.ts'
 import type {DiscoveredUrl, FetchedPage, ProgressEmitter, ToolTextResponse} from './types.ts'
 
 const ZIG_SEARCH_BIN = process.env.TIA_NATIVE_SEARCH_ZIG_BIN ?? new URL('../../fast-tools/native-search-zig', import.meta.url).pathname
@@ -27,6 +29,7 @@ export type NativeFetchAndRankOptions = {
  directUrlMode: boolean
  includePlan: boolean
  plan: string | undefined
+ sourcePackSnapshot?: SourcePackSnapshot
 }
 
 export function assertZigBackendExists() {
@@ -36,9 +39,17 @@ export function assertZigBackendExists() {
 }
 
 export async function runNativeFetchAndRank(options: NativeFetchAndRankOptions) {
- options.emit?.(`Fetching ${options.urls.length} bounded URL(s) with origin-aware concurrency.`)
+ const cachedPages: FetchedPage[] = []
+ const liveUrls: DiscoveredUrl[] = []
+ for (const item of options.urls) {
+  const cached = resolveSourcePackPage(options.sourcePackSnapshot, item.url)
+  if (cached) cachedPages.push(cached)
+  else liveUrls.push(item)
+ }
+
+ options.emit?.(`Fetching ${liveUrls.length} bounded URL(s) with origin-aware concurrency${cachedPages.length ? `; ${cachedPages.length} from source pack.` : '.'}`)
  const fetchStarted = performance.now()
- const fetched = await mapLimited(options.urls, searchConcurrency(), async (item): Promise<FetchedPage | undefined> => {
+ const fetched = await mapLimited(liveUrls, searchConcurrency(), async (item): Promise<FetchedPage | undefined> => {
   try {
    const result = await fetchTextUrl(item.url, {timeoutMs: options.timeoutMs, maxBytes: 2_000_000, signal: options.signal, allowHttpErrors: true})
    if (result.status < 200 || result.status >= 400 || !result.text.trim()) return undefined
@@ -48,10 +59,11 @@ export async function runNativeFetchAndRank(options: NativeFetchAndRankOptions) 
   }
  })
  const fetchMs = performance.now() - fetchStarted
- return runZigExtractAndRank({...options, fetchedPages: fetched.filter(page => page !== undefined), fetchMs})
+ const livePages = fetched.filter(page => page !== undefined)
+ return runZigExtractAndRank({...options, fetchedPages: [...cachedPages, ...livePages], fetchMs, sourcePackUrlCount: cachedPages.length, liveFetchedUrlCount: livePages.length})
 }
 
-async function runZigExtractAndRank(options: NativeFetchAndRankOptions & {fetchedPages: FetchedPage[]; fetchMs: number}): Promise<ToolTextResponse> {
+async function runZigExtractAndRank(options: NativeFetchAndRankOptions & {fetchedPages: FetchedPage[]; fetchMs: number; sourcePackUrlCount: number; liveFetchedUrlCount: number}): Promise<ToolTextResponse> {
  options.emit?.(`Running Zig extract/rank for ${options.fetchedPages.length} fetched page(s).`)
  const zigStarted = performance.now()
  const corpusPath = join(tmpdir(), `tia-native-search-corpus-${process.pid}-${Date.now()}.tsv`)
@@ -70,6 +82,8 @@ async function runZigExtractAndRank(options: NativeFetchAndRankOptions & {fetche
     resultCount: options.maxResults,
     candidateUrlCount: options.plannedUrlCount,
     fetchedUrlCount: options.fetchedPages.length,
+    sourcePackUrlCount: options.sourcePackUrlCount,
+    liveFetchedUrlCount: options.liveFetchedUrlCount,
     results: parseZigSearchResults(stdoutText),
     elapsedMs: totalMs,
     directUrlMode: options.directUrlMode,

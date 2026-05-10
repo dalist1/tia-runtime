@@ -44,7 +44,15 @@ export function searchConcurrency() {
 }
 
 export function envSeedSites() {
- return (process.env.TIA_NATIVE_SEARCH_SEEDS ?? '')
+ return splitEnvList(process.env.TIA_NATIVE_SEARCH_SEEDS)
+}
+
+export function sourcePackRoots() {
+ return splitEnvList(process.env.TIA_NATIVE_SEARCH_SOURCE_PACKS)
+}
+
+function splitEnvList(value: string | undefined) {
+ return (value ?? '')
   .split(',')
   .map(part => part.trim())
   .filter(Boolean)

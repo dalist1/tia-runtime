@@ -1,10 +1,28 @@
-import {DEFAULT_CONTENT_CHARS, DEFAULT_FETCH_PAGES, DEFAULT_MAX_PAGES, DEFAULT_MAX_RESULTS, DEFAULT_MAX_SITES, DEFAULT_PAGES_PER_SITE, DEFAULT_TIMEOUT_MS, HARD_MAX_CONTENT_CHARS, HARD_MAX_PAGES, HARD_MAX_PAGES_PER_SITE, HARD_MAX_RESULTS, HARD_MAX_SITES, clampInteger, envSeedSites, searchConcurrency} from './config.ts'
+import {
+ DEFAULT_CONTENT_CHARS,
+ DEFAULT_FETCH_PAGES,
+ DEFAULT_MAX_PAGES,
+ DEFAULT_MAX_RESULTS,
+ DEFAULT_MAX_SITES,
+ DEFAULT_PAGES_PER_SITE,
+ DEFAULT_TIMEOUT_MS,
+ HARD_MAX_CONTENT_CHARS,
+ HARD_MAX_PAGES,
+ HARD_MAX_PAGES_PER_SITE,
+ HARD_MAX_RESULTS,
+ HARD_MAX_SITES,
+ clampInteger,
+ envSeedSites,
+ searchConcurrency,
+ sourcePackRoots
+} from './config.ts'
 import {discoverSiteUrls} from './discover.ts'
 import {logNativeSearchEvent} from './observability.ts'
 import {assertZigBackendExists, runNativeFetchAndRank} from './pipeline.ts'
 import {nativeSearchRoutingFromDetails, searchQualityFromDetails} from './results.ts'
 import {createSearchPlan, originOf} from './search-plan.ts'
 import type {SearchStrategy} from './search-plan.ts'
+import {loadSourcePackSnapshot} from './source-pack.ts'
 import {extractUrls, normalizeHttpUrl, tokenizeQuery, unique} from './text.ts'
 import type {DiscoveredUrl, NativeSearchParams, ProgressEmitter, ToolTextResponse} from './types.ts'
 
@@ -68,7 +86,9 @@ async function runNativeSearchToolInner(params: NativeSearchParams, signal?: Abo
     })
  const discoveryMs = performance.now() - discoveryStarted
  const discoveries = discoveryRecords.map(record => record.discovery)
- const discovered = directUrlMode ? sites.map(url => ({url, source: 'direct URL', priority: 100})) : discoveries.flatMap(discovery => discovery.urls)
+ const sourcePacks = sourcePackRoots()
+ const sourcePackSnapshot = sourcePacks.length > 0 ? loadSourcePackSnapshot({roots: sourcePacks, sites}) : undefined
+ const discovered = directUrlMode ? sites.map(url => ({url, source: 'direct URL', priority: 100})) : [...discoveries.flatMap(discovery => discovery.urls), ...(sourcePackSnapshot?.candidates ?? [])]
  const planningStarted = performance.now()
  const searchPlan = createSearchPlan({candidates: discovered, sites, query, queryTerms, strategy, directUrlMode, maxResults, maxPages, pagesPerSite, explicitFetchPages, fetchPages, adaptiveFetch: params.adaptiveFetch})
  const plannedUrls = searchPlan.plannedUrls
@@ -88,6 +108,7 @@ async function runNativeSearchToolInner(params: NativeSearchParams, signal?: Abo
   discoveries,
   discoveryRecords,
   timings: {discoveryMs, planningMs},
+  sourcePackSnapshot,
   directUrlMode,
   includePlan,
   plan: buildPlanText({query, sites, urls: plannedUrls, maxPages, pagesPerSite, strategy, directUrlMode, discoveries})

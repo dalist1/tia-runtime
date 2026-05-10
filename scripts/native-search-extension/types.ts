@@ -28,7 +28,7 @@ export type FetchTextResult = {url: string; finalUrl: string; status: number; co
 
 export type FetchCacheEntry = FetchTextResult & {expiresAt: number}
 
-export type FetchedPage = {url: string; contentType: string; text: string}
+export type FetchedPage = {url: string; contentType: string; text: string; source?: string}
 
 export type DiscoveredUrl = {url: string; source: string; priority: number}
 
