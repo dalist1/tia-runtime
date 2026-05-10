@@ -65,6 +65,7 @@ describe('native search pipeline source packs', () => {
    expect(response.details?.resultCount).toBe(1)
    expect(response.details?.requestedResultCount).toBe(1)
    expect(response.details?.sourcePackUrlCount).toBe(1)
+   expect(response.details?.sourcePackStats).toMatchObject({roots: 1, freshEntries: 1, staleEntries: 0, skippedEntries: 0})
    expect(response.details?.liveFetchedUrlCount).toBe(0)
    expect(response.details?.fetchedUrlCount).toBe(1)
    expect(response.details?.results?.[0]?.url).toBe('https://docs.example.com/cached-api')
