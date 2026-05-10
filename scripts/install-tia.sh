@@ -208,6 +208,7 @@ install_native_search_extension() {
 		index.ts \
 		observability.ts \
 		pipeline.ts \
+		source-pack.ts \
 		results.ts \
 		scoring.zig \
 		search-plan.ts \
