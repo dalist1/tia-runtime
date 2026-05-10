@@ -67,7 +67,14 @@ describe('native search result metadata', () => {
  })
 
  test('routes strong native results as good enough', () => {
-  expect(nativeSearchRoutingFromDetails({directUrlMode: false, candidateUrlCount: 8, fetchedUrlCount: 5, resultCount: 4, quality: {resultCount: 4, topScore: 72, avgTop3Score: 45, goodResultCount: 3, scoreSpread: 20}, adaptive: {stoppedReason: 'enough_quality'}})).toEqual({
+  expect(nativeSearchRoutingFromDetails({directUrlMode: false, candidateUrlCount: 8, fetchedUrlCount: 5, resultCount: 4, maxResults: 5, quality: {resultCount: 4, topScore: 72, avgTop3Score: 45, goodResultCount: 3, scoreSpread: 20}, adaptive: {stoppedReason: 'enough_quality'}})).toEqual({
+   label: 'native_good',
+   reason: 'quality threshold met'
+  })
+ })
+
+ test('routes quality using requested maxResults instead of default fallback', () => {
+  expect(nativeSearchRoutingFromDetails({directUrlMode: false, candidateUrlCount: 8, fetchedUrlCount: 2, resultCount: 2, maxResults: 2, quality: {resultCount: 2, topScore: 72, avgTop3Score: 45, goodResultCount: 2, scoreSpread: 20}, adaptive: {stoppedReason: 'enough_quality'}})).toEqual({
    label: 'native_good',
    reason: 'quality threshold met'
   })

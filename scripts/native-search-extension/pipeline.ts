@@ -82,6 +82,7 @@ async function runZigExtractAndRank(options: NativeFetchAndRankOptions & {fetche
     query: options.query,
     resultCount: results.length,
     requestedResultCount: options.maxResults,
+    maxResults: options.maxResults,
     candidateUrlCount: options.plannedUrlCount,
     fetchedUrlCount: options.fetchedPages.length,
     sourcePackUrlCount: options.sourcePackUrlCount,
