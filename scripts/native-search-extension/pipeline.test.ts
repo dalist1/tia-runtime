@@ -33,11 +33,18 @@ console.log([
  return run(binPath).finally(() => rmSync(root, {recursive: true, force: true}))
 }
 
+let importCounter = 0
+
+async function importPipelineWithZig(binPath: string) {
+ process.env.TIA_NATIVE_SEARCH_ZIG_BIN = binPath
+ importCounter += 1
+ return import(`./pipeline.ts?source-pack-test=${Date.now()}-${importCounter}`)
+}
+
 describe('native search pipeline source packs', () => {
  test('uses source-pack cache hits without live fetching them', async () => {
   await withFakeZig(async binPath => {
-   process.env.TIA_NATIVE_SEARCH_ZIG_BIN = binPath
-   const {runNativeFetchAndRank} = await import(`./pipeline.ts?source-pack-test=${Date.now()}`)
+   const {runNativeFetchAndRank} = await importPipelineWithZig(binPath)
    const snapshot: SourcePackSnapshot = {
     candidates: [],
     pages: new Map([['https://docs.example.com/cached-api', {url: 'https://docs.example.com/cached-api', contentType: 'text/markdown', text: 'Cached source-pack API text', source: 'source-pack:fixture-docs'}]]),
@@ -70,6 +77,56 @@ describe('native search pipeline source packs', () => {
    expect(response.details?.fetchedUrlCount).toBe(1)
    expect(response.details?.results?.[0]?.url).toBe('https://docs.example.com/cached-api')
    expect(response.content[0]?.text).toContain('Cached source-pack API text')
+  })
+ })
+
+ test('mixes source-pack cache hits with live fetches without refetching cached URLs', async () => {
+  await withFakeZig(async binPath => {
+   const originalFetch = globalThis.fetch
+   const fetchedUrls: string[] = []
+   const mockFetch: typeof fetch = async input => {
+    const url = String(input)
+    fetchedUrls.push(url)
+    return new Response('Live fetched docs text', {status: 200, headers: {'content-type': 'text/markdown'}})
+   }
+   globalThis.fetch = mockFetch
+   try {
+    const {runNativeFetchAndRank} = await importPipelineWithZig(binPath)
+    const snapshot: SourcePackSnapshot = {
+     candidates: [],
+     pages: new Map([['https://docs.example.com/cached-api', {url: 'https://docs.example.com/cached-api', contentType: 'text/markdown', text: 'Cached source-pack API text', source: 'source-pack:fixture-docs'}]]),
+     stats: {roots: 1, freshEntries: 1, staleEntries: 0, skippedEntries: 0, errors: []}
+    }
+
+    const response = await runNativeFetchAndRank({
+     query: 'cached live api',
+     timeoutMs: 1000,
+     urls: [
+      {url: 'https://docs.example.com/cached-api', source: 'source-pack:fixture-docs', priority: 160},
+      {url: 'https://docs.example.com/live-api', source: 'page links', priority: 90}
+     ],
+     plannedUrlCount: 2,
+     maxResults: 2,
+     contentChars: 1000,
+     outputContent: false,
+     started: performance.now(),
+     discoveries: [],
+     discoveryRecords: [],
+     timings: {discoveryMs: 0, planningMs: 0},
+     directUrlMode: false,
+     includePlan: false,
+     plan: undefined,
+     sourcePackSnapshot: snapshot
+    })
+
+    expect(fetchedUrls).toEqual(['https://docs.example.com/live-api'])
+    expect(response.details?.sourcePackUrlCount).toBe(1)
+    expect(response.details?.liveFetchedUrlCount).toBe(1)
+    expect(response.details?.fetchedUrlCount).toBe(2)
+    expect(response.content[0]?.text).toContain('Native Zig search found 2 result(s).')
+   } finally {
+    globalThis.fetch = originalFetch
+   }
   })
  })
 })
