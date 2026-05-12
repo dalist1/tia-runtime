@@ -62,6 +62,16 @@ function buildDocs(): EvalDoc[] {
     '<html><body><header>Repository Stars Fork Notifications</header><main><h1>Search results for fetch TLS certificate</h1><article><h2>tls: implement SecureContext.addCACert #30486</h2><p>Status: Open. Fetch requests fail when custom TLS certificate authority is required.</p></article><article><h2>fetch: certificate chain validation on proxy #29910</h2><p>Status: Closed. TLS certificate bug with proxy fetch.</p></article></main></body></html>'
   },
   {url: 'https://issues.example.dev/runtime/issues', contentType: 'text/html', text: '<html><body><main><h1>Issues</h1><p>Open bugs include filesystem watcher, install cache, console output, and shell completion.</p></main></body></html>'},
+  {url: 'https://docs.fresh.dev/api/current', contentType: 'text/markdown', text: '---\nupdated: 2026-05-12\n---\n# Current API\nThe current Stable API uses `stream.flush()` for incremental research data updates. This page supersedes older stream.write guidance.'},
+  {url: 'https://docs.fresh.dev/api/legacy', contentType: 'text/markdown', text: '# Legacy API\nThe old API documentation repeats stream write stream write stream write stream write stream write but was deprecated in 2024. Do not use stream.write for current research data updates.'},
+  {url: 'https://docs.versioned.dev/v1/cache', contentType: 'text/markdown', text: '# Cache API v1\nIn version v1, cache invalidation uses `cache.delete(key)` and the legacy ttlSeconds option.'},
+  {url: 'https://docs.versioned.dev/v2/cache', contentType: 'text/markdown', text: '# Cache API v2\nIn version v2, cache invalidation uses `cache.invalidate(key, { scope: "tenant" })` and supports stale-while-revalidate.'},
+  {url: 'https://spam.example.com/ranking', contentType: 'text/markdown', text: '# Ranking terms\n' + 'bm25 phrase source priority ranking '.repeat(40) + '\nThis spam page does not explain source priority scoring.'},
+  {url: 'https://docs.beta.io/search/source-priority', contentType: 'text/markdown', text: '# Source priority scoring\nSource priority scoring combines origin trust, candidate provenance, and result relevance instead of repeated keyword density.'},
+  {url: 'https://cli.example.dev/reference', contentType: 'text/markdown', text: '# CLI reference\nUse `--max-old-space-size=4096` to raise the memory ceiling. Use `--experimental-fetch` only for legacy runtimes.'},
+  {url: 'https://cli.example.dev/guide', contentType: 'text/markdown', text: '# CLI guide\nCommon flags include --watch, --verbose, --profile, and --output. The memory flag is documented in the reference.'},
+  {url: 'https://stats.example.dev/network/exact', contentType: 'text/markdown', text: '# Network stats\nMedian round trip latency is exactly 37.42 ms and packet loss is 0.08% in the current benchmark.'},
+  {url: 'https://stats.example.dev/network/rounded', contentType: 'text/markdown', text: '# Network overview\nRound trip latency is about 37 ms with low packet loss in older benchmarks.'},
   {url: 'https://noise.example.com/cookies', contentType: 'text/html', text: '<html><body>cookie cookie navigation sidebar footer unrelated marketing pricing support login</body></html>'}
  ]
  const noise: EvalDoc[] = []
@@ -83,7 +93,12 @@ function buildCases(): EvalCase[] {
   {id: 'asset-price-current', query: 'bitcoin price usd market cap current asset price', expectedUrls: ['https://markets.example.com/assets/bitcoin'], requiredTerms: ['$81,227.66', 'market cap', 'updated']},
   {id: 'latest-docs-hook', query: 'React useActionState latest documentation isPending Actions', expectedUrls: ['https://react.example.dev/reference/useActionState'], requiredTerms: ['useActionState', 'isPending', 'Actions']},
   {id: 'latest-release-section', query: 'React 19 release notes Actions useActionState pending form state', expectedUrls: ['https://react.example.dev/blog/react-19'], requiredTerms: ['useActionState', 'pending', 'Actions']},
-  {id: 'bug-search-results', query: 'fetch TLS certificate bug issue status open', expectedUrls: ['https://issues.example.dev/runtime/search?q=fetch+TLS+certificate'], requiredTerms: ['tls', 'certificate', 'Open']}
+  {id: 'bug-search-results', query: 'fetch TLS certificate bug issue status open', expectedUrls: ['https://issues.example.dev/runtime/search?q=fetch+TLS+certificate'], requiredTerms: ['tls', 'certificate', 'Open']},
+  {id: 'freshness-gap', query: 'current research data updates stream flush api latest', expectedUrls: ['https://docs.fresh.dev/api/current'], requiredTerms: ['current', 'stream.flush', 'supersedes']},
+  {id: 'version-pin', query: 'version v2 cache invalidation stale while revalidate', expectedUrls: ['https://docs.versioned.dev/v2/cache'], requiredTerms: ['v2', 'cache.invalidate', 'stale-while-revalidate']},
+  {id: 'term-dense-wrong', query: 'source priority scoring repeated keyword density ranking', expectedUrls: ['https://docs.beta.io/search/source-priority'], requiredTerms: ['origin trust', 'provenance', 'relevance']},
+  {id: 'long-tail-flag', query: 'exact memory ceiling flag max old space size 4096', expectedUrls: ['https://cli.example.dev/reference'], requiredTerms: ['--max-old-space-size=4096', 'memory', 'ceiling']},
+  {id: 'numeric-precision', query: 'exact round trip latency 37.42 ms packet loss 0.08 current benchmark', expectedUrls: ['https://stats.example.dev/network/exact'], requiredTerms: ['37.42 ms', '0.08%', 'current']}
  ]
 }
 
