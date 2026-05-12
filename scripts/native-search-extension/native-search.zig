@@ -202,6 +202,10 @@ fn htmlToText(arena: std.mem.Allocator, html: []const u8, max_chars: usize) ![]c
     while (i < html.len and n + 4 < out.len and n < max_chars) : (i += 1) {
         const c = html[i];
         if (c == '<') {
+            if (skipElement(html[i..])) |skip| {
+                i += skip - 1;
+                continue;
+            }
             in_tag = true;
             if (startsTag(html[i..], "br") or startsTag(html[i..], "p") or startsTag(html[i..], "li") or startsTag(html[i..], "h")) n = appendSpace(out, n, '\n');
             continue;
@@ -221,6 +225,18 @@ fn htmlToText(arena: std.mem.Allocator, html: []const u8, max_chars: usize) ![]c
         n = appendSpace(out, n, c);
     }
     return std.mem.trim(u8, out[0..n], " \t\r\n");
+}
+
+fn skipElement(s: []const u8) ?usize {
+    const names = [_][]const u8{ "script", "style", "svg", "noscript", "nav", "header", "footer" };
+    for (names) |name| {
+        if (!startsTag(s, name)) continue;
+        var close_buf: [32]u8 = undefined;
+        const close = std.fmt.bufPrint(&close_buf, "</{s}>", .{name}) catch return null;
+        const close_at = indexOfFold(s, close) orelse return std.mem.indexOfScalar(u8, s, '>') orelse s.len;
+        return @min(s.len, close_at + close.len);
+    }
+    return null;
 }
 
 fn startsTag(s: []const u8, tag: []const u8) bool {
@@ -268,11 +284,7 @@ fn splitTerms(arena: std.mem.Allocator, query: []const u8) ![]const []const u8 {
 }
 
 fn writeSnippet(out: *Io.Writer, content: []const u8, terms: []const []const u8) !void {
-    var at: usize = 0;
-    for (terms) |term| if (indexOfFold(content, term)) |idx| {
-        at = idx;
-        break;
-    };
+    const at = bestSnippetStart(content, terms);
     const start = if (at > 120) at - 120 else 0;
     const end = @min(content.len, at + 300);
     try out.writeAll("Snippet: ");
@@ -280,6 +292,34 @@ fn writeSnippet(out: *Io.Writer, content: []const u8, terms: []const []const u8)
     try out.writeAll(content[start..end]);
     if (end < content.len) try out.writeAll("…");
     try out.writeAll("\n");
+}
+
+fn bestSnippetStart(content: []const u8, terms: []const []const u8) usize {
+    var best_window: usize = 0;
+    var best_match: usize = 0;
+    var best_score: u64 = 0;
+    var i: usize = 0;
+    while (i < content.len) : (i += 80) {
+        const end = @min(content.len, i + 420);
+        var score: u64 = 0;
+        var first_match: ?usize = null;
+        for (terms) |term| {
+            const term_at = indexOfFold(content[i..end], term);
+            if (term_at) |idx| {
+                const global_at = i + idx;
+                if (first_match == null or global_at < first_match.?) first_match = global_at;
+                score += 100 + @min(countFold(content[i..end], term), @as(u64, 3)) * @as(u64, 4) + @min(@as(u64, @intCast(term.len)), @as(u64, 12));
+            }
+        }
+        if (score > best_score) {
+            best_score = score;
+            best_window = i;
+            best_match = first_match orelse i;
+        }
+    }
+    if (best_score > 0) return if (best_match > best_window + 80) best_match - 80 else best_window;
+    for (terms) |term| if (indexOfFold(content, term)) |idx| return idx;
+    return 0;
 }
 
 fn containsFold(haystack: []const u8, needle: []const u8) bool {
@@ -293,6 +333,16 @@ fn indexOfFold(haystack: []const u8, needle: []const u8) ?usize {
     return null;
 }
 
+fn countFold(haystack: []const u8, needle: []const u8) u64 {
+    if (needle.len == 0 or haystack.len < needle.len) return 0;
+    var count: u64 = 0;
+    var i: usize = 0;
+    while (i + needle.len <= haystack.len) : (i += 1) {
+        if (eqlFold(haystack[i .. i + needle.len], needle)) count += 1;
+    }
+    return count;
+}
+
 fn eqlFold(a: []const u8, b: []const u8) bool {
     if (a.len != b.len) return false;
     for (a, 0..) |c, i| if (lower(c) != lower(b[i])) return false;
@@ -301,4 +351,22 @@ fn eqlFold(a: []const u8, b: []const u8) bool {
 
 fn lower(c: u8) u8 {
     return if (c >= 'A' and c <= 'Z') c + 32 else c;
+}
+
+test "html extraction skips chrome before main content" {
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    const html = "<html><body><nav>Cookie Sidebar Pricing Login</nav><main><h1>Bitcoin price</h1><p>Bitcoin price today is $80,909 USD with market cap $1.62T.</p></main><script>tracking()</script></body></html>";
+    const doc = try extract(arena.allocator(), "https://example.com/btc", "text/html", html, 512);
+    try std.testing.expect(containsFold(doc.content, "Bitcoin price today"));
+    try std.testing.expect(!containsFold(doc.content, "Cookie Sidebar"));
+    try std.testing.expect(!containsFold(doc.content, "tracking"));
+}
+
+test "snippet chooses highest query coverage window" {
+    const content = "React release overview with introductory material and migration notes. " ** 10 ++ "The useActionState hook handles Actions pending state and form errors in React.";
+    const terms = [_][]const u8{ "React", "useActionState", "Actions" };
+    const at = bestSnippetStart(content, &terms);
+    try std.testing.expect(containsFold(content[at..], "useActionState"));
+    try std.testing.expect(at > 200);
 }

@@ -25,15 +25,16 @@ tr ',' '\n' <<< "${URLS}" | sed '/^[[:space:]]*$/d' > "${RESULT_DIR}/live-urls.t
 printf 'Running live native-search smoke with Zig exact-URL fetch/extract/rank. Results: %s\n' "${RESULT_DIR}"
 printf 'Request policy: exact URL list only, Zig delay=%s ms.\n' "${LIVE_DELAY_MS}"
 
-start_ms="$(date +%s%3N)"
+start_ms="$(python3 -c 'import time; print(int(time.time() * 1000))')"
 "${ROOT_DIR}/bin/native-search-zig" \
   --urls \
   "${QUERY}" \
   5 \
   "${CONTENT_CHARS}" \
   "${RESULT_DIR}/live-urls.txt" \
-  "${LIVE_DELAY_MS}" > "${RESULT_DIR}/zig-search.md"
-end_ms="$(date +%s%3N)"
+  "${LIVE_DELAY_MS}" \
+  0 > "${RESULT_DIR}/zig-search.md"
+end_ms="$(python3 -c 'import time; print(int(time.time() * 1000))')"
 elapsed_ms="$((end_ms - start_ms))"
 url_count="$(wc -l < "${RESULT_DIR}/live-urls.txt")"
 
