@@ -302,19 +302,23 @@ fn bestSnippetStart(content: []const u8, terms: []const []const u8) usize {
     while (i < content.len) : (i += 80) {
         const end = @min(content.len, i + 420);
         var score: u64 = 0;
-        var first_match: ?usize = null;
+        var anchor_match: ?usize = null;
+        var anchor_len: usize = 0;
         for (terms) |term| {
             const term_at = indexOfFold(content[i..end], term);
             if (term_at) |idx| {
                 const global_at = i + idx;
-                if (first_match == null or global_at < first_match.?) first_match = global_at;
+                if (term.len > anchor_len) {
+                    anchor_match = global_at;
+                    anchor_len = term.len;
+                }
                 score += 100 + @min(countFold(content[i..end], term), @as(u64, 3)) * @as(u64, 4) + @min(@as(u64, @intCast(term.len)), @as(u64, 12));
             }
         }
         if (score > best_score) {
             best_score = score;
             best_window = i;
-            best_match = first_match orelse i;
+            best_match = anchor_match orelse i;
         }
     }
     if (best_score > 0) return if (best_match > best_window + 80) best_match - 80 else best_window;

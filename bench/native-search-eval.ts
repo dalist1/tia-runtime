@@ -43,6 +43,25 @@ function buildDocs(): EvalDoc[] {
   {url: 'https://guide.gamma.dev/errors/timeouts', contentType: 'text/markdown', text: '# Timeout errors\nGamma timeout recovery retries idempotent requests and reports retry-after headers in diagnostics.'},
   {url: 'https://guide.gamma.dev/errors/rate-limits', contentType: 'text/markdown', text: '# Rate limits\nGamma rate limit errors include retry-after and per-origin backoff guidance.'},
   {url: 'https://blog.delta.dev/native-search', contentType: 'text/markdown', text: '# Native search overview\nNative search is bounded to provided sites and avoids third-party search APIs.'},
+  {
+   url: 'https://markets.example.com/assets/bitcoin',
+   contentType: 'text/html',
+   text: '<html><body><nav>Markets Portfolio Login Watchlist News</nav><main><h1>Bitcoin price today</h1><p>BTC trades at $81,227.66 USD with market cap $1.62T and 24h volume $29.27B.</p><p>Updated May 10, 2026.</p></main><aside>Sponsored exchange links</aside></body></html>'
+  },
+  {url: 'https://markets.example.com/learn/bitcoin-history', contentType: 'text/html', text: '<html><main><h1>Bitcoin history</h1><p>Bitcoin price history includes mining, halvings, market cycles, and long-term store of value narratives.</p></main></html>'},
+  {url: 'https://react.example.dev/reference/useActionState', contentType: 'text/markdown', text: '---\ntitle: useActionState\nupdated: 2026-05-01\n---\n# useActionState\n`useActionState` is a React Hook for Actions that returns state, dispatchAction, and isPending. Use it for forms and async mutations.'},
+  {
+   url: 'https://react.example.dev/blog/react-19',
+   contentType: 'text/markdown',
+   text: '---\ntitle: React 19\ndate: 2024-12-05\n---\nReact 19 stable release overview and migration notes. '.repeat(14) + 'Deep in the release notes, React 19 introduces useActionState for Actions, pending form state, and async mutation results.'
+  },
+  {
+   url: 'https://issues.example.dev/runtime/search?q=fetch+TLS+certificate',
+   contentType: 'text/html',
+   text:
+    '<html><body><header>Repository Stars Fork Notifications</header><main><h1>Search results for fetch TLS certificate</h1><article><h2>tls: implement SecureContext.addCACert #30486</h2><p>Status: Open. Fetch requests fail when custom TLS certificate authority is required.</p></article><article><h2>fetch: certificate chain validation on proxy #29910</h2><p>Status: Closed. TLS certificate bug with proxy fetch.</p></article></main></body></html>'
+  },
+  {url: 'https://issues.example.dev/runtime/issues', contentType: 'text/html', text: '<html><body><main><h1>Issues</h1><p>Open bugs include filesystem watcher, install cache, console output, and shell completion.</p></main></body></html>'},
   {url: 'https://noise.example.com/cookies', contentType: 'text/html', text: '<html><body>cookie cookie navigation sidebar footer unrelated marketing pricing support login</body></html>'}
  ]
  const noise: EvalDoc[] = []
@@ -60,7 +79,11 @@ function buildCases(): EvalCase[] {
   {id: 'source-packs', query: 'source packs manifest timestamps bounded origin filtering', expectedUrls: ['https://docs.beta.io/search/source-packs'], requiredTerms: ['manifest', 'bounded', 'origin']},
   {id: 'gamma-timeouts', query: 'timeout recovery retry-after diagnostics', expectedUrls: ['https://guide.gamma.dev/errors/timeouts'], requiredTerms: ['timeout', 'retry-after', 'diagnostics']},
   {id: 'gamma-rate', query: 'rate limit per-origin backoff retry-after', expectedUrls: ['https://guide.gamma.dev/errors/rate-limits'], requiredTerms: ['rate', 'backoff', 'retry-after']},
-  {id: 'bounded-search', query: 'bounded sites third-party search APIs', expectedUrls: ['https://blog.delta.dev/native-search'], requiredTerms: ['bounded', 'third-party', 'apis']}
+  {id: 'bounded-search', query: 'bounded sites third-party search APIs', expectedUrls: ['https://blog.delta.dev/native-search'], requiredTerms: ['bounded', 'third-party', 'apis']},
+  {id: 'asset-price-current', query: 'bitcoin price usd market cap current asset price', expectedUrls: ['https://markets.example.com/assets/bitcoin'], requiredTerms: ['$81,227.66', 'market cap', 'updated']},
+  {id: 'latest-docs-hook', query: 'React useActionState latest documentation isPending Actions', expectedUrls: ['https://react.example.dev/reference/useActionState'], requiredTerms: ['useActionState', 'isPending', 'Actions']},
+  {id: 'latest-release-section', query: 'React 19 release notes Actions useActionState pending form state', expectedUrls: ['https://react.example.dev/blog/react-19'], requiredTerms: ['useActionState', 'pending', 'Actions']},
+  {id: 'bug-search-results', query: 'fetch TLS certificate bug issue status open', expectedUrls: ['https://issues.example.dev/runtime/search?q=fetch+TLS+certificate'], requiredTerms: ['tls', 'certificate', 'Open']}
  ]
 }
 
@@ -126,6 +149,7 @@ function summarize(perCase: CaseMetric[]) {
   recallAt5: mean(perCase.map(item => item.recallAt5)),
   mrrAt5: mean(perCase.map(item => item.mrr)),
   snippetTermRate: mean(perCase.map(item => item.snippetTermRate)),
+  minSnippetTermRate: Math.min(...perCase.map(item => item.snippetTermRate)),
   avgScoreGap: mean(perCase.map(item => item.scoreGap)),
   avgNormalizedScoreGap: mean(perCase.map(item => item.normalizedScoreGap)),
   avgTop5Origins: mean(perCase.map(item => item.top5Origins)),
@@ -142,6 +166,7 @@ function summarize(perCase: CaseMetric[]) {
   {metric: 'recallAt5', value: aggregate.recallAt5, threshold: 0.98, pass: aggregate.recallAt5 >= 0.98},
   {metric: 'mrrAt5', value: aggregate.mrrAt5, threshold: 0.97, pass: aggregate.mrrAt5 >= 0.97},
   {metric: 'snippetTermRate', value: aggregate.snippetTermRate, threshold: 0.9, pass: aggregate.snippetTermRate >= 0.9},
+  {metric: 'minSnippetTermRate', value: aggregate.minSnippetTermRate, threshold: 0.9, pass: aggregate.minSnippetTermRate >= 0.9},
   {metric: 'deterministicRate', value: aggregate.deterministicRate, threshold: 1, pass: aggregate.deterministicRate >= 1},
   {metric: 'avgNormalizedScoreGap', value: aggregate.avgNormalizedScoreGap, threshold: 0.15, pass: aggregate.avgNormalizedScoreGap >= 0.15},
   {metric: 'p95MeanMs', value: aggregate.p95MeanMs, threshold: 250, pass: aggregate.p95MeanMs <= 250}
@@ -160,6 +185,7 @@ function renderSummary(summary: ReturnType<typeof summarize>) {
   `- recallAt5: ${format(summary.recallAt5)}`,
   `- mrrAt5: ${format(summary.mrrAt5)}`,
   `- snippetTermRate: ${format(summary.snippetTermRate)}`,
+  `- minSnippetTermRate: ${format(summary.minSnippetTermRate)}`,
   `- avgScoreGap: ${format(summary.avgScoreGap)}`,
   `- avgNormalizedScoreGap: ${format(summary.avgNormalizedScoreGap)}`,
   `- avgTop5Origins: ${format(summary.avgTop5Origins)}`,
