@@ -40,7 +40,7 @@ pub fn main(init: std.process.Init) !void {
     var i: usize = 0;
     while (i < shown) : (i += 1) {
         const doc = docs[i];
-        try out.print("## {}. {s}\n\n{s}\n\nScore: {}; kind={s}; contentType={s}\nScoreBreakdown: bm25={}; title={}; url={}; phrase={}; source={}\n\n", .{
+        try out.print("## {}. {s}\n\n{s}\n\nScore: {}; kind={s}; contentType={s}\nScoreBreakdown: bm25={}; title={}; url={}; phrase={}; source={}; exact={}\n\n", .{
             i + 1,
             if (doc.title.len > 0) doc.title else doc.url,
             doc.url,
@@ -52,6 +52,7 @@ pub fn main(init: std.process.Init) !void {
             doc.score_breakdown.url,
             doc.score_breakdown.phrase,
             doc.score_breakdown.source,
+            doc.score_breakdown.exact,
         });
         try writeSnippet(out, doc.content, terms);
         if (output_content) {

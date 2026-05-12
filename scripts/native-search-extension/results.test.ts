@@ -12,7 +12,7 @@ describe('native search result metadata', () => {
     'https://example.com/native-search',
     '',
     'Score: 72; kind=html; contentType=text/html',
-    'ScoreBreakdown: bm25=52; title=14; url=3; phrase=0; source=3',
+    'ScoreBreakdown: bm25=52; title=14; url=3; phrase=0; source=3; exact=0',
     '',
     'Snippet: Native search keeps bounded sources fast.',
     '',
@@ -29,7 +29,7 @@ describe('native search result metadata', () => {
   )
 
   expect(results).toEqual([
-   {rank: 1, title: 'Native Search Guide', url: 'https://example.com/native-search', score: 72, kind: 'html', contentType: 'text/html', snippet: 'Native search keeps bounded sources fast.', scoreBreakdown: {bm25: 52, title: 14, url: 3, phrase: 0, source: 3}},
+   {rank: 1, title: 'Native Search Guide', url: 'https://example.com/native-search', score: 72, kind: 'html', contentType: 'text/html', snippet: 'Native search keeps bounded sources fast.', scoreBreakdown: {bm25: 52, title: 14, url: 3, phrase: 0, source: 3, exact: 0}},
    {rank: 2, title: 'API Reference', url: 'https://example.com/api', score: 41, kind: 'markdown', contentType: 'text/markdown', snippet: 'Reference docs for the API.', scoreBreakdown: undefined}
   ])
  })

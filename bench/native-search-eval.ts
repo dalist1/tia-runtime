@@ -123,8 +123,24 @@ function evaluateCase(testCase: EvalCase, corpusPath: string): CaseMetric {
  const rankIndex = urls.findIndex(url => testCase.expectedUrls.includes(url))
  const topResult = results[0]
  const expectedHits = testCase.expectedUrls.filter(url => urls.slice(0, 5).includes(url)).length
+ const queryTermsList = testCase.query
+  .toLowerCase()
+  .split(/\s+/)
+  .filter(term => term.length >= 2)
  const topSnippet = `${topResult?.title ?? ''} ${topResult?.snippet ?? ''}`.toLowerCase()
  const termHits = testCase.requiredTerms.filter(term => topSnippet.includes(term.toLowerCase())).length
+ const queryCoverageHits = queryTermsList.filter(term => topSnippet.includes(term)).length
+ const queryCoverageRatio = queryTermsList.length > 0 ? queryCoverageHits / queryTermsList.length : 1
+ const top5Score = results.length >= 5 ? results[4].score : results.length > 0 ? results[results.length - 1].score : 1
+ const topContent = `${topResult?.title ?? ''} ${topResult?.snippet ?? ''}`.toLowerCase()
+ const numericHits = (testCase.exactNumericTerms ?? []).filter(term => topContent.includes(term.toLowerCase())).length
+ const numericCount = (testCase.exactNumericTerms ?? []).length
+ const codeHits = (testCase.exactCodeTerms ?? []).filter(term => topContent.includes(term.toLowerCase())).length
+ const codeCount = (testCase.exactCodeTerms ?? []).length
+ const versionHits = (testCase.exactVersionTerms ?? []).filter(term => topContent.includes(term.toLowerCase())).length
+ const versionCount = (testCase.exactVersionTerms ?? []).length
+ const adversarialUrls = testCase.adversarialUrls ?? []
+ const firstAdversarialRank = adversarialUrls.length > 0 ? results.slice(0, 5).findIndex(result => adversarialUrls.includes(result.url)) + 1 : 0
  const bestNonRelevantScore = results.find(result => !testCase.expectedUrls.includes(result.url))?.score ?? 0
  const scoreGap = (topResult?.score ?? 0) - bestNonRelevantScore
  const sortedTimes = [...times].sort((a, b) => a - b)
@@ -138,6 +154,12 @@ function evaluateCase(testCase: EvalCase, corpusPath: string): CaseMetric {
   scoreGap,
   normalizedScoreGap: scoreGap / Math.max(1, topResult?.score ?? 0),
   snippetTermRate: termHits / testCase.requiredTerms.length,
+  queryCoverageRatio,
+  scoreDecayRate: (topResult?.score ?? 0) / Math.max(1, top5Score),
+  adversarialPenetration: adversarialUrls.length > 0 ? firstAdversarialRank / (adversarialUrls.length + 5) : 1,
+  exactnessNumeric: numericCount > 0 ? numericHits / numericCount : 1,
+  exactnessCode: codeCount > 0 ? codeHits / codeCount : 1,
+  exactnessVersion: versionCount > 0 ? versionHits / versionCount : 1,
   top5Origins: new Set(results.slice(0, 5).map(result => originFor(result.url))).size,
   deterministic: observedOrders.size === 1,
   meanMs: mean(times),
@@ -165,6 +187,12 @@ function summarize(perCase: CaseMetric[]) {
   mrrAt5: mean(perCase.map(item => item.mrr)),
   snippetTermRate: mean(perCase.map(item => item.snippetTermRate)),
   minSnippetTermRate: Math.min(...perCase.map(item => item.snippetTermRate)),
+  avgQueryCoverage: mean(perCase.map(item => item.queryCoverageRatio)),
+  avgScoreDecayRate: mean(perCase.map(item => item.scoreDecayRate)),
+  adversarialResistance: mean(perCase.map(item => item.adversarialPenetration)),
+  exactnessNumeric: mean(perCase.map(item => item.exactnessNumeric)),
+  exactnessCode: mean(perCase.map(item => item.exactnessCode)),
+  exactnessVersion: mean(perCase.map(item => item.exactnessVersion)),
   avgScoreGap: mean(perCase.map(item => item.scoreGap)),
   avgNormalizedScoreGap: mean(perCase.map(item => item.normalizedScoreGap)),
   avgTop5Origins: mean(perCase.map(item => item.top5Origins)),
@@ -182,6 +210,12 @@ function summarize(perCase: CaseMetric[]) {
   {metric: 'mrrAt5', value: aggregate.mrrAt5, threshold: 0.97, pass: aggregate.mrrAt5 >= 0.97},
   {metric: 'snippetTermRate', value: aggregate.snippetTermRate, threshold: 0.9, pass: aggregate.snippetTermRate >= 0.9},
   {metric: 'minSnippetTermRate', value: aggregate.minSnippetTermRate, threshold: 0.9, pass: aggregate.minSnippetTermRate >= 0.9},
+  {metric: 'queryCoverageRatio', value: aggregate.avgQueryCoverage, threshold: 0.85, pass: aggregate.avgQueryCoverage >= 0.85},
+  {metric: 'avgScoreDecayRate', value: aggregate.avgScoreDecayRate, threshold: 2.0, pass: aggregate.avgScoreDecayRate >= 2.0},
+  {metric: 'adversarialResistance', value: aggregate.adversarialResistance, threshold: 0.95, pass: aggregate.adversarialResistance >= 0.95},
+  {metric: 'exactnessNumeric', value: aggregate.exactnessNumeric, threshold: 0.8, pass: aggregate.exactnessNumeric >= 0.8},
+  {metric: 'exactnessCode', value: aggregate.exactnessCode, threshold: 0.8, pass: aggregate.exactnessCode >= 0.8},
+  {metric: 'exactnessVersion', value: aggregate.exactnessVersion, threshold: 0.8, pass: aggregate.exactnessVersion >= 0.8},
   {metric: 'deterministicRate', value: aggregate.deterministicRate, threshold: 1, pass: aggregate.deterministicRate >= 1},
   {metric: 'avgNormalizedScoreGap', value: aggregate.avgNormalizedScoreGap, threshold: 0.15, pass: aggregate.avgNormalizedScoreGap >= 0.15},
   {metric: 'p95MeanMs', value: aggregate.p95MeanMs, threshold: 250, pass: aggregate.p95MeanMs <= 250}
@@ -201,6 +235,12 @@ function renderSummary(summary: ReturnType<typeof summarize>) {
   `- mrrAt5: ${format(summary.mrrAt5)}`,
   `- snippetTermRate: ${format(summary.snippetTermRate)}`,
   `- minSnippetTermRate: ${format(summary.minSnippetTermRate)}`,
+  `- queryCoverageRatio: ${format(summary.avgQueryCoverage)}`,
+  `- avgScoreDecayRate: ${format(summary.avgScoreDecayRate)}`,
+  `- adversarialResistance: ${format(summary.adversarialResistance)}`,
+  `- exactnessNumeric: ${format(summary.exactnessNumeric)}`,
+  `- exactnessCode: ${format(summary.exactnessCode)}`,
+  `- exactnessVersion: ${format(summary.exactnessVersion)}`,
   `- avgScoreGap: ${format(summary.avgScoreGap)}`,
   `- avgNormalizedScoreGap: ${format(summary.avgNormalizedScoreGap)}`,
   `- avgTop5Origins: ${format(summary.avgTop5Origins)}`,
@@ -214,10 +254,13 @@ function renderSummary(summary: ReturnType<typeof summarize>) {
   '|:--|--:|--:|:--|',
   ...summary.thresholds.map(item => `| ${item.metric} | ${format(item.value)} | ${format(item.threshold)} | ${item.pass ? 'yes' : 'no'} |`),
   '',
-  '| Case | Top URL | Rank | Recall@5 | MRR | Snippet terms | Deterministic | Mean ms | P95 ms |',
+  '| Case | Top URL | Rank | Recall@5 | MRR | Snippet | QueryCov | Decay | AdvRst | Numeric | Code | Version | Deterministic | Mean ms | P95 ms |',
   '|:--|:--|--:|--:|--:|--:|:--|--:|--:|'
  ]
- for (const item of summary.perCase) lines.push(`| ${item.id} | ${item.topUrl ?? 'n/a'} | ${item.rank ?? 0} | ${format(item.recallAt5)} | ${format(item.mrr)} | ${format(item.snippetTermRate)} | ${item.deterministic ? 'yes' : 'no'} | ${format(item.meanMs)} | ${format(item.p95Ms)} |`)
+ for (const item of summary.perCase)
+  lines.push(
+   `| ${item.id} | ${item.topUrl ?? 'n/a'} | ${item.rank ?? 0} | ${format(item.recallAt5)} | ${format(item.mrr)} | ${format(item.snippetTermRate)} | ${format(item.queryCoverageRatio)} | ${format(item.scoreDecayRate)} | ${format(item.adversarialPenetration)} | ${format(item.exactnessNumeric)} | ${format(item.exactnessCode)} | ${format(item.exactnessVersion)} | ${item.deterministic ? 'yes' : 'no'} | ${format(item.meanMs)} | ${format(item.p95Ms)} |`
+  )
  return `${lines.join('\n')}\n`
 }
 

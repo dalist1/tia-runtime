@@ -61,9 +61,9 @@ export function analyzeSearchQuality(output: string): SearchQuality {
 }
 
 function parseScoreBreakdown(line: string) {
- const values = Object.fromEntries(Array.from(line.matchAll(/(bm25|title|url|phrase|source)=(\d+)/g), match => [match[1], Number(match[2])]))
+ const values = Object.fromEntries(Array.from(line.matchAll(/(bm25|title|url|phrase|source|exact)=(\d+)/g), match => [match[1], Number(match[2])]))
  if (typeof values.bm25 !== 'number' || typeof values.title !== 'number' || typeof values.url !== 'number' || typeof values.phrase !== 'number' || typeof values.source !== 'number') return undefined
- return {bm25: values.bm25, title: values.title, url: values.url, phrase: values.phrase, source: values.source}
+ return {bm25: values.bm25, title: values.title, url: values.url, phrase: values.phrase, source: values.source, exact: values.exact ?? 0}
 }
 
 function nextNonEmptyLine(lines: string[], start: number) {
