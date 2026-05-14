@@ -1,8 +1,8 @@
 import {randomUUID} from 'node:crypto'
 import {createReadStream, existsSync, lstatSync, mkdirSync, renameSync, rmSync} from 'node:fs'
 import {homedir, tmpdir} from 'node:os'
-import {dirname, join, resolve} from 'node:path'
-import {createBashTool, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@mariozechner/pi-coding-agent'
+import {basename, dirname, join, resolve} from 'node:path'
+import {createBashTool, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@earendil-works/pi-coding-agent'
 import {Type} from '@sinclair/typebox'
 
 const FAST_TOOLS_DIR = join(getAgentDir(), 'fast-tools')
@@ -115,6 +115,20 @@ function isSymlink(path: string) {
  }
 }
 
+function isAgentSkill(absolutePath: string, cwd: string): boolean {
+ if (basename(absolutePath) !== 'SKILL.md') return false
+ if (absolutePath.includes('/node_modules/')) return false
+
+ const agentDir = getAgentDir()
+ const agentSkillsPrefix = join(agentDir, 'skills') + '/'
+ if (absolutePath.startsWith(agentSkillsPrefix)) return true
+
+ const posixPath = absolutePath.replace(/\\/g, '/')
+ if (posixPath.includes('/.pi/skills/') || posixPath.includes('/.agents/skills/')) return true
+
+ return false
+}
+
 async function runBinaryCapture(cmd: string, args: string[], onChunk?: (chunk: Uint8Array) => void) {
  const proc = Bun.spawn([cmd, ...args], {stdout: 'pipe', stderr: 'pipe'})
  const stderrPromise = new Response(proc.stderr).text()
@@ -177,9 +191,10 @@ async function fastRead(cwd: string, pathArg: string, offset?: number, limit?: n
  ensureNotAborted(signal)
 
  const absolutePath = resolvePath(cwd, pathArg)
+ const agentSkill = isAgentSkill(absolutePath, cwd)
  const startLine = Math.max(1, offset ?? 1)
- const maxLines = limit ?? DEFAULT_MAX_LINES
- if (existsSync(FASTREAD_BIN)) {
+ const maxLines = agentSkill ? Number.MAX_SAFE_INTEGER : (limit ?? DEFAULT_MAX_LINES)
+ if (existsSync(FASTREAD_BIN) && !agentSkill) {
   return fastReadNative(absolutePath, startLine, maxLines, onUpdate)
  }
  let currentLine = 1
@@ -216,7 +231,7 @@ async function fastRead(cwd: string, pathArg: string, offset?: number, limit?: n
    }
 
    const nextBytes = Buffer.byteLength(line, 'utf8')
-   if (outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
+   if (!agentSkill && outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
     if (outputLines === 0) {
      return {content: [{type: 'text', text: `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash for partial reads.]`}], details: {truncation: {truncated: true, firstLineExceedsLimit: true}}}
     }
@@ -266,10 +281,10 @@ async function fastRead(cwd: string, pathArg: string, offset?: number, limit?: n
 
  if (carry && currentLine >= startLine) {
   const nextBytes = Buffer.byteLength(carry, 'utf8')
-  if (outputLines === 0 && nextBytes > DEFAULT_MAX_BYTES) {
+  if (!agentSkill && outputLines === 0 && nextBytes > DEFAULT_MAX_BYTES) {
    return {content: [{type: 'text', text: `[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash for partial reads.]`}], details: {truncation: {truncated: true, firstLineExceedsLimit: true}}}
   }
-  if (outputBytes + nextBytes <= DEFAULT_MAX_BYTES && outputLines < maxLines) {
+  if (outputLines < maxLines && (agentSkill || outputBytes + nextBytes <= DEFAULT_MAX_BYTES)) {
    output += carry
    outputLines += 1
    outputBytes += nextBytes
