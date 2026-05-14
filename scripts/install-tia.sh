@@ -41,6 +41,7 @@ TIA_EXTENSION_PATH="${TIA_PI_AGENT_DIR}/extensions/fast-tools.ts"
 TIA_NATIVE_SEARCH_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/native-search"
 TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
+TIA_CMUX_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/cmux"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
 TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-nightly}"
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-fork}"
@@ -322,6 +323,44 @@ install_fff_extension_install() {
 	printf 'Warning: FFF pi extension was not installed (see %s). Set TIA_REQUIRE_FFF=1 to make this fatal, or TIA_ENABLE_FFF=0 to skip.\n' "${install_log}" >&2
 }
 
+install_cmux_extension() {
+	local base_agent_dir="$1"
+	local source_dir="${TIA_CMUX_SOURCE_DIR:-${base_agent_dir}/extensions/cmux}"
+
+	if [[ "${TIA_ENABLE_CMUX:-1}" == "0" ]]; then
+		rm -rf "${TIA_CMUX_EXTENSION_DIR}"
+		return 0
+	fi
+
+	if [[ ! -f "${source_dir}/index.ts" ]]; then
+		rm -rf "${TIA_CMUX_EXTENSION_DIR}"
+		printf 'Warning: cmux extension source not found at %s; skipped.\n' "${source_dir}" >&2
+		return 0
+	fi
+
+	rm -rf "${TIA_CMUX_EXTENSION_DIR}"
+	mkdir -p "$(dirname -- "${TIA_CMUX_EXTENSION_DIR}")"
+	cp -R "${source_dir}" "${TIA_CMUX_EXTENSION_DIR}"
+}
+
+print_cmux_status() {
+	local base_agent_dir="$1"
+	local source_dir="${TIA_CMUX_SOURCE_DIR:-${base_agent_dir}/extensions/cmux}"
+	if [[ -f "${source_dir}/index.ts" && -f "${TIA_CMUX_EXTENSION_DIR}/index.ts" ]]; then
+		if cmp -s "${source_dir}/index.ts" "${TIA_CMUX_EXTENSION_DIR}/index.ts"; then
+			printf 'cmux extension:      \tinstalled (copied, synced with %s)\n' "${source_dir}"
+		else
+			printf 'cmux extension:      \tinstalled (copied, drift from %s)\n' "${source_dir}"
+		fi
+	elif [[ -f "${TIA_CMUX_EXTENSION_DIR}/index.ts" ]]; then
+		printf 'cmux extension:      \tinstalled (copied, source missing: %s)\n' "${source_dir}"
+	elif [[ -f "${source_dir}/index.ts" ]]; then
+		printf 'cmux extension:      \tnot installed (source available: %s)\n' "${source_dir}"
+	else
+		printf 'cmux extension:      \tnot installed\n'
+	fi
+}
+
 install_pi_sandbox() {
 	need_cmd bun
 	mkdir -p "$(dirname -- "${TIA_PI_BIN}")" "$(dirname -- "${TIA_EXTENSION_PATH}")"
@@ -375,6 +414,7 @@ install_pi_sandbox() {
 	install_fast_tool_helpers
 	install_native_search_extension
 	install_fff_extension
+	install_cmux_extension "${base_agent_dir}"
 
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
 	bun -e 'const fs=require("node:fs"); const [path, packageDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}"
@@ -594,6 +634,25 @@ case "\${subcommand}" in
     else
       echo "fff extension:       \tnot installed"
     fi
+    cmux_source_agent_dir="\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
+    if [[ "\${cmux_source_agent_dir}" == "\${TIA_PI_AGENT_DIR}" ]]; then
+      cmux_source_agent_dir="\${HOME}/.pi/agent"
+    fi
+    cmux_source="\${TIA_CMUX_SOURCE_DIR:-\${cmux_source_agent_dir}/extensions/cmux}"
+    cmux_dest="\${TIA_PI_AGENT_DIR}/extensions/cmux"
+    if [[ -f "\${cmux_source}/index.ts" && -f "\${cmux_dest}/index.ts" ]]; then
+      if cmp -s "\${cmux_source}/index.ts" "\${cmux_dest}/index.ts"; then
+        echo "cmux extension:      \tinstalled (copied, synced with \${cmux_source})"
+      else
+        echo "cmux extension:      \tinstalled (copied, drift from \${cmux_source})"
+      fi
+    elif [[ -f "\${cmux_dest}/index.ts" ]]; then
+      echo "cmux extension:      \tinstalled (copied, source missing: \${cmux_source})"
+    elif [[ -f "\${cmux_source}/index.ts" ]]; then
+      echo "cmux extension:      \tnot installed (source available: \${cmux_source})"
+    else
+      echo "cmux extension:      \tnot installed"
+    fi
     echo "fff state:           \t\${TIA_FFF_STATE_DIR}"
     echo "pi package:          \t${TIA_ROOT}/bin"
     ;;
@@ -656,6 +715,11 @@ status_all() {
 	else
 		printf 'fff extension:       not installed\n'
 	fi
+	local cmux_source_agent_dir="${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}"
+	if [[ "${cmux_source_agent_dir}" == "${TIA_PI_AGENT_DIR}" ]]; then
+		cmux_source_agent_dir="${HOME}/.pi/agent"
+	fi
+	print_cmux_status "${cmux_source_agent_dir}"
 	printf 'fff state:           %s\n' "${TIA_FFF_STATE_DIR}"
 	printf 'pi package:          %s\n' "${TIA_ROOT}/bin"
 }
