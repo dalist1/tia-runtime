@@ -1,4 +1,4 @@
-export type NativeSearchParams = {query: string; sites?: string[]; maxResults?: number; maxSites?: number; maxPages?: number; pagesPerSite?: number; strategy?: 'balanced' | 'deep' | 'direct'; includePlan?: boolean; fetchContent?: boolean; contentChars?: number; timeoutMs?: number}
+export type NativeSearchParams = {query: string; sites?: string[]; maxResults?: number; maxSites?: number; maxPages?: number; pagesPerSite?: number; strategy?: 'balanced' | 'deep' | 'direct'; includePlan?: boolean; fetchContent?: boolean; contentChars?: number; timeoutMs?: number; overallTimeoutMs?: number}
 
 export type ToolTextResponse = {content: Array<{type: 'text'; text: string}>; details?: any}
 

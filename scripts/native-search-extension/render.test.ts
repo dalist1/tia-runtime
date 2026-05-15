@@ -1,5 +1,5 @@
 import {describe, expect, test} from 'bun:test'
-import {buildNativeSearchRenderText} from './tool.ts'
+import {buildNativeSearchRenderText} from './render.ts'
 
 function nativeSearchContent(bodyRepeat = 200) {
  const longBody = Array.from({length: bodyRepeat}, (_, index) => `FULL_BODY_LINE_${index} native search documentation body text that should never flood the terminal.`).join('\n')
@@ -50,6 +50,14 @@ describe('native_search extension module', () => {
 })
 
 describe('native_search render text', () => {
+ test('partial output shows concise live progress', () => {
+  const rendered = buildNativeSearchRenderText({content: [{type: 'text', text: 'Native search: fetched 2/4 score=42 Example Guide — https://example.com/docs'}]}, {isPartial: true})
+
+  expect(rendered).toContain('fetched 2/4')
+  expect(rendered).toContain('https://example.com/docs')
+  expect(rendered.length).toBeLessThan(360)
+ })
+
  test('collapsed output is a bounded summary and does not mutate full content', () => {
   const fullText = nativeSearchContent()
   const result = {content: [{type: 'text', text: fullText}], details: {resultCount: 1, outputContent: true}}

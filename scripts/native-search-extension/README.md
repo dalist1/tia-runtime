@@ -13,7 +13,9 @@ Rules:
 Module map:
 - `native-search.zig` fetches exact URLs, decodes fixture corpora, extracts readable text, ranks, and formats output
 - `index.ts` registers the `native_search` tool when the extension is installed
-- `tool.ts` orchestrates bounded discovery, balanced/deep/direct planning, and launches the Zig backend
+- `tool.ts` orchestrates bounded discovery, balanced/deep/direct planning, watchdog timeout, and launches the Zig backend
+- `progress.ts` keeps live progress, timeout recovery details, and partial updates agent-friendly
+- `render.ts` keeps compact/expanded terminal rendering separate from tool execution
 - `discover.ts` reads `llms.txt`, sitemaps, and same-origin page links for site mode
 - `http.ts` is used only for discovery fetches
 - `text.ts` has small URL/text helpers

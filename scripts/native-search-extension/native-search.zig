@@ -93,15 +93,23 @@ fn fetchUrls(arena: std.mem.Allocator, io: Io, urls_text: []const u8, max_chars:
     defer client.deinit();
 
     var used: usize = 0;
+    var ordinal: usize = 0;
     var lines = std.mem.splitScalar(u8, urls_text, '\n');
     while (lines.next()) |line_raw| {
         const url = std.mem.trim(u8, line_raw, "\r\t ");
         if (url.len == 0) continue;
-        if (used > 0 and delay_ms > 0) try Io.sleep(io, Io.Duration.fromMilliseconds(delay_ms), .awake);
-        const fetched = fetchOne(arena, &client, url) catch continue;
+        ordinal += 1;
+        if (ordinal > 1 and delay_ms > 0) try Io.sleep(io, Io.Duration.fromMilliseconds(delay_ms), .awake);
+        std.debug.print("progress: fetching {}/{} {s}\n", .{ ordinal, line_count, url });
+        const fetched = fetchOne(arena, &client, url) catch |err| {
+            std.debug.print("progress: skipped {}/{} {s} ({s})\n", .{ ordinal, line_count, url, @errorName(err) });
+            continue;
+        };
         const extracted = try extract(arena, fetched.url, "", fetched.body, max_chars);
         docs[used] = extracted;
         docs[used].score = scoreDoc(extracted, terms);
+        const label = try progressLabel(arena, if (extracted.title.len > 0) extracted.title else extracted.url, 90);
+        std.debug.print("progress: fetched {}/{} score={} {s} — {s}\n", .{ ordinal, line_count, docs[used].score, label, extracted.url });
         used += 1;
     }
     return docs[0..used];
@@ -245,6 +253,19 @@ fn plainClean(arena: std.mem.Allocator, text: []const u8, max_chars: usize) ![]c
         n = appendSpace(out, n, c);
     }
     return std.mem.trim(u8, out[0..n], " \t\r\n");
+}
+
+fn progressLabel(arena: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const u8 {
+    const out = try arena.alloc(u8, @min(text.len, max_chars));
+    var n: usize = 0;
+    for (text) |c| {
+        if (n >= out.len) break;
+        const normalized: u8 = if (c == '\n' or c == '\r' or c == '\t') ' ' else c;
+        if (normalized == ' ' and (n == 0 or out[n - 1] == ' ')) continue;
+        out[n] = normalized;
+        n += 1;
+    }
+    return std.mem.trim(u8, out[0..n], " ");
 }
 
 fn appendSpace(out: []u8, n: usize, c: u8) usize {

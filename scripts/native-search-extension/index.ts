@@ -1,5 +1,6 @@
 import {createRequire} from 'node:module'
-import {buildNativeSearchRenderText, runNativeSearchTool} from './tool.ts'
+import {buildNativeSearchRenderText} from './render.ts'
+import {runNativeSearchTool} from './tool.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -41,7 +42,8 @@ const nativeSearchSchema = {
   includePlan: {type: 'boolean', description: 'Include the bounded divide-and-conquer search plan before results. Default true.'},
   fetchContent: {type: 'boolean', description: 'Include extracted readable content in the answer. Ranking still fetches bounded pages. Default true.'},
   contentChars: {type: 'number', description: 'Maximum extracted characters per result (default 6000, hard max 20000).'},
-  timeoutMs: {type: 'number', description: 'Per-request timeout in milliseconds (default 8000).'}
+  timeoutMs: {type: 'number', description: 'Per-request discovery timeout in milliseconds (default 8000).'},
+  overallTimeoutMs: {type: 'number', description: 'Wall-clock watchdog for final fetch/extract/rank before returning recovered progress/details. Default adapts to URL count; hard max 180000.'}
  },
  required: ['query'],
  additionalProperties: false
@@ -56,6 +58,7 @@ export default function (pi: any) {
   promptGuidelines: [
    'Use native_search for website/documentation research when the user provides URLs, site roots, or asks for broader web context within supplied sources.',
    'When using native_search, prefer the default balanced strategy to broaden across multiple supplied origins instead of repeatedly probing one site.',
+   'If a bounded search times out, use the returned recovered progress/details instead of retrying blindly; narrow scope or raise overallTimeoutMs only when needed.',
    'native_search is bounded and cannot discover the open web by itself; provide sites/URLs/seeds or ask the user for scope if none are available.'
   ],
   parameters: nativeSearchSchema,
@@ -72,6 +75,6 @@ export default function (pi: any) {
  })
 
  pi.on('before_agent_start', async (event: any) => ({
-  systemPrompt: `${event.systemPrompt}\n\n[native_search installed]\nUse native_search for current website/documentation research when the user provides URLs/sites or asks for broader web context. Prefer balanced divide-and-conquer searches across multiple supplied origins instead of repeatedly probing one site. native_search is bounded: it uses provided URLs/sites/seeds only and no third-party search APIs.`
+  systemPrompt: `${event.systemPrompt}\n\n[native_search installed]\nUse native_search for current website/documentation research when the user provides URLs/sites or asks for broader web context. Prefer balanced divide-and-conquer searches across multiple supplied origins instead of repeatedly probing one site. If a search times out, use recovered progress/details or narrow scope before retrying. native_search is bounded: it uses provided URLs/sites/seeds only and no third-party search APIs.`
  }))
 }

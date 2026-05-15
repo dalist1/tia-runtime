@@ -206,6 +206,8 @@ install_native_search_extension() {
 		discover.ts \
 		http.ts \
 		index.ts \
+		progress.ts \
+		render.ts \
 		text.ts \
 		tool.ts \
 		types.ts \
