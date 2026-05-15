@@ -112,8 +112,8 @@ bash bench/hyperfine-pi-tools-fast-burst.sh
 ```
 
 This now compares retained candidates only:
-- `fast (compiled + native helpers)`
-- `fast (compiled + zigcc helpers)` when Zig helpers are available
+- `fast (compiled + native helpers)` where read/edit are pure Zig and the remaining native helpers are active zig cc builds
+- `fast (compiled + gcc comparison helpers)` when GCC comparison helpers are available
 - `fast (warm daemon + native helpers)`
 
 ### tia fast tools streaming
@@ -122,8 +122,8 @@ bash bench/hyperfine-pi-tools-fast-stream.sh
 ```
 
 This now compares retained candidates only:
-- `fast (compiled + native helpers)`
-- `fast (compiled + zigcc helpers)` when Zig helpers are available
+- `fast (compiled + native helpers)` where read streaming is a pure Zig native helper
+- `fast (compiled + gcc comparison read helper)` when the GCC comparison helper is available
 
 ### tia fast tools persistent warm runner
 ```bash

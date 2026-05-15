@@ -115,7 +115,7 @@ function isSymlink(path: string) {
  }
 }
 
-function isAgentSkill(absolutePath: string, cwd: string): boolean {
+function isAgentSkill(absolutePath: string, _cwd: string): boolean {
  if (basename(absolutePath) !== 'SKILL.md') return false
  if (absolutePath.includes('/node_modules/')) return false
 
@@ -513,7 +513,7 @@ export default function (pi: ExtensionAPI) {
  pi.registerTool({
   name: 'read',
   label: 'read',
-  description: 'Read the contents of a file using a fast streaming implementation. Supports text files and returns truncated output with continuation hints.',
+  description: 'Read the contents of a file using a fast native Zig streaming implementation. Supports text files and returns truncated output with continuation hints.',
   parameters: readSchema,
   async execute(_toolCallId, params, signal, onUpdate, ctx) {
    const typedOnUpdate: ToolUpdateFn = onUpdate
@@ -524,7 +524,7 @@ export default function (pi: ExtensionAPI) {
  pi.registerTool({
   name: 'write',
   label: 'write',
-  description: 'Write content to a file using a Bun-optimized implementation.',
+  description: 'Write content to a file using a zig cc-built atomic verified implementation.',
   parameters: writeSchema,
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
    return fastWrite(ctx.cwd, params.path, params.content, signal)
@@ -534,7 +534,7 @@ export default function (pi: ExtensionAPI) {
  pi.registerTool({
   name: 'edit',
   label: 'edit',
-  description: 'Edit a file by replacing exact text using a fast Bun-based implementation.',
+  description: 'Edit a file by replacing exact text using a native Zig implementation for single replacements and a Bun fallback for multi-edit.',
   parameters: editSchema,
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
    return fastEdit(ctx.cwd, params.path, normalizeEditParams(params), signal)

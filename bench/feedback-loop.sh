@@ -59,7 +59,6 @@ trap cleanup EXIT INT TERM
 
 need_cmd bash
 need_cmd bun
-need_cmd gcc
 need_cmd hyperfine
 
 export PATH="${HOME}/.local/bin:${PATH}"
@@ -85,22 +84,22 @@ if [[ "${RUN_STARTUP}" == "auto" ]]; then
 	fi
 fi
 
-bun -e 'const fs=require("node:fs"); const [path, root, runId, rounds, runs, warmup, tier, runStartup, zig, readIterations, writeIterations, editIterations, bashIterations, streamIterations]=process.argv.slice(1); const config={root_dir:root, run_id:runId, rounds:Number(rounds), runs:Number(runs), warmup:Number(warmup), tier, run_startup:runStartup==="1", zig, iterations:{read:Number(readIterations), write:Number(writeIterations), edit:Number(editIterations), bash:Number(bashIterations), stream:Number(streamIterations)}, top_ideas:[{name:"compiled runner + native helpers", hypothesis:"Compiled Bun runner plus native helper binaries is the default retained fast path."},{name:"warm daemon transport", hypothesis:"A persistent worker amortizes cold starts across repeated tool calls, especially verified-write loops."},{name:"Zig toolchain gate", hypothesis:"Build native helpers with Zig and only promote the Zig-built path when this same loop proves it faster and at least as reliable."}], removed_approaches:["stock Bun tool baseline", "Bun source-runner fast path"]}; fs.writeFileSync(path, JSON.stringify(config, null, 2));' "${RESULT_DIR}/config.json" "${ROOT_DIR}" "${RUN_ID}" "${ROUNDS}" "${RUNS}" "${WARMUP}" "${TIER}" "${RUN_STARTUP}" "${ZIG_STATUS}" "${READ_ITERATIONS}" "${WRITE_ITERATIONS}" "${EDIT_ITERATIONS}" "${BASH_ITERATIONS}" "${STREAM_ITERATIONS}"
+bun -e 'const fs=require("node:fs"); const [path, root, runId, rounds, runs, warmup, tier, runStartup, zig, readIterations, writeIterations, editIterations, bashIterations, streamIterations]=process.argv.slice(1); const config={root_dir:root, run_id:runId, date_utc:new Date().toISOString(), rounds:Number(rounds), runs:Number(runs), warmup:Number(warmup), tier, run_startup:runStartup==="1", zig, iterations:{read:Number(readIterations), write:Number(writeIterations), edit:Number(editIterations), bash:Number(bashIterations), stream:Number(streamIterations)}, active_helpers:"pure Zig read/edit, zig cc C write/copy/drain", comparison_helpers:"gcc", top_ideas:[{name:"compiled runner + native helpers", hypothesis:"Compiled Bun runner plus pure Zig read/edit helpers and zig cc-built C helpers is the default retained fast path."},{name:"warm daemon transport", hypothesis:"A persistent worker amortizes cold starts across repeated tool calls, especially verified-write loops."},{name:"gcc comparison helpers", hypothesis:"GCC-built helpers remain as low-level comparison binaries, not the active runtime path."}], removed_approaches:["stock Bun tool baseline", "Bun source-runner fast path"]}; fs.writeFileSync(path, JSON.stringify(config, null, 2));' "${RESULT_DIR}/config.json" "${ROOT_DIR}" "${RUN_ID}" "${ROUNDS}" "${RUNS}" "${WARMUP}" "${TIER}" "${RUN_STARTUP}" "${ZIG_STATUS}" "${READ_ITERATIONS}" "${WRITE_ITERATIONS}" "${EDIT_ITERATIONS}" "${BASH_ITERATIONS}" "${STREAM_ITERATIONS}"
 
 log "results: ${RESULT_DIR}"
-log "retained ideas: compiled/native, warm daemon, zig-built helpers"
+log "retained ideas: compiled/native, warm daemon, gcc comparison helpers"
 log "zig status: ${ZIG_STATUS}"
 
 log "build fixtures, native helpers, compiled harnesses"
 bash "${ROOT_DIR}/bench/build-tool-fixtures.sh" >/dev/null
 bash "${ROOT_DIR}/bench/build-native.sh" >/dev/null
 bash "${ROOT_DIR}/bench/build-pi-tool-override-burst.sh" >/dev/null
-HAVE_ZIG_HELPERS=0
-if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastdrain-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" && -x "${ROOT_DIR}/bin/fastwrite-zigcc" ]]; then
-	HAVE_ZIG_HELPERS=1
-	log "zig helper candidate: enabled (zig cc built native helpers)"
+HAVE_GCC_HELPERS=0
+if [[ -x "${ROOT_DIR}/bin/fastread-window-gcc" && -x "${ROOT_DIR}/bin/fastedit-gcc" && -x "${ROOT_DIR}/bin/fastdrain-gcc" && -x "${ROOT_DIR}/bin/fastcopy-gcc" && -x "${ROOT_DIR}/bin/fastwrite-gcc" ]]; then
+	HAVE_GCC_HELPERS=1
+	log "gcc comparison helpers: enabled"
 else
-	log "zig helper candidate: disabled (missing zig-built helper binaries)"
+	log "gcc comparison helpers: disabled (missing gcc-built helper binaries)"
 fi
 if [[ "${RUN_STARTUP}" == "1" ]]; then
 	bash "${ROOT_DIR}/bench/build-pi-rpc-payloads.sh" >/dev/null
@@ -121,16 +120,16 @@ if [[ "${RUN_GATES}" == "1" ]]; then
 	json_assert_field "${TMP_DIR}/stream.json" mode fast
 	"${ROOT_DIR}/bin/pi-tool-request-loop" daemon fast read 3 > "${TMP_DIR}/daemon.json"
 	json_assert_field "${TMP_DIR}/daemon.json" transport daemon
-	if [[ "${HAVE_ZIG_HELPERS}" == "1" ]]; then
-		env TIA_FASTREAD_BIN="${ROOT_DIR}/bin/fastread-window-zigcc" \
-			"${ROOT_DIR}/bin/pi-tool-override-burst" fast read 2 > "${TMP_DIR}/zig-read.json"
-		json_assert_field "${TMP_DIR}/zig-read.json" mode fast
-		env TIA_FASTEDIT_BIN="${ROOT_DIR}/bin/fastedit-zigcc" \
-			"${ROOT_DIR}/bin/pi-tool-override-burst" fast edit 2 > "${TMP_DIR}/zig-edit.json"
-		json_assert_field "${TMP_DIR}/zig-edit.json" tool edit
-		env TIA_FASTREAD_BIN="${ROOT_DIR}/bin/fastread-window-zigcc" \
-			"${ROOT_DIR}/bin/pi-tool-override-stream-burst" fast read 2 > "${TMP_DIR}/zig-stream.json"
-		json_assert_field "${TMP_DIR}/zig-stream.json" mode fast
+	if [[ "${HAVE_GCC_HELPERS}" == "1" ]]; then
+		env TIA_FASTREAD_BIN="${ROOT_DIR}/bin/fastread-window-gcc" \
+			"${ROOT_DIR}/bin/pi-tool-override-burst" fast read 2 > "${TMP_DIR}/gcc-read.json"
+		json_assert_field "${TMP_DIR}/gcc-read.json" mode fast
+		env TIA_FASTEDIT_BIN="${ROOT_DIR}/bin/fastedit-gcc" \
+			"${ROOT_DIR}/bin/pi-tool-override-burst" fast edit 2 > "${TMP_DIR}/gcc-edit.json"
+		json_assert_field "${TMP_DIR}/gcc-edit.json" tool edit
+		env TIA_FASTREAD_BIN="${ROOT_DIR}/bin/fastread-window-gcc" \
+			"${ROOT_DIR}/bin/pi-tool-override-stream-burst" fast read 2 > "${TMP_DIR}/gcc-stream.json"
+		json_assert_field "${TMP_DIR}/gcc-stream.json" mode fast
 	fi
 	rm -rf "${TMP_DIR}"
 	trap cleanup EXIT INT TERM
@@ -153,10 +152,10 @@ run_tool_suite() {
 		--command-name "fast warm-daemon/native"
 		"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast ${tool} ${iterations}"
 	)
-	if [[ "${HAVE_ZIG_HELPERS}" == "1" ]]; then
+	if [[ "${HAVE_GCC_HELPERS}" == "1" ]]; then
 		commands+=(
-			--command-name "fast compiled/zigcc-native"
-			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc TIA_FASTWRITE_BIN=${ROOT_DIR}/bin/fastwrite-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${tool} ${iterations}"
+			--command-name "fast compiled/gcc comparison"
+			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-gcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-gcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-gcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-gcc TIA_FASTWRITE_BIN=${ROOT_DIR}/bin/fastwrite-gcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${tool} ${iterations}"
 		)
 	fi
 	hyperfine \
@@ -175,10 +174,10 @@ run_stream_suite() {
 		--command-name "fast stream compiled/native"
 		"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${STREAM_ITERATIONS}"
 	)
-	if [[ "${HAVE_ZIG_HELPERS}" == "1" ]]; then
+	if [[ "${HAVE_GCC_HELPERS}" == "1" ]]; then
 		commands+=(
-			--command-name "fast stream compiled/zigcc-native"
-			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc ${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${STREAM_ITERATIONS}"
+			--command-name "fast stream compiled/gcc read comparison"
+			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-gcc ${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read ${STREAM_ITERATIONS}"
 		)
 	fi
 	hyperfine \

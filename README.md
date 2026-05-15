@@ -87,9 +87,9 @@ More detail:
 
 The active tool-runtime loop now keeps only the approaches that remain useful:
 
-1. **compiled runner + native helpers** — default retained fast path.
-2. **compiled runner + Zig-built helpers** — measured candidate for read/stream/bash/edit/write helper binaries.
-3. **warm daemon + native helpers** — retained for repeated-call and verified-write workloads where amortizing startup can still win.
+1. **compiled runner + native helpers** — default retained fast path; read/edit are pure Zig binaries and the remaining hot helpers are C built with `zig cc`.
+2. **warm daemon + native helpers** — retained for repeated-call and verified-write workloads where amortizing startup can still win.
+3. **gcc-built comparison helpers** — low-level comparison binaries only, not the active runtime path.
 
 The installed fast-tools extension now tries low-level helpers for every hot tool path:
 - `read` → `fastread-window`

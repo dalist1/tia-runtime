@@ -33,6 +33,7 @@ XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_BIN_HOME="${XDG_BIN_HOME:-${HOME}/.local/bin}"
 TIA_ROOT="${TIA_ROOT:-${XDG_DATA_HOME}/tia}"
 TIA_BIN_DIR="${XDG_BIN_HOME}"
+export PATH="${TIA_BIN_DIR}:${PATH}"
 TIA_CMD_PATH="${TIA_BIN_DIR}/tia"
 TIA_PI_BIN="${TIA_ROOT}/bin/pi"
 TIA_PI_STREAM_BIN="${TIA_ROOT}/bin/pi-stream-fast"
@@ -167,10 +168,18 @@ install_fast_tool_helpers() {
 	local built_any=0
 	local helper
 
-	if [[ -d "${ROOT_DIR}/native" ]] && command -v gcc >/dev/null 2>&1; then
-		for helper in ${helper_names}; do
+	if [[ -d "${ROOT_DIR}/native" ]] && command -v zig >/dev/null 2>&1; then
+		for helper in fastread-window fastedit; do
+			[[ -f "${ROOT_DIR}/native/${helper}.zig" ]] || continue
+			zig build-exe -O ReleaseFast -fstrip \
+				-femit-bin="${TIA_FAST_TOOLS_DIR}/${helper}" \
+				"${ROOT_DIR}/native/${helper}.zig"
+			built_any=1
+		done
+
+		for helper in fastwrite fastdrain fastcopy; do
 			[[ -f "${ROOT_DIR}/native/${helper}.c" ]] || continue
-			gcc -O3 -pipe -march=native -s \
+			zig cc -O3 -pipe -march=native -s \
 				-o "${TIA_FAST_TOOLS_DIR}/${helper}" \
 				"${ROOT_DIR}/native/${helper}.c"
 			built_any=1

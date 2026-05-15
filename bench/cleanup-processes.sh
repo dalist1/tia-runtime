@@ -8,11 +8,11 @@ PARENT_PID="${PPID:-0}"
 
 patterns=(
 	'^hyperfine( |$)'
-	"^${ROOT_DIR}/bin/fastdrain(-zigcc)?( |$)"
-	"^${ROOT_DIR}/bin/fastcopy(-zigcc)?( |$)"
-	"^${ROOT_DIR}/bin/fastedit(-zigcc)?( |$)"
-	"^${ROOT_DIR}/bin/fastread-window(-zigcc)?( |$)"
-	"^${ROOT_DIR}/bin/fastwrite(-zigcc)?( |$)"
+	"^${ROOT_DIR}/bin/fastdrain(-gcc)?( |$)"
+	"^${ROOT_DIR}/bin/fastcopy(-gcc)?( |$)"
+	"^${ROOT_DIR}/bin/fastedit(-gcc)?( |$)"
+	"^${ROOT_DIR}/bin/fastread-window(-gcc)?( |$)"
+	"^${ROOT_DIR}/bin/fastwrite(-gcc)?( |$)"
 	"^${ROOT_DIR}/bin/pi-rpc-direct( |$)"
 	"^${ROOT_DIR}/bin/pi-tool-override-daemon( |$)"
 	'^pi-node --mode rpc( |$)'

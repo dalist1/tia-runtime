@@ -57,7 +57,7 @@ bash scripts/install-tia.sh uninstall
 - ensures `@mariozechner/pi-coding-agent` is installed at the pinned latest version, then uses a sandboxed compiled pi binary
 - uses a sandboxed pi agent dir
 - loads the fast-tools extension automatically
-- installs low-level helper binaries for hot paths when building from a local checkout (`fastread-window`, `fastwrite`, `fastedit`, `fastdrain`, `fastcopy`)
+- installs low-level helper binaries for hot paths when building from a local checkout (`fastread-window`/`fastedit` as pure Zig, `fastwrite`/`fastdrain`/`fastcopy` via `zig cc`)
 - installs the official FFF pi extension (`@ff-labs/pi-fff`) from the upstream `nightly` dist-tag when available, defaulting to `PI_FFF_MODE=override` for FFF-backed `find`, `grep`, `multi_grep`, and `@` file autocomplete
 - reuses your current shell agent auth/settings/models via symlinks refreshed at launch time
 - avoids self-linking the tia sandbox if `PI_CODING_AGENT_DIR` already points there, preserving shell pi / cliproxy linkage

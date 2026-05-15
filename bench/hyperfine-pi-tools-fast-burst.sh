@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULT_DIR="${RESULT_DIR:-${ROOT_DIR}/results-pi-tools-fast-burst-smoke}"
+RUN_DATE_UTC="${RUN_DATE_UTC:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 RUNS="${RUNS:-6}"
 WARMUP="${WARMUP:-1}"
 READ_ITERATIONS="${READ_ITERATIONS:-60}"
@@ -12,6 +13,30 @@ EDIT_ITERATIONS="${EDIT_ITERATIONS:-30}"
 BASH_ITERATIONS="${BASH_ITERATIONS:-20}"
 
 mkdir -p "${RESULT_DIR}"
+cat > "${RESULT_DIR}/benchmark-info.json" <<EOF
+{
+  "suite": "pi-tools-fast-burst",
+  "dateUtc": "${RUN_DATE_UTC}",
+  "rootDir": "${ROOT_DIR}",
+  "runs": ${RUNS},
+  "warmup": ${WARMUP},
+  "iterations": {
+    "read": ${READ_ITERATIONS},
+    "write": ${WRITE_ITERATIONS},
+    "edit": ${EDIT_ITERATIONS},
+    "bash": ${BASH_ITERATIONS}
+  },
+  "activeHelpers": "pure Zig read/edit, zig cc C write/copy/drain",
+  "comparisonHelpers": "gcc"
+}
+EOF
+cat > "${RESULT_DIR}/README.md" <<EOF
+# pi tools fast burst benchmark
+
+Date (UTC): ${RUN_DATE_UTC}
+
+Active helpers: pure Zig read/edit, zig cc C write/copy/drain. GCC helpers are comparison-only.
+EOF
 
 cleanup() {
 	bash "${ROOT_DIR}/bench/cleanup-processes.sh" >/dev/null 2>&1 || true
@@ -33,10 +58,10 @@ run_suite() {
 		"${ROOT_DIR}/bin/pi-tool-request-loop daemon fast ${name} ${iterations}"
 	)
 
-	if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastdrain-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" && -x "${ROOT_DIR}/bin/fastwrite-zigcc" ]]; then
+	if [[ -x "${ROOT_DIR}/bin/fastread-window-gcc" && -x "${ROOT_DIR}/bin/fastedit-gcc" && -x "${ROOT_DIR}/bin/fastdrain-gcc" && -x "${ROOT_DIR}/bin/fastcopy-gcc" && -x "${ROOT_DIR}/bin/fastwrite-gcc" ]]; then
 		commands+=(
-			--command-name "fast (compiled + zigcc helpers)"
-			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc TIA_FASTWRITE_BIN=${ROOT_DIR}/bin/fastwrite-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${name} ${iterations}"
+			--command-name "fast (compiled + gcc comparison helpers)"
+			"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-gcc TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-gcc TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-gcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-gcc TIA_FASTWRITE_BIN=${ROOT_DIR}/bin/fastwrite-gcc ${ROOT_DIR}/bin/pi-tool-override-burst fast ${name} ${iterations}"
 		)
 	fi
 
@@ -49,8 +74,8 @@ run_suite() {
 		"${commands[@]}"
 }
 
-printf 'Running retained fast override burst benchmarks into %s (runs=%s warmup=%s)\n' \
-	"${RESULT_DIR}" "${RUNS}" "${WARMUP}"
+printf 'Running retained fast override burst benchmarks into %s (date=%s runs=%s warmup=%s)\n' \
+	"${RESULT_DIR}" "${RUN_DATE_UTC}" "${RUNS}" "${WARMUP}"
 
 run_suite "read" "${READ_ITERATIONS}"
 run_suite "write" "${WRITE_ITERATIONS}"

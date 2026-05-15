@@ -1,10 +1,10 @@
-process.env.PI_PACKAGE_DIR ??= "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent";
+process.env.PI_PACKAGE_DIR ??= "/home/frensiqatipi1/.bun/install/global/node_modules/@earendil-works/pi-coding-agent";
 
 import { access, constants } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
-import { DEFAULT_MAX_LINES } from "/home/frensiqatipi1/.bun/install/global/node_modules/@mariozechner/pi-coding-agent/dist/core/tools/truncate.js";
+import { DEFAULT_MAX_LINES } from "/home/frensiqatipi1/.bun/install/global/node_modules/@earendil-works/pi-coding-agent/dist/core/tools/truncate.js";
 
 function detectRootDir() {
 	if (process.env.TIA_BENCH_ROOT_DIR) return resolve(process.env.TIA_BENCH_ROOT_DIR);

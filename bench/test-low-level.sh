@@ -56,26 +56,38 @@ printf 'native write exactness ✓\n' > "${TMP_DIR}/fastwrite-expected.txt"
 assert_json_field_eq "${TMP_DIR}/fastwrite.json" "ok" "True"
 cmp -s "${TMP_DIR}/fastwrite-expected.txt" "${TMP_DIR}/fastwrite-target.txt"
 
-if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" && -x "${ROOT_DIR}/bin/fastedit-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" && -x "${ROOT_DIR}/bin/fastwrite-zigcc" ]]; then
-	printf '[low-level zig] verify zig-built native helpers\n'
-	"${ROOT_DIR}/bin/fastread-window-zigcc" "${ROOT_DIR}/payloads/lines-10k.txt" 4501 3 > "${TMP_DIR}/fastread-zig-slice.txt"
-	cmp -s "${TMP_DIR}/fastread-slice.txt" "${TMP_DIR}/fastread-zig-slice.txt"
-	"${ROOT_DIR}/bin/fastcopy-zigcc" \
-		"${ROOT_DIR}/payloads/tiny.txt" \
-		"${TMP_DIR}/copy/zig-copied.txt" > "${TMP_DIR}/fastcopy-zig.json"
-	assert_json_field_eq "${TMP_DIR}/fastcopy-zig.json" "ok" "True"
-	cmp -s "${ROOT_DIR}/payloads/tiny.txt" "${TMP_DIR}/copy/zig-copied.txt"
-	"${ROOT_DIR}/bin/fastwrite-zigcc" "${TMP_DIR}/fastwrite-zig-target.txt" \
-		< "${TMP_DIR}/fastwrite-expected.txt" > "${TMP_DIR}/fastwrite-zig.json"
-	assert_json_field_eq "${TMP_DIR}/fastwrite-zig.json" "ok" "True"
-	cmp -s "${TMP_DIR}/fastwrite-expected.txt" "${TMP_DIR}/fastwrite-zig-target.txt"
-	cp "${ROOT_DIR}/payloads/lines-10k.txt" "${TMP_DIR}/edit-zig-target.txt"
-	"${ROOT_DIR}/bin/fastedit-zigcc" \
-		"${TMP_DIR}/edit-zig-target.txt" \
-		"${ROOT_DIR}/payloads/edit-old.txt" \
-		"${ROOT_DIR}/payloads/edit-new.txt" > "${TMP_DIR}/fastedit-zig.json"
-	assert_file_contains "${TMP_DIR}/edit-zig-target.txt" "line-4500-updated"
+if [[ -x "${ROOT_DIR}/bin/fastread-window-gcc" && -x "${ROOT_DIR}/bin/fastwrite-gcc" ]]; then
+	printf '[low-level C/gcc] verify read/write comparison helpers\n'
+	"${ROOT_DIR}/bin/fastread-window-gcc" "${ROOT_DIR}/payloads/lines-10k.txt" 4501 3 > "${TMP_DIR}/fastread-gcc-slice.txt"
+	cmp -s "${TMP_DIR}/fastread-slice.txt" "${TMP_DIR}/fastread-gcc-slice.txt"
+	"${ROOT_DIR}/bin/fastwrite-gcc" "${TMP_DIR}/fastwrite-gcc-target.txt" \
+		< "${TMP_DIR}/fastwrite-expected.txt" > "${TMP_DIR}/fastwrite-gcc.json"
+	assert_json_field_eq "${TMP_DIR}/fastwrite-gcc.json" "ok" "True"
+	cmp -s "${TMP_DIR}/fastwrite-expected.txt" "${TMP_DIR}/fastwrite-gcc-target.txt"
 fi
+
+printf '[low-level candidates] benchmark active native helpers against gcc comparison binaries\n'
+read_candidate_commands=(
+	--command-name 'pure Zig read helper'
+	"${ROOT_DIR}/bin/fastread-window ${ROOT_DIR}/payloads/jsonl-5m.txt 1 12000 > /dev/null"
+)
+write_candidate_commands=(
+	--command-name 'zig cc write helper'
+	"${ROOT_DIR}/bin/fastwrite ${TMP_DIR}/candidate-zigcc-write.txt < ${ROOT_DIR}/payloads/jsonl-5m.txt > /dev/null"
+)
+if [[ -x "${ROOT_DIR}/bin/fastread-window-gcc" && -x "${ROOT_DIR}/bin/fastwrite-gcc" ]]; then
+	read_candidate_commands+=(
+		--command-name 'gcc read helper'
+		"${ROOT_DIR}/bin/fastread-window-gcc ${ROOT_DIR}/payloads/jsonl-5m.txt 1 12000 > /dev/null"
+	)
+	write_candidate_commands+=(
+		--command-name 'gcc write helper'
+		"${ROOT_DIR}/bin/fastwrite-gcc ${TMP_DIR}/candidate-gcc-write.txt < ${ROOT_DIR}/payloads/jsonl-5m.txt > /dev/null"
+	)
+fi
+hyperfine --warmup 1 --runs 4 --export-json "${TMP_DIR}/read-candidates.json" "${read_candidate_commands[@]}" >/dev/null
+hyperfine --warmup 1 --runs 4 --export-json "${TMP_DIR}/write-candidates.json" "${write_candidate_commands[@]}" >/dev/null
+bun -e 'for (const path of process.argv.slice(1)) { const obj=require(path); for (const item of obj.results) if (item.mean <= 0 || !(item.exit_codes ?? []).every((code) => code === 0)) process.exit(1); }' "${TMP_DIR}/read-candidates.json" "${TMP_DIR}/write-candidates.json"
 
 printf '[low-level 5/12] verify compiled fast read runner\n'
 "${ROOT_DIR}/bin/pi-tool-override-burst" fast read 2 > "${TMP_DIR}/compiled-read.json"
@@ -118,10 +130,10 @@ edit_commands=(
 	--command-name 'fast (compiled+native)'
 	"${ROOT_DIR}/bin/pi-tool-override-burst fast edit 12"
 )
-if [[ -x "${ROOT_DIR}/bin/fastedit-zigcc" ]]; then
+if [[ -x "${ROOT_DIR}/bin/fastedit-gcc" ]]; then
 	edit_commands+=(
-		--command-name 'fast (compiled+zigcc)'
-		"env TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast edit 12"
+		--command-name 'fast (compiled+gcc comparison)'
+		"env TIA_FASTEDIT_BIN=${ROOT_DIR}/bin/fastedit-gcc ${ROOT_DIR}/bin/pi-tool-override-burst fast edit 12"
 	)
 fi
 hyperfine \
@@ -137,10 +149,10 @@ bash_commands=(
 	--command-name 'fast (compiled+native)'
 	"${ROOT_DIR}/bin/pi-tool-override-burst fast bash 8"
 )
-if [[ -x "${ROOT_DIR}/bin/fastdrain-zigcc" && -x "${ROOT_DIR}/bin/fastcopy-zigcc" ]]; then
+if [[ -x "${ROOT_DIR}/bin/fastdrain-gcc" && -x "${ROOT_DIR}/bin/fastcopy-gcc" ]]; then
 	bash_commands+=(
-		--command-name 'fast (compiled+zigcc)'
-		"env TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-zigcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-zigcc ${ROOT_DIR}/bin/pi-tool-override-burst fast bash 8"
+		--command-name 'fast (compiled+gcc comparison)'
+		"env TIA_FASTDRAIN_BIN=${ROOT_DIR}/bin/fastdrain-gcc TIA_FASTCOPY_BIN=${ROOT_DIR}/bin/fastcopy-gcc ${ROOT_DIR}/bin/pi-tool-override-burst fast bash 8"
 	)
 fi
 hyperfine \
@@ -168,10 +180,10 @@ stream_commands=(
 	--command-name 'fast (compiled+native)'
 	"${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read 8"
 )
-if [[ -x "${ROOT_DIR}/bin/fastread-window-zigcc" ]]; then
+if [[ -x "${ROOT_DIR}/bin/fastread-window-gcc" ]]; then
 	stream_commands+=(
-		--command-name 'fast (compiled+zigcc)'
-		"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-zigcc ${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read 8"
+		--command-name 'fast (compiled+gcc comparison read)'
+		"env TIA_FASTREAD_BIN=${ROOT_DIR}/bin/fastread-window-gcc ${ROOT_DIR}/bin/pi-tool-override-stream-burst fast read 8"
 	)
 fi
 hyperfine \
