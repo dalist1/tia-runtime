@@ -556,7 +556,12 @@ export function parsePatch(patchText: string): PatchOperation[] {
 }
 
 function normalizedLine(line: string) {
- return line.trim().replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, ' ')
+ return line
+  .trim()
+  .replace(/[\u2010-\u2015\u2212]/g, '-')
+  .replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+  .replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+  .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, ' ')
 }
 
 function lineEqual(actual: string, expected: string) {
@@ -593,6 +598,23 @@ function preserveMatchedIndent(actualLines: string[], expectedLines: string[], n
  return newLines.map(line => (line.trim().length > 0 && leadingWhitespace(line).length === 0 ? `${actualIndent}${line}` : line))
 }
 
+function nearestPatchPrefixLine(lines: string[], oldLines: string[], start: number) {
+ const prefix = oldLines.find(line => line.trim().length > 0)
+ if (prefix === undefined) return undefined
+ const normalizedPrefix = normalizedLine(prefix)
+ for (let i = start; i < lines.length; i += 1) {
+  if (normalizedLine(lines[i]) === normalizedPrefix) return i + 1
+ }
+ return undefined
+}
+
+function formatMissingPatchChunkError(path: string, oldLines: string[], nearestPrefixLine?: number) {
+ const lineCount = oldLines.length
+ const noun = lineCount === 1 ? 'line' : 'lines'
+ const nearest = nearestPrefixLine === undefined ? '' : `\nNearest matching prefix starts at line ${nearestPrefixLine}.`
+ return `Patch failed in ${path}: expected ${lineCount} ${noun} from the patch were not found.${nearest}\nFix: reread that region, then retry with current context or use exact edit.`
+}
+
 function applyUpdate(path: string, content: string, chunks: PatchChunk[]) {
  const lines = content.split('\n')
  if (lines[lines.length - 1] === '') lines.pop()
@@ -600,7 +622,7 @@ function applyUpdate(path: string, content: string, chunks: PatchChunk[]) {
  let cursor = 0
  for (const chunk of chunks) {
   const found = findChunk(lines, chunk.oldLines, cursor, chunk.isEndOfFile)
-  if (found === undefined) throw new Error(`Patch failed in ${path}.\nExpected lines were not found:\n${chunk.oldLines.join('\n')}\nFix: reread that region, then retry with current context or use exact edit.`)
+  if (found === undefined) throw new Error(formatMissingPatchChunkError(path, chunk.oldLines, nearestPatchPrefixLine(lines, chunk.oldLines, cursor)))
   const newLines = preserveMatchedIndent(lines.slice(found, found + chunk.oldLines.length), chunk.oldLines, chunk.newLines)
   replacements.push([found, chunk.oldLines.length, newLines])
   cursor = found + chunk.oldLines.length

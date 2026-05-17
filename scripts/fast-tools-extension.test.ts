@@ -123,6 +123,30 @@ test('patch updates a hunk with indentation drift and fails ambiguous hunks', as
  }
 })
 
+test('patch matching tolerates common unicode punctuation drift', async () => {
+ const cwd = mkdtempSync(join(tmpdir(), 'tia-patch-unicode-normalize-test-'))
+ try {
+  await writeFile(join(cwd, 'sample.txt'), 'title — “quoted”\nkeep\n')
+  const patch = `--- a/sample.txt
++++ b/sample.txt
+@@ -1,2 +1,2 @@
+-title - "quoted"
++title - "changed"
+ keep`
+
+  const plans = await planPatch(
+   cwd,
+   patch,
+   path => readFile(path, 'utf8'),
+   async () => true
+  )
+
+  expect(plans[0].after).toBe('title - "changed"\nkeep\n')
+ } finally {
+  rmSync(cwd, {recursive: true, force: true})
+ }
+})
+
 test('patch accepts standard unified diff update, add, and delete payloads', async () => {
  const cwd = mkdtempSync(join(tmpdir(), 'tia-unified-patch-test-'))
  try {
@@ -369,7 +393,8 @@ test('patch update misses report path once with concise recovery guidance', asyn
    throw new Error('Expected patch planning to fail')
   } catch (error) {
    if (!(error instanceof Error)) throw error
-   expect(error.message).toContain('Patch failed in sample.txt.\nExpected lines were not found:\nalpha\nmissing\nFix: reread that region')
+   expect(error.message).toBe('Patch failed in sample.txt: expected 2 lines from the patch were not found.\nNearest matching prefix starts at line 1.\nFix: reread that region, then retry with current context or use exact edit.')
+   expect(error.message).not.toContain('alpha\nmissing')
   }
  } finally {
   rmSync(cwd, {recursive: true, force: true})
