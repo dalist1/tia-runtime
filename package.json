@@ -9,6 +9,10 @@
   "format:write": "oxfmt --write scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json"
  },
  "devDependencies": {
+  "@earendil-works/pi-coding-agent": "0.74.1",
+  "@sinclair/typebox": "^0.34.49",
+  "@types/node": "^25.8.0",
+  "bun-types": "^1.3.14",
   "oxfmt": "latest",
   "oxlint": "latest"
  },

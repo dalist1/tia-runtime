@@ -23,6 +23,7 @@ INSTALL_ROOT="${ZIG_INSTALL_ROOT:-${XDG_DATA_HOME}/tia-runtime}"
 ZIG_DIR="${INSTALL_ROOT}/zig-${ZIG_ARCHIVE_PLATFORM}-${ZIG_VERSION}"
 ZIG_BIN="${ZIG_DIR}/zig"
 ZIG_LINK="${XDG_BIN_HOME}/zig"
+ZIG_ARCHIVE_URL=""
 
 if [[ -z "${ZIG_SHASUM:-}" && "${ZIG_VERSION}" == "${PINNED_ZIG_NIGHTLY_VERSION}" ]]; then
 	case "${ZIG_ARCHIVE_PLATFORM}" in
@@ -41,6 +42,12 @@ need_cmd() {
 if [[ "${ZIG_VERSION}" == "stable" || "${ZIG_VERSION}" == "latest" ]]; then
 	need_cmd bun
 	ZIG_VERSION="$(bun -e 'const data = await fetch("https://ziglang.org/download/index.json").then((r) => r.json()); console.log(Object.keys(data).find((key) => key !== "master"));')"
+	ZIG_DIR="${INSTALL_ROOT}/zig-${ZIG_ARCHIVE_PLATFORM}-${ZIG_VERSION}"
+	ZIG_BIN="${ZIG_DIR}/zig"
+elif [[ "${ZIG_VERSION}" == "nightly" || "${ZIG_VERSION}" == "master" ]]; then
+	need_cmd bun
+	ZIG_VERSION="$(bun -e 'const data = await fetch("https://ziglang.org/download/index.json").then((r) => r.json()); console.log(data.master.version);')"
+	ZIG_ARCHIVE_URL="$(bun -e 'const platform = process.argv[1]; const data = await fetch("https://ziglang.org/download/index.json").then((r) => r.json()); const target = data.master[platform]; if (!target?.tarball) process.exit(1); console.log(target.tarball);' "${ZIG_ARCHIVE_PLATFORM}")"
 	ZIG_DIR="${INSTALL_ROOT}/zig-${ZIG_ARCHIVE_PLATFORM}-${ZIG_VERSION}"
 	ZIG_BIN="${ZIG_DIR}/zig"
 fi
@@ -72,7 +79,9 @@ if [[ ! -x "${ZIG_BIN}" ]]; then
 	cleanup() { rm -rf "${tmp_dir}"; }
 	trap cleanup EXIT
 
-	if [[ "${ZIG_VERSION}" == *-dev.* ]]; then
+	if [[ -n "${ZIG_ARCHIVE_URL:-}" ]]; then
+		url="${ZIG_ARCHIVE_URL}"
+	elif [[ "${ZIG_VERSION}" == *-dev.* ]]; then
 		url="https://ziglang.org/builds/zig-${ZIG_ARCHIVE_PLATFORM}-${ZIG_VERSION}.tar.xz"
 	else
 		url="https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_ARCHIVE_PLATFORM}-${ZIG_VERSION}.tar.xz"

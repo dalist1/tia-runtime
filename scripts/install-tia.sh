@@ -45,7 +45,7 @@ TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
 TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-nightly}"
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
-TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.74.0}"
+TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.74.1}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 
 usage() {
@@ -343,7 +343,7 @@ install_pi_sandbox() {
 		pi_resolved="$(realpath_bun "${pi_path}")"
 	fi
 	pi_package_dir=""
-	if [[ -n "${PI_PACKAGE_DIR:-}" ]] && is_pi_package_dir "${PI_PACKAGE_DIR}"; then
+	if [[ -n "${PI_PACKAGE_DIR:-}" && "${PI_PACKAGE_DIR}" != "${TIA_ROOT}/bin" ]] && is_pi_package_dir "${PI_PACKAGE_DIR}"; then
 		pi_package_dir="${PI_PACKAGE_DIR}"
 	elif [[ "${prefer_bun_global}" == "1" ]] && is_pi_package_dir "${bun_global_pi_dir}"; then
 		pi_package_dir="${bun_global_pi_dir}"
@@ -375,6 +375,10 @@ install_pi_sandbox() {
 
 	bun build --compile "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
 	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
+	rm -rf "${TIA_PI_AGENT_DIR}/extensions/edit-classic.ts" "${TIA_PI_AGENT_DIR}/extensions/edit-diagnostics.ts" "${TIA_PI_AGENT_DIR}/extensions/edit-patch.ts" "${TIA_PI_AGENT_DIR}/extensions/fast-tools-lib"
+	local pi_node_modules
+	pi_node_modules="$(dirname -- "$(dirname -- "${pi_package_dir}")")"
+	ln -sfn "${pi_node_modules}" "${TIA_PI_AGENT_DIR}/node_modules"
 	install_fast_tool_helpers
 	install_native_search_extension
 	install_fff_extension
@@ -382,14 +386,15 @@ install_pi_sandbox() {
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
 	bun -e 'const fs=require("node:fs"); const [path, packageDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}"
 	bun build --compile "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}"
-	ln -sfn "${pi_package_dir}/dist/modes/interactive/theme" "${pi_bin_dir}/theme"
-	ln -sfn "${pi_package_dir}/dist/modes/interactive/assets" "${pi_bin_dir}/assets"
-	ln -sfn "${pi_package_dir}/dist/core/export-html" "${pi_bin_dir}/export-html"
-	ln -sfn "${pi_package_dir}/package.json" "${pi_bin_dir}/package.json"
-	ln -sfn "${pi_package_dir}/README.md" "${pi_bin_dir}/README.md"
-	ln -sfn "${pi_package_dir}/CHANGELOG.md" "${pi_bin_dir}/CHANGELOG.md"
-	ln -sfn "${pi_package_dir}/docs" "${pi_bin_dir}/docs"
-	ln -sfn "${pi_package_dir}/examples" "${pi_bin_dir}/examples"
+	rm -rf "${pi_bin_dir}/dist" "${pi_bin_dir}/theme" "${pi_bin_dir}/assets" "${pi_bin_dir}/export-html" "${pi_bin_dir}/package.json" "${pi_bin_dir}/README.md" "${pi_bin_dir}/CHANGELOG.md" "${pi_bin_dir}/docs" "${pi_bin_dir}/examples"
+	ln -s "${pi_package_dir}/dist/modes/interactive/theme" "${pi_bin_dir}/theme"
+	ln -s "${pi_package_dir}/dist/modes/interactive/assets" "${pi_bin_dir}/assets"
+	ln -s "${pi_package_dir}/dist/core/export-html" "${pi_bin_dir}/export-html"
+	ln -s "${pi_package_dir}/package.json" "${pi_bin_dir}/package.json"
+	ln -s "${pi_package_dir}/README.md" "${pi_bin_dir}/README.md"
+	ln -s "${pi_package_dir}/CHANGELOG.md" "${pi_bin_dir}/CHANGELOG.md"
+	ln -s "${pi_package_dir}/docs" "${pi_bin_dir}/docs"
+	ln -s "${pi_package_dir}/examples" "${pi_bin_dir}/examples"
 	rm -f "${TIA_PI_AGENT_DIR}/auth.json" "${TIA_PI_AGENT_DIR}/models.json" "${TIA_PI_AGENT_DIR}/settings.json" "${TIA_PI_AGENT_DIR}/keybindings.json"
 	if [[ -f "${base_agent_dir}/auth.json" ]]; then
 		ln -s "${base_agent_dir}/auth.json" "${TIA_PI_AGENT_DIR}/auth.json"
@@ -546,6 +551,7 @@ case "\${subcommand}" in
     export TIA_COMMAND="tia pi"
     export PI_CODING_AGENT_DIR="\${TIA_PI_AGENT_DIR}"
     export PI_PACKAGE_DIR="${TIA_ROOT}/bin"
+    export NODE_PATH="\${TIA_PI_AGENT_DIR}/node_modules\${NODE_PATH:+:\${NODE_PATH}}"
     if should_use_fast_stream "\$@"; then
       exec "\${TIA_PI_STREAM_BIN}" "\$@"
     fi
