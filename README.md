@@ -171,13 +171,15 @@ For a heavier confirmation pass:
 TIER=full ROUNDS=5 bash bench/feedback-loop.sh
 ```
 
-The feedback loop auto-installs Zig locally for measured Zig-built helper candidates. You can also install it explicitly:
+The feedback loop auto-installs the pinned Zig nightly (`0.17.0-dev.305+bdfbf432d`) locally for measured Zig-built helper candidates. You can also install it explicitly:
 
 ```bash
 bun run install:zig
 # or
 bash scripts/install-zig.sh
 ```
+
+Set `ZIG_VERSION=<version|stable|latest>` only when intentionally overriding the pinned tia-runtime toolchain.
 
 ## Linting and formatting
 

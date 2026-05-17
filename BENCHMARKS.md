@@ -68,7 +68,7 @@ Defaults:
 - retained candidates: compiled/native helpers, compiled/Zig-built helpers, and warm daemon/native helpers
 - native helper coverage now includes read, verified write, edit, and optimized bash drain/copy paths
 - retired slow approaches: stock Bun tool baseline and Bun source-runner fast path
-- `bench/feedback-loop.sh` auto-installs Zig locally via `scripts/install-zig.sh` unless `SETUP_ZIG=0`
+- `bench/feedback-loop.sh` auto-installs the pinned Zig nightly (`0.17.0-dev.305+bdfbf432d`) locally via `scripts/install-zig.sh` unless `SETUP_ZIG=0`
 - Zig is treated as a measured candidate only when `zig` can build helper variants and beat the current native helpers in this same loop
 
 Results are written under `results-feedback-loop/<run-id>/summary.md` and `summary.json`.
