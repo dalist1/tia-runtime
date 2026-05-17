@@ -1,7 +1,7 @@
 const std = @import("std");
 const Io = std.Io;
-const linux = std.os.linux;
 const posix = std.posix;
+const system = posix.system;
 
 fn usage(argv0: []const u8) noreturn {
     std.debug.print("usage: {s} <target> <old-text-file> <new-text-file>\n", .{argv0});
@@ -26,7 +26,7 @@ fn fatalErrno(comptime message: []const u8, err: std.posix.E) noreturn {
 fn writeAllFd(fd: i32, content: []const u8) void {
     var written: usize = 0;
     while (written < content.len) {
-        const rc = linux.write(fd, content[written..].ptr, content.len - written);
+        const rc = system.write(fd, content[written..].ptr, content.len - written);
         switch (posix.errno(rc)) {
             .SUCCESS => {
                 const n: usize = @intCast(rc);
@@ -45,13 +45,13 @@ fn toPosixPath(path: []const u8) [std.posix.PATH_MAX - 1:0]u8 {
 
 fn unlinkPath(path: []const u8) void {
     const path_z = toPosixPath(path);
-    _ = linux.unlink(&path_z);
+    _ = system.unlink(&path_z);
 }
 
 fn renamePath(old_path: []const u8, new_path: []const u8) void {
     const old_z = toPosixPath(old_path);
     const new_z = toPosixPath(new_path);
-    const rc = linux.renameat(linux.AT.FDCWD, &old_z, linux.AT.FDCWD, &new_z);
+    const rc = system.renameat(posix.AT.FDCWD, &old_z, posix.AT.FDCWD, &new_z);
     switch (posix.errno(rc)) {
         .SUCCESS => {},
         else => |err| {
@@ -68,17 +68,17 @@ fn writeJson(bytes: usize) void {
 }
 
 fn writeOutput(target_path: []const u8, tmp_path: []const u8, target: []const u8, new_text: []const u8, prefix_size: usize, suffix_offset: usize) void {
-    const fd = posix.openat(linux.AT.FDCWD, tmp_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .CLOEXEC = true }, 0o644) catch |err| fatal("open tmp output", err);
+    const fd = posix.openat(posix.AT.FDCWD, tmp_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .CLOEXEC = true }, 0o644) catch |err| fatal("open tmp output", err);
     writeAllFd(fd, target[0..prefix_size]);
     writeAllFd(fd, new_text);
     writeAllFd(fd, target[suffix_offset..]);
 
-    var rc = linux.fsync(fd);
+    var rc = system.fsync(fd);
     switch (posix.errno(rc)) {
         .SUCCESS => {},
         else => |err| fatalErrno("fsync output", err),
     }
-    rc = linux.close(fd);
+    rc = system.close(fd);
     switch (posix.errno(rc)) {
         .SUCCESS => {},
         else => |err| fatalErrno("close output", err),
@@ -109,7 +109,7 @@ pub fn main(init: std.process.Init) !void {
 
     const suffix_offset = first_index + old_text.len;
     const output_size = first_index + new_text.len + (target.len - suffix_offset);
-    const tmp_path = std.fmt.allocPrint(arena, "{s}.tmp.{}", .{ target_path, linux.getpid() }) catch |err| fatal("malloc", err);
+    const tmp_path = std.fmt.allocPrint(arena, "{s}.tmp.{}", .{ target_path, system.getpid() }) catch |err| fatal("malloc", err);
     if (tmp_path.len > 4095) fatalMessage("temporary path too long");
 
     writeOutput(target_path, tmp_path, target, new_text, first_index, suffix_offset);
