@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto'
 import {createReadStream, existsSync, lstatSync, mkdirSync, renameSync, rmSync} from 'node:fs'
 import {homedir, tmpdir} from 'node:os'
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path'
-import {createBashTool, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@earendil-works/pi-coding-agent'
+import {createBashTool, createBashToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@earendil-works/pi-coding-agent'
 import {Container, Spacer, Text} from '@earendil-works/pi-tui'
 import {Type} from '@sinclair/typebox'
 
@@ -1143,11 +1143,18 @@ async function tryOptimizedBash(cwd: string, command: string, signal?: AbortSign
 }
 
 export default function (pi: ExtensionAPI) {
+ const stockRead = createReadToolDefinition(process.cwd())
+ const stockWrite = createWriteToolDefinition(process.cwd())
+ const stockBash = createBashToolDefinition(process.cwd())
+
  pi.registerTool({
   name: 'read',
   label: 'read',
   description: 'Read the contents of a file using a fast native Zig streaming implementation. Supports text files and returns truncated output with continuation hints.',
   parameters: readSchema,
+  renderShell: stockRead.renderShell,
+  renderCall: stockRead.renderCall,
+  renderResult: stockRead.renderResult,
   async execute(_toolCallId, params, signal, onUpdate, ctx) {
    const typedOnUpdate: ToolUpdateFn = onUpdate
    return fastRead(ctx.cwd, params.path, params.offset, params.limit, signal, typedOnUpdate)
@@ -1159,6 +1166,9 @@ export default function (pi: ExtensionAPI) {
   label: 'write',
   description: 'Write content to a file using a zig cc-built atomic verified implementation.',
   parameters: writeSchema,
+  renderShell: stockWrite.renderShell,
+  renderCall: stockWrite.renderCall,
+  renderResult: stockWrite.renderResult,
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
    return fastWrite(ctx.cwd, params.path, params.content, signal)
   }
@@ -1184,7 +1194,7 @@ export default function (pi: ExtensionAPI) {
    component.clear()
    const details = editResultDetails(result.details)
    const output = textContentOutput(result.content)
-   const body = !context.isError && typeof details?.diff === 'string' && details.diff.length > 0 ? renderDiffText(details.diff, theme) : theme.fg(context.isError ? 'error' : 'toolOutput', output)
+   const body = !context.isError && typeof details?.diff === 'string' && details.diff.length > 0 ? renderDiffText(details.diff, theme) : theme.fg('toolOutput', output)
    if (!body) return component
    component.addChild(new Spacer(1))
    component.addChild(new Text(renderLimitedText(body, Boolean(options.expanded), 10, theme), 0, 0))
@@ -1203,6 +1213,9 @@ export default function (pi: ExtensionAPI) {
   label: 'bash',
   description: 'Execute bash commands with fast paths for common file drain/copy/remove commands and a stock fallback for everything else.',
   parameters: bashSchema,
+  renderShell: stockBash.renderShell,
+  renderCall: stockBash.renderCall,
+  renderResult: stockBash.renderResult,
   async execute(toolCallId, params, signal, onUpdate, ctx) {
    const typedOnUpdate: ToolUpdateFn = onUpdate
    if (await tryOptimizedBash(ctx.cwd, params.command, signal, typedOnUpdate)) {
