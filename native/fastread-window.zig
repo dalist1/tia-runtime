@@ -1,7 +1,7 @@
 const std = @import("std");
 const Io = std.Io;
-const linux = std.os.linux;
 const posix = std.posix;
+const system = posix.system;
 
 const max_bytes = 256_000;
 
@@ -23,7 +23,7 @@ fn fatalErrno(comptime message: []const u8, err: std.posix.E) noreturn {
 fn writeAll(bytes: []const u8) void {
     var written: usize = 0;
     while (written < bytes.len) {
-        const rc = linux.write(1, bytes[written..].ptr, bytes.len - written);
+        const rc = system.write(1, bytes[written..].ptr, bytes.len - written);
         switch (posix.errno(rc)) {
             .SUCCESS => {
                 const n: usize = @intCast(rc);
@@ -109,8 +109,8 @@ pub fn main(init: std.process.Init) !void {
     if (stat.size > std.math.maxInt(usize)) fatal("stat", error.FileTooBig);
     const file_size: usize = @intCast(stat.size);
 
-    const fd = posix.openat(linux.AT.FDCWD, path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0) catch |err| fatal("open", err);
-    defer _ = linux.close(fd);
+    const fd = posix.openat(posix.AT.FDCWD, path, .{ .ACCMODE = .RDONLY, .CLOEXEC = true }, 0) catch |err| fatal("open", err);
+    defer _ = system.close(fd);
 
     const mapped = posix.mmap(null, file_size, .{ .READ = true }, .{ .TYPE = .PRIVATE }, fd, 0) catch |err| fatal("mmap", err);
     defer posix.munmap(mapped);

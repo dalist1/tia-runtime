@@ -11,6 +11,8 @@ if [[ -z "${ZIG_ARCHIVE_PLATFORM:-}" ]]; then
 	case "$(uname -m)-$(uname -s)" in
 		x86_64-Linux) ZIG_ARCHIVE_PLATFORM="x86_64-linux" ;;
 		aarch64-Linux|arm64-Linux) ZIG_ARCHIVE_PLATFORM="aarch64-linux" ;;
+		x86_64-Darwin) ZIG_ARCHIVE_PLATFORM="x86_64-macos" ;;
+		aarch64-Darwin|arm64-Darwin) ZIG_ARCHIVE_PLATFORM="aarch64-macos" ;;
 		*)
 			printf 'Unsupported Zig platform: %s-%s\n' "$(uname -m)" "$(uname -s)" >&2
 			exit 1
@@ -29,6 +31,8 @@ if [[ -z "${ZIG_SHASUM:-}" && "${ZIG_VERSION}" == "${PINNED_ZIG_NIGHTLY_VERSION}
 	case "${ZIG_ARCHIVE_PLATFORM}" in
 		x86_64-linux) ZIG_SHASUM="df39f7482ea8a60d19d973a7b42167c74457fca844cace4953dedb73af7c033a" ;;
 		aarch64-linux) ZIG_SHASUM="2adf4da7ea5f690e155191ca4bceeee6dd7f1dccc9554f03d9bcc05f562d7975" ;;
+		x86_64-macos) ZIG_SHASUM="02700900d2d48f8dee65f00553e4142109e5d8caae47531d68bedb1e4d60cc78" ;;
+		aarch64-macos) ZIG_SHASUM="842313e4e47f72b601994dcb9114bd88d7be2ad8ecfd37a2d7d882a51045d2cc" ;;
 	esac
 fi
 
