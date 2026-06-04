@@ -37,6 +37,66 @@ export function unique<T>(items: T[]) {
  return Array.from(new Set(items))
 }
 
+export function allowPrivateHosts() {
+ return process.env.TIA_NATIVE_SEARCH_ALLOW_PRIVATE === '1'
+}
+
+export function isBlockedHost(hostname: string) {
+ if (allowPrivateHosts()) return false
+ const host = hostname
+  .trim()
+  .replace(/^\[|\]$/g, '')
+  .toLowerCase()
+ if (!host || host === 'localhost' || host.endsWith('.localhost')) return true
+ if (host.includes(':')) return isBlockedIpv6(host)
+ const ipv4 = parseIpv4(host)
+ if (ipv4) return isBlockedIpv4(ipv4)
+ return false
+}
+
+function parseIpv4(host: string): number[] | undefined {
+ const parts = host.split('.')
+ if (parts.length !== 4) return undefined
+ const octets: number[] = []
+ for (const part of parts) {
+  if (!/^\d{1,3}$/.test(part)) return undefined
+  const value = Number(part)
+  if (value > 255) return undefined
+  octets.push(value)
+ }
+ return octets
+}
+
+function isBlockedIpv4(octets: number[]) {
+ const [a, b] = octets
+ if (a === 0) return true
+ if (a === 127) return true
+ if (a === 10) return true
+ if (a === 172 && b >= 16 && b <= 31) return true
+ if (a === 192 && b === 168) return true
+ if (a === 169 && b === 254) return true
+ return false
+}
+
+function isBlockedIpv6(host: string) {
+ const bare = host.replace(/%.*$/, '')
+ if (bare === '::1' || bare === '::') return true
+ const dottedMapped = bare.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/)
+ if (dottedMapped) {
+  const octets = parseIpv4(dottedMapped[1])
+  return octets ? isBlockedIpv4(octets) : true
+ }
+ const hexMapped = bare.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+ if (hexMapped) {
+  const high = Number.parseInt(hexMapped[1], 16)
+  const low = Number.parseInt(hexMapped[2], 16)
+  return isBlockedIpv4([(high >> 8) & 0xff, high & 0xff, (low >> 8) & 0xff, low & 0xff])
+ }
+ if (/^fe[89ab][0-9a-f]:/.test(bare)) return true
+ if (/^f[cd][0-9a-f]{2}:/.test(bare)) return true
+ return false
+}
+
 export function decodeHtmlEntities(text: string) {
  const named: Record<string, string> = {amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…', copy: '©', reg: '®', trade: '™'}
  return text.replace(/&(#x?[0-9a-f]+|[a-z][a-z0-9]+);/gi, (match, entity) => {

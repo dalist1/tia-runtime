@@ -6,12 +6,12 @@ import {createBashTool, createBashToolDefinition, createReadToolDefinition, crea
 import {Container, Spacer, Text} from '@earendil-works/pi-tui'
 import {Type} from '@sinclair/typebox'
 
-const FAST_TOOLS_DIR = join(getAgentDir(), 'fast-tools')
-const FASTDRAIN_BIN = join(FAST_TOOLS_DIR, 'fastdrain')
-const FASTCOPY_BIN = join(FAST_TOOLS_DIR, 'fastcopy')
-const FASTREAD_BIN = join(FAST_TOOLS_DIR, 'fastread-window')
-const FASTEDIT_BIN = join(FAST_TOOLS_DIR, 'fastedit')
-const FASTWRITE_BIN = join(FAST_TOOLS_DIR, 'fastwrite')
+const fastToolsDir = () => join(getAgentDir(), 'fast-tools')
+const FASTDRAIN_BIN = () => join(fastToolsDir(), 'fastdrain')
+const FASTCOPY_BIN = () => join(fastToolsDir(), 'fastcopy')
+const FASTREAD_BIN = () => join(fastToolsDir(), 'fastread-window')
+const FASTEDIT_BIN = () => join(fastToolsDir(), 'fastedit')
+const FASTWRITE_BIN = () => join(fastToolsDir(), 'fastwrite')
 const READ_PROGRESS_MIN_LINES = 128
 const READ_PROGRESS_MIN_BYTES = 8 * 1024
 const READ_PROGRESS_MIN_INTERVAL_MS = 120
@@ -733,73 +733,80 @@ function isAgentSkill(absolutePath: string, _cwd: string): boolean {
  return false
 }
 
-async function runBinaryCapture(cmd: string, args: string[], onChunk?: (chunk: Uint8Array) => void) {
- const proc = Bun.spawn([cmd, ...args], {stdout: 'pipe', stderr: 'pipe'})
+async function runBinaryCapture(cmd: string, args: string[], signal?: AbortSignal, onText?: (output: string) => void) {
+ const proc = Bun.spawn([cmd, ...args], {stdout: 'pipe', stderr: 'pipe', signal})
  const stderrPromise = new Response(proc.stderr).text()
  const reader = proc.stdout.getReader()
- const chunks: Uint8Array[] = []
+ const decoder = new TextDecoder()
+ let output = ''
 
  while (true) {
   const {value, done} = await reader.read()
   if (done) break
-  chunks.push(value)
-  onChunk?.(value)
+  output += decoder.decode(value, {stream: true})
+  onText?.(output)
  }
+ output += decoder.decode()
 
  const stderrText = await stderrPromise
  const exitCode = await proc.exited
+ if (signal?.aborted) throw new Error('Operation aborted')
  if (exitCode !== 0) {
   throw new Error(stderrText.trim() || `${cmd} exited with code ${exitCode}`)
  }
 
- return new Response(new Blob(chunks.map(chunk => chunk.slice()))).text()
+ return output
 }
 
-async function runBinaryWithInput(cmd: string, args: string[], input: string) {
- const proc = Bun.spawn([cmd, ...args], {stdin: 'pipe', stdout: 'pipe', stderr: 'pipe'})
+async function runBinaryWithInput(cmd: string, args: string[], input: string, signal?: AbortSignal) {
+ const proc = Bun.spawn([cmd, ...args], {stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', signal})
  const stdoutPromise = new Response(proc.stdout).text()
  const stderrPromise = new Response(proc.stderr).text()
  await proc.stdin.write(input)
  proc.stdin.end()
  const [stdoutText, stderrText, exitCode] = await Promise.all([stdoutPromise, stderrPromise, proc.exited])
+ if (signal?.aborted) throw new Error('Operation aborted')
  if (exitCode !== 0) {
   throw new Error(stderrText.trim() || `${cmd} exited with code ${exitCode}`)
  }
  return stdoutText
 }
 
-async function fastReadNative(absolutePath: string, startLine: number, maxLines: number, onUpdate?: ToolUpdateFn) {
- let output = ''
+async function fastReadNative(absolutePath: string, startLine: number, maxLines: number, maxBytes: number, signal?: AbortSignal, onUpdate?: ToolUpdateFn) {
  let lastProgressAt = 0
  let lastProgressBytes = 0
- const decoder = new TextDecoder()
- return runBinaryCapture(FASTREAD_BIN, [absolutePath, String(startLine), String(maxLines)], chunk => {
-  output += decoder.decode(chunk, {stream: true})
-  if (!onUpdate || output.length === 0) return
-  const now = Date.now()
-  if (output.length - lastProgressBytes < READ_PROGRESS_MIN_BYTES && now - lastProgressAt < READ_PROGRESS_MIN_INTERVAL_MS) {
-   return
-  }
-  lastProgressAt = now
-  lastProgressBytes = output.length
-  emitTextUpdate(onUpdate, output)
- }).then(text => {
-  if (onUpdate && text.length > 0 && text.length !== lastProgressBytes) {
-   emitTextUpdate(onUpdate, text)
-  }
-  return textResult(text)
- })
+ const onText = onUpdate
+  ? (output: string) => {
+     if (output.length === 0) return
+     const now = Date.now()
+     if (output.length - lastProgressBytes < READ_PROGRESS_MIN_BYTES && now - lastProgressAt < READ_PROGRESS_MIN_INTERVAL_MS) {
+      return
+     }
+     lastProgressAt = now
+     lastProgressBytes = output.length
+     emitTextUpdate(onUpdate, output)
+    }
+  : undefined
+ const text = await runBinaryCapture(FASTREAD_BIN(), [absolutePath, String(startLine), String(maxLines), String(maxBytes)], signal, onText)
+ if (onUpdate && text.length > 0 && text.length !== lastProgressBytes) {
+  emitTextUpdate(onUpdate, text)
+ }
+ return textResult(text)
 }
 
-async function fastRead(cwd: string, pathArg: string, offset?: number, limit?: number, signal?: AbortSignal, onUpdate?: ToolUpdateFn) {
+export async function fastRead(cwd: string, pathArg: string, offset?: number, limit?: number, signal?: AbortSignal, onUpdate?: ToolUpdateFn) {
  ensureNotAborted(signal)
 
  const absolutePath = resolvePath(cwd, pathArg)
  const agentSkill = isAgentSkill(absolutePath, cwd)
  const startLine = Math.max(1, offset ?? 1)
  const maxLines = agentSkill ? Number.MAX_SAFE_INTEGER : (limit ?? DEFAULT_MAX_LINES)
- if (existsSync(FASTREAD_BIN) && !agentSkill) {
-  return fastReadNative(absolutePath, startLine, maxLines, onUpdate)
+ if (existsSync(FASTREAD_BIN()) && !agentSkill) {
+  const result = await fastReadNative(absolutePath, startLine, maxLines, DEFAULT_MAX_BYTES, signal, onUpdate)
+  const nativeText = typeof result.content?.[0]?.text === 'string' ? result.content[0].text : ''
+  if (nativeText.length > 0 || startLine === 1) {
+   return result
+  }
  }
  let currentLine = 1
  let output = ''
@@ -899,15 +906,15 @@ async function fastRead(cwd: string, pathArg: string, offset?: number, limit?: n
  return textResult(output)
 }
 
-async function fastWrite(cwd: string, pathArg: string, content: string, signal?: AbortSignal) {
+export async function fastWrite(cwd: string, pathArg: string, content: string, signal?: AbortSignal) {
  const absolutePath = resolvePath(cwd, pathArg)
 
  return withFileMutationQueue(absolutePath, async () => {
   ensureNotAborted(signal)
   mkdirSync(dirname(absolutePath), {recursive: true})
 
-  if (existsSync(FASTWRITE_BIN)) {
-   await runBinaryWithInput(FASTWRITE_BIN, [absolutePath], content)
+  if (existsSync(FASTWRITE_BIN())) {
+   await runBinaryWithInput(FASTWRITE_BIN(), [absolutePath], content, signal)
    ensureNotAborted(signal)
    await verifyWrittenText(absolutePath, pathArg, content, 'native write')
   } else if (isSymlink(absolutePath)) {
@@ -934,7 +941,7 @@ async function fastWrite(cwd: string, pathArg: string, content: string, signal?:
  })
 }
 
-function normalizeEditParams(params: any): MultiReplacementEdit[] {
+export function normalizeEditParams(params: any): MultiReplacementEdit[] {
  if (typeof params.patch === 'string') {
   if (params.path !== undefined || params.oldText !== undefined || params.newText !== undefined || params.edits !== undefined || params.multi !== undefined) {
    throw new Error('The patch parameter is mutually exclusive with path/oldText/newText/edits/multi.')
@@ -982,29 +989,52 @@ function normalizeEditParams(params: any): MultiReplacementEdit[] {
  return edits
 }
 
+async function withFileMutationQueues<T>(paths: string[], task: () => Promise<T>): Promise<T> {
+ if (paths.length === 0) return task()
+ const [head, ...rest] = paths
+ return withFileMutationQueue(head, () => withFileMutationQueues(rest, task))
+}
+
+async function restorePlan(plan: PlannedFileEdit | PlannedPatchFile) {
+ try {
+  if (plan.before === null) {
+   rmSync(plan.absolutePath, {force: true})
+  } else {
+   await Bun.write(plan.absolutePath, plan.before)
+  }
+ } catch {
+  // best-effort rollback; surface the original failure instead
+ }
+}
+
 async function applyPlannedEdits(plans: Array<PlannedFileEdit | PlannedPatchFile>, signal?: AbortSignal) {
  if (plans.length === 0) throw new Error('No edit operations were planned.')
- const uniquePaths = [...new Set(plans.map(plan => plan.absolutePath))]
- const firstPath = uniquePaths[0]
- return withFileMutationQueue(firstPath, async () => {
+ const uniquePaths = [...new Set(plans.map(plan => plan.absolutePath))].sort()
+ return withFileMutationQueues(uniquePaths, async () => {
   ensureNotAborted(signal)
-  for (let i = 1; i < uniquePaths.length; i += 1) {
-   await withFileMutationQueue(uniquePaths[i], async () => undefined)
-  }
-  for (const plan of plans) {
-   if (plan.after === null) {
-    rmSync(plan.absolutePath, {force: true})
-   } else {
-    await Bun.write(plan.absolutePath, plan.after)
-    await verifyWrittenText(plan.absolutePath, plan.path, plan.after, 'edit write')
+  const applied: Array<PlannedFileEdit | PlannedPatchFile> = []
+  try {
+   for (const plan of plans) {
+    if (plan.after === null) {
+     rmSync(plan.absolutePath, {force: true})
+    } else {
+     await Bun.write(plan.absolutePath, plan.after)
+     await verifyWrittenText(plan.absolutePath, plan.path, plan.after, 'edit write')
+    }
+    applied.push(plan)
+    ensureNotAborted(signal)
    }
-   ensureNotAborted(signal)
+  } catch (error) {
+   for (let i = applied.length - 1; i >= 0; i -= 1) {
+    await restorePlan(applied[i])
+   }
+   throw error
   }
   return textResult(`Successfully applied ${plans.length} file edit(s).`, {verified: true, files: plans.length, diff: combinedEditDiff(plans)})
  })
 }
 
-async function fastPatch(cwd: string, patch: string, signal?: AbortSignal) {
+export async function fastPatch(cwd: string, patch: string, signal?: AbortSignal) {
  const plans = await planPatch(
   cwd,
   patch,
@@ -1014,28 +1044,38 @@ async function fastPatch(cwd: string, patch: string, signal?: AbortSignal) {
  return applyPlannedEdits(plans, signal)
 }
 
-async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signal?: AbortSignal) {
- if (edits.length === 1 && existsSync(FASTEDIT_BIN)) {
+export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signal?: AbortSignal) {
+ if (edits.length === 1 && existsSync(FASTEDIT_BIN())) {
   const edit = edits[0]
   const pathArg = edit.path!
+  if (edit.oldText === edit.newText) {
+   throw new Error(`No changes made to ${pathArg}. The replacement produced identical content.`)
+  }
   const absolutePath = resolvePath(cwd, pathArg)
   return withFileMutationQueue(absolutePath, async () => {
    ensureNotAborted(signal)
    const before = await Bun.file(absolutePath).text()
+   const firstIndex = before.indexOf(edit.oldText)
    const oldTextPath = join(tmpdir(), `tia-fastedit-old-${process.pid}-${randomUUID()}`)
    const newTextPath = join(tmpdir(), `tia-fastedit-new-${process.pid}-${randomUUID()}`)
    try {
     await Bun.write(oldTextPath, edit.oldText)
     await Bun.write(newTextPath, edit.newText)
     try {
-     await runBinary(FASTEDIT_BIN, [absolutePath, oldTextPath, newTextPath])
-    } catch {
-     if (before.indexOf(edit.oldText) === -1) {
+     await runBinary(FASTEDIT_BIN(), [absolutePath, oldTextPath, newTextPath], signal)
+    } catch (error) {
+     ensureNotAborted(signal)
+     if (error instanceof Error && error.message === 'Operation aborted') throw error
+     if (firstIndex === -1) {
       throw missingEditError(pathArg, 0, before, edit.oldText)
      }
      throw duplicateEditError(pathArg, 0, before, edit.oldText)
     }
     const after = await Bun.file(absolutePath).text()
+    const expected = before.slice(0, firstIndex) + edit.newText + before.slice(firstIndex + edit.oldText.length)
+    if (after !== expected) {
+     throw writeVerificationError(pathArg, 'native edit', expected, after)
+    }
     return textResult(`Successfully replaced 1 block(s) in ${pathArg}.`, {diff: combinedEditDiff([{path: pathArg, absolutePath, before, after, editCount: 1}])})
    } finally {
     rmSync(oldTextPath, {force: true})
@@ -1052,9 +1092,10 @@ async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signal?: Abo
  return applyPlannedEdits(plans, signal)
 }
 
-async function runBinary(cmd: string, args: string[]) {
- const proc = Bun.spawn([cmd, ...args], {stdout: 'ignore', stderr: 'ignore'})
+async function runBinary(cmd: string, args: string[], signal?: AbortSignal) {
+ const proc = Bun.spawn([cmd, ...args], {stdout: 'ignore', stderr: 'ignore', signal})
  const exitCode = await proc.exited
+ if (signal?.aborted) throw new Error('Operation aborted')
  if (exitCode !== 0) {
   throw new Error(`${cmd} exited with code ${exitCode}`)
  }
@@ -1079,8 +1120,8 @@ function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | 
    steps.push({
     description: `drain ${catMatch[1]}`,
     run: async () => {
-     if (existsSync(FASTDRAIN_BIN)) {
-      await runBinary(FASTDRAIN_BIN, [file])
+     if (existsSync(FASTDRAIN_BIN())) {
+      await runBinary(FASTDRAIN_BIN(), [file])
      } else {
       await Bun.file(file).arrayBuffer()
      }
@@ -1097,8 +1138,8 @@ function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | 
     description: `copy ${cpMatch[1]} -> ${cpMatch[2]}`,
     run: async () => {
      mkdirSync(dirname(dst), {recursive: true})
-     if (existsSync(FASTCOPY_BIN)) {
-      await runBinary(FASTCOPY_BIN, [src, dst])
+     if (existsSync(FASTCOPY_BIN())) {
+      await runBinary(FASTCOPY_BIN(), [src, dst])
      } else {
       await Bun.write(dst, Bun.file(src))
      }
@@ -1222,7 +1263,8 @@ export default function (pi: ExtensionAPI) {
     return textResult('(no output)')
    }
 
-   const helperPath = existsSync(FAST_TOOLS_DIR) ? `${FAST_TOOLS_DIR}:${process.env.PATH ?? ''}` : (process.env.PATH ?? '')
+   const fastDir = fastToolsDir()
+   const helperPath = existsSync(fastDir) ? `${fastDir}:${process.env.PATH ?? ''}` : (process.env.PATH ?? '')
    const stock = createBashTool(ctx.cwd, {spawnHook: ({command, cwd, env}) => ({command, cwd, env: {...(env ?? process.env), PATH: helperPath}})})
    return stock.execute(toolCallId, params, signal, onUpdate)
   }

@@ -67,24 +67,43 @@ fn writeJson(bytes: usize) void {
     writeAllFd(1, text);
 }
 
-fn writeOutput(target_path: []const u8, tmp_path: []const u8, target: []const u8, new_text: []const u8, prefix_size: usize, suffix_offset: usize) void {
-    const fd = posix.openat(posix.AT.FDCWD, tmp_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .CLOEXEC = true }, 0o644) catch |err| fatal("open tmp output", err);
+fn fsyncParentDir(path: []const u8) void {
+    const slash = std.mem.lastIndexOfScalar(u8, path, '/');
+    const dir = if (slash) |idx| (if (idx == 0) path[0..1] else path[0..idx]) else ".";
+    const fd = posix.openat(posix.AT.FDCWD, dir, .{ .ACCMODE = .RDONLY, .DIRECTORY = true, .CLOEXEC = true }, 0) catch return;
+    _ = system.fsync(fd);
+    _ = system.close(fd);
+}
+
+fn writeContent(fd: posix.fd_t, target: []const u8, new_text: []const u8, prefix_size: usize, suffix_offset: usize) void {
     writeAllFd(fd, target[0..prefix_size]);
     writeAllFd(fd, new_text);
     writeAllFd(fd, target[suffix_offset..]);
 
-    var rc = system.fsync(fd);
-    switch (posix.errno(rc)) {
+    switch (posix.errno(system.fsync(fd))) {
         .SUCCESS => {},
         else => |err| fatalErrno("fsync output", err),
     }
-    rc = system.close(fd);
-    switch (posix.errno(rc)) {
+    switch (posix.errno(system.close(fd))) {
         .SUCCESS => {},
         else => |err| fatalErrno("close output", err),
     }
+}
 
+fn writeOutput(target_path: []const u8, tmp_path: []const u8, target: []const u8, new_text: []const u8, prefix_size: usize, suffix_offset: usize, mode: posix.mode_t) void {
+    const fd = posix.openat(posix.AT.FDCWD, tmp_path, .{ .ACCMODE = .WRONLY, .CREAT = true, .TRUNC = true, .CLOEXEC = true }, mode) catch |err| fatal("open tmp output", err);
+    switch (posix.errno(system.fchmod(fd, mode))) {
+        .SUCCESS => {},
+        else => |err| fatalErrno("fchmod output", err),
+    }
+    writeContent(fd, target, new_text, prefix_size, suffix_offset);
     renamePath(tmp_path, target_path);
+    fsyncParentDir(target_path);
+}
+
+fn writeThrough(target_path: []const u8, target: []const u8, new_text: []const u8, prefix_size: usize, suffix_offset: usize) void {
+    const fd = posix.openat(posix.AT.FDCWD, target_path, .{ .ACCMODE = .WRONLY, .TRUNC = true, .CLOEXEC = true }, 0) catch |err| fatal("open target", err);
+    writeContent(fd, target, new_text, prefix_size, suffix_offset);
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -109,9 +128,22 @@ pub fn main(init: std.process.Init) !void {
 
     const suffix_offset = first_index + old_text.len;
     const output_size = first_index + new_text.len + (target.len - suffix_offset);
+
+    const target_z = toPosixPath(target_path);
+    var stx: system.Statx = undefined;
+    switch (posix.errno(system.statx(posix.AT.FDCWD, &target_z, posix.AT.SYMLINK_NOFOLLOW, .{ .TYPE = true, .MODE = true }, &stx))) {
+        .SUCCESS => {},
+        else => |err| fatalErrno("stat target", err),
+    }
+    if (posix.S.ISLNK(stx.mode)) {
+        writeThrough(target_path, target, new_text, first_index, suffix_offset);
+        writeJson(output_size);
+        return;
+    }
+
     const tmp_path = std.fmt.allocPrint(arena, "{s}.tmp.{}", .{ target_path, system.getpid() }) catch |err| fatal("malloc", err);
     if (tmp_path.len > 4095) fatalMessage("temporary path too long");
 
-    writeOutput(target_path, tmp_path, target, new_text, first_index, suffix_offset);
+    writeOutput(target_path, tmp_path, target, new_text, first_index, suffix_offset, @intCast(stx.mode & 0o777));
     writeJson(output_size);
 }

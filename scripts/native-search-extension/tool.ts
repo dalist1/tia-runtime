@@ -1,6 +1,7 @@
 import {existsSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
+import {setTimeout as delay} from 'node:timers/promises'
 import {
  DEFAULT_CONTENT_CHARS,
  DEFAULT_MAX_PAGES,
@@ -22,7 +23,7 @@ import {
 import {discoverSiteUrls} from './discover.ts'
 import {originIntervalMs} from './http.ts'
 import {SearchProgress, buildTimeoutSearchText, nonProgressStderr, readStreamText, readZigProgress} from './progress.ts'
-import {extractUrls, normalizeHttpUrl, tokenizeQuery, unique} from './text.ts'
+import {extractUrls, isBlockedHost, normalizeHttpUrl, tokenizeQuery, unique} from './text.ts'
 import type {DiscoveredUrl, NativeSearchParams, ProgressEmitter, ToolTextResponse} from './types.ts'
 
 const ZIG_SEARCH_BIN = process.env.TIA_NATIVE_SEARCH_ZIG_BIN ?? new URL('../../fast-tools/native-search-zig', import.meta.url).pathname
@@ -57,12 +58,18 @@ export async function runNativeSearchTool(params: NativeSearchParams, signal?: A
   ? []
   : await mapLimited(sites, Math.min(searchConcurrency(), sites.length), async (site, index) => {
      progress.emit(`Discovering ${index + 1}/${sites.length}: ${site}`, {phase: 'discover', current: index + 1, total: sites.length, site})
-     const discovery = await discoverSiteUrls({site, pagesPerSite, timeoutMs, queryTerms, signal})
-     progress.emit(`Discovered ${discovery.urls.length} page(s): ${site}`, {phase: 'discover', current: index + 1, total: sites.length, site, discovered: discovery.urls.length})
-     return discovery
+     try {
+      const discovery = await discoverSiteUrls({site, pagesPerSite, timeoutMs, queryTerms, signal})
+      progress.emit(`Discovered ${discovery.urls.length} page(s): ${site}`, {phase: 'discover', current: index + 1, total: sites.length, site, discovered: discovery.urls.length})
+      return discovery
+     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      progress.emit(`Discovery failed: ${site}`, {phase: 'discover', current: index + 1, total: sites.length, site, error: message})
+      return {site, urls: [], errors: [message]}
+     }
     })
  const discovered = directUrlMode ? sites.map(url => ({url, source: 'direct URL', priority: 100})) : discoveries.flatMap(discovery => discovery.urls)
- const urls = planCandidateUrls(discovered, {strategy, maxPages: directUrlMode ? Math.min(maxPages, sites.length) : maxPages, perSiteCap: pagesPerSite})
+ const urls = planCandidateUrls(discovered, {strategy, maxPages: directUrlMode ? Math.min(maxPages, sites.length) : maxPages, perSiteCap: pagesPerSite}).filter(item => !isBlockedHostUrl(item.url))
  const overallTimeoutMs = backendTimeoutMs(params.overallTimeoutMs, timeoutMs, urls.length)
  progress.emit(`Planned ${urls.length} bounded URL(s) across ${countOrigins(urls)} origin(s).`, {phase: 'plan', candidateUrlCount: urls.length, overallTimeoutMs})
 
@@ -125,14 +132,19 @@ async function runZigNativeSearch(options: ZigSearchOptions): Promise<ToolTextRe
     proc.kill('SIGTERM')
     readerAbort.abort()
     hardKillTimer = setTimeout(() => proc.kill('SIGKILL'), 1000)
+    hardKillTimer.unref?.()
     resolve({kind: 'timeout'})
    }, options.overallTimeoutMs)
   })
 
   const outcome = await Promise.race([complete, timeout])
-  if (outcome.kind === 'timeout') return timeoutResponse(options, stdoutText)
   if (timeoutTimer) clearTimeout(timeoutTimer)
-  if (hardKillTimer) clearTimeout(hardKillTimer)
+  if (outcome.kind === 'timeout') {
+   await Promise.race([proc.exited, delay(1000)])
+   proc.kill('SIGKILL')
+   await proc.exited.catch(() => undefined)
+   return timeoutResponse(options, stdoutText)
+  }
   if (outcome.kind === 'error') throw outcome.error
   if (outcome.exitCode !== 0) throw new Error(nonProgressStderr(outcome.stderrText) || `native-search-zig exited with code ${outcome.exitCode}`)
   options.progress.emit('Ranking complete; rendering results.', {phase: 'rank', status: 'complete', candidateUrlCount: options.urls.length})
@@ -156,6 +168,7 @@ async function runZigNativeSearch(options: ZigSearchOptions): Promise<ToolTextRe
   }
  } finally {
   if (timeoutTimer) clearTimeout(timeoutTimer)
+  if (hardKillTimer) clearTimeout(hardKillTimer)
   rmSync(urlPath, {force: true})
  }
 }
@@ -268,6 +281,14 @@ function originOf(url: string) {
   return new URL(url).origin
  } catch {
   return ''
+ }
+}
+
+function isBlockedHostUrl(url: string) {
+ try {
+  return isBlockedHost(new URL(url).hostname)
+ } catch {
+  return true
  }
 }
 

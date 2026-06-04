@@ -1,7 +1,7 @@
 import {expect, test} from 'bun:test'
 import {mkdirSync, mkdtempSync, rmSync} from 'node:fs'
-import {readFile, writeFile} from 'node:fs/promises'
-import {tmpdir} from 'node:os'
+import {readFile, stat, writeFile} from 'node:fs/promises'
+import {homedir, tmpdir} from 'node:os'
 import {join} from 'node:path'
 
 async function run(command: string[], cwd: string, input?: string) {
@@ -26,7 +26,7 @@ test('active Zig fastread and fastedit helpers build and run without Linux-only 
   const outDir = join(cwd, 'bin')
   mkdirSync(outDir)
   for (const helper of ['fastread-window', 'fastedit']) {
-   const result = await run(['zig', 'build-exe', '-O', 'ReleaseFast', '-fstrip', '--cache-dir', join(cwd, 'zig-cache'), '--global-cache-dir', join(cwd, 'zig-global-cache'), join(repo, `native/${helper}.zig`), '-femit-bin=' + join(outDir, helper)], repo)
+   const result = await run(['zig', 'build-exe', '-O', 'ReleaseFast', '-fstrip', '--cache-dir', join(cwd, 'zig-cache'), '--global-cache-dir', join(homedir(), '.cache', 'zig'), join(repo, `native/${helper}.zig`), '-femit-bin=' + join(outDir, helper)], repo)
    expect(result.exitCode, result.stderr).toBe(0)
   }
 
@@ -47,7 +47,14 @@ test('active Zig fastread and fastedit helpers build and run without Linux-only 
   const duplicateResult = await run([join(outDir, 'fastedit'), 'target.txt', 'old.txt', 'new.txt'], cwd)
   expect(duplicateResult.exitCode).not.toBe(0)
   expect(duplicateResult.stderr).toContain('oldText not unique')
+
+  await writeFile(join(cwd, 'exec.sh'), 'run old script\n')
+  await run(['chmod', '755', join(cwd, 'exec.sh')], cwd)
+  const modeResult = await run([join(outDir, 'fastedit'), 'exec.sh', 'old.txt', 'new.txt'], cwd)
+  expect(modeResult.exitCode, modeResult.stderr).toBe(0)
+  const modeStat = await stat(join(cwd, 'exec.sh'))
+  expect(modeStat.mode & 0o777).toBe(0o755)
  } finally {
   rmSync(cwd, {recursive: true, force: true})
  }
-})
+}, 180000)

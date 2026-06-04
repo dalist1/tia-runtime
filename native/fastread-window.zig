@@ -3,7 +3,7 @@ const Io = std.Io;
 const posix = std.posix;
 const system = posix.system;
 
-const max_bytes = 256_000;
+const default_max_bytes: usize = 50 * 1024;
 
 fn usage(argv0: []const u8) noreturn {
     std.debug.print("usage: {s} <file> <offset> <limit>\n", .{argv0});
@@ -63,7 +63,7 @@ fn emitLineLimit(start_line: usize, output_lines: usize) void {
     writeAll(text);
 }
 
-fn emitByteLimit(start_line: usize, output_lines: usize, output_bytes: usize, first_line_excess: usize) void {
+fn emitByteLimit(start_line: usize, output_lines: usize, output_bytes: usize, first_line_excess: usize, limit: usize) void {
     var buf: [256]u8 = undefined;
     if (output_lines == 0) {
         var size_buf: [64]u8 = undefined;
@@ -71,7 +71,7 @@ fn emitByteLimit(start_line: usize, output_lines: usize, output_bytes: usize, fi
         const text = std.fmt.bufPrint(&buf, "[Line {} is {s}, exceeds {s} limit.]", .{
             start_line,
             formatSize(&size_buf, first_line_excess),
-            formatSize(&limit_buf, max_bytes),
+            formatSize(&limit_buf, limit),
         }) catch unreachable;
         writeAll(text);
     } else {
@@ -92,7 +92,7 @@ pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena.allocator();
     const args = try init.minimal.args.toSlice(arena);
-    if (args.len != 4) usage(args[0]);
+    if (args.len != 4 and args.len != 5) usage(args[0]);
 
     const path = args[1];
     const start_line = parsePositive(args[2]) orelse {
@@ -103,6 +103,7 @@ pub fn main(init: std.process.Init) !void {
         std.debug.print("offset and limit must be >= 1\n", .{});
         std.process.exit(1);
     };
+    const max_bytes: usize = if (args.len == 5) (parsePositive(args[4]) orelse default_max_bytes) else default_max_bytes;
 
     const stat = Io.Dir.cwd().statFile(io, path, .{}) catch |err| fatal("stat", err);
     if (stat.size == 0) return;
@@ -120,6 +121,8 @@ pub fn main(init: std.process.Init) !void {
     var line_start: usize = 0;
     var output_lines: usize = 0;
     var output_bytes: usize = 0;
+    var emit_start: usize = 0;
+    var emit_end: usize = 0;
     var hit_line_limit = false;
     var hit_byte_limit = false;
     var first_line_excess: usize = 0;
@@ -138,7 +141,8 @@ pub fn main(init: std.process.Init) !void {
                 if (output_lines == 0) first_line_excess = line_len;
                 break;
             }
-            writeAll(data[line_start .. i + 1]);
+            if (output_lines == 0) emit_start = line_start;
+            emit_end = i + 1;
             output_lines += 1;
             output_bytes += line_len;
         }
@@ -154,15 +158,18 @@ pub fn main(init: std.process.Init) !void {
             hit_byte_limit = true;
             if (output_lines == 0) first_line_excess = line_len;
         } else {
-            writeAll(data[line_start..]);
+            if (output_lines == 0) emit_start = line_start;
+            emit_end = data.len;
             output_lines += 1;
             output_bytes += line_len;
         }
     }
 
+    if (output_lines > 0) writeAll(data[emit_start..emit_end]);
+
     if (hit_line_limit) {
         emitLineLimit(start_line, output_lines);
     } else if (hit_byte_limit) {
-        emitByteLimit(start_line, output_lines, output_bytes, first_line_excess);
+        emitByteLimit(start_line, output_lines, output_bytes, first_line_excess, max_bytes);
     }
 }

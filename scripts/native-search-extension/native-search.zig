@@ -82,16 +82,25 @@ fn writeFixture(io: Io, repeat: usize, path: []const u8) !void {
     while (i < repeat) : (i += 1) for (rows) |row| try file.writeStreamingAll(io, row);
 }
 
+const OriginClock = struct { origin: []const u8, last_ms: i64 };
+
+fn originOf(url: []const u8) []const u8 {
+    const scheme_end = std.mem.indexOf(u8, url, "://") orelse return url;
+    const host_start = scheme_end + 3;
+    const path_rel = std.mem.indexOfAny(u8, url[host_start..], "/?#") orelse return url;
+    return url[0 .. host_start + path_rel];
+}
+
 fn fetchUrls(arena: std.mem.Allocator, io: Io, urls_text: []const u8, max_chars: usize, terms: []const []const u8, delay_ms: i64) ![]Doc {
     var line_count: usize = 0;
     var count_it = std.mem.splitScalar(u8, urls_text, '\n');
-    while (count_it.next()) |line| {
-        if (std.mem.trim(u8, line, "\r\t ").len > 0) line_count += 1;
-    }
+    while (count_it.next()) |line| { if (std.mem.trim(u8, line, "\r\t ").len > 0) line_count += 1; }
     var docs = try arena.alloc(Doc, line_count);
     var client: std.http.Client = .{ .allocator = arena, .io = io };
     defer client.deinit();
 
+    var origins = try arena.alloc(OriginClock, line_count);
+    var origin_count: usize = 0;
     var used: usize = 0;
     var ordinal: usize = 0;
     var lines = std.mem.splitScalar(u8, urls_text, '\n');
@@ -99,7 +108,25 @@ fn fetchUrls(arena: std.mem.Allocator, io: Io, urls_text: []const u8, max_chars:
         const url = std.mem.trim(u8, line_raw, "\r\t ");
         if (url.len == 0) continue;
         ordinal += 1;
-        if (ordinal > 1 and delay_ms > 0) try Io.sleep(io, Io.Duration.fromMilliseconds(delay_ms), .awake);
+        if (delay_ms > 0) {
+            const origin = originOf(url);
+            const now_ms = Io.Clock.now(.awake, io).toMilliseconds();
+            var slot: ?*OriginClock = null;
+            for (origins[0..origin_count]) |*entry| {
+                if (std.mem.eql(u8, entry.origin, origin)) {
+                    slot = entry;
+                    break;
+                }
+            }
+            if (slot) |entry| {
+                const wait_ms = entry.last_ms + delay_ms - now_ms;
+                if (wait_ms > 0) try Io.sleep(io, Io.Duration.fromMilliseconds(wait_ms), .awake);
+                entry.last_ms = Io.Clock.now(.awake, io).toMilliseconds();
+            } else {
+                origins[origin_count] = .{ .origin = origin, .last_ms = now_ms };
+                origin_count += 1;
+            }
+        }
         std.debug.print("progress: fetching {}/{} {s}\n", .{ ordinal, line_count, url });
         const fetched = fetchOne(arena, &client, url) catch |err| {
             std.debug.print("progress: skipped {}/{} {s} ({s})\n", .{ ordinal, line_count, url, @errorName(err) });
@@ -127,6 +154,7 @@ fn fetchOne(arena: std.mem.Allocator, client: *std.http.Client, url: []const u8)
         .location = .{ .url = url },
         .response_writer = &aw.writer,
         .extra_headers = &headers,
+        .redirect_behavior = .not_allowed,
     });
     if (@intFromEnum(result.status) >= 400) return error.HttpStatus;
     return .{ .url = url, .body = aw.written() };
@@ -135,9 +163,7 @@ fn fetchOne(arena: std.mem.Allocator, client: *std.http.Client, url: []const u8)
 fn parseCorpus(arena: std.mem.Allocator, corpus: []const u8, max_chars: usize, terms: []const []const u8) ![]Doc {
     var line_count: usize = 0;
     var count_it = std.mem.splitScalar(u8, corpus, '\n');
-    while (count_it.next()) |line| {
-        if (std.mem.trim(u8, line, "\r\t ").len > 0) line_count += 1;
-    }
+    while (count_it.next()) |line| { if (std.mem.trim(u8, line, "\r\t ").len > 0) line_count += 1; }
     var docs = try arena.alloc(Doc, line_count);
     var used: usize = 0;
     var lines = std.mem.splitScalar(u8, corpus, '\n');
@@ -226,14 +252,20 @@ fn htmlToText(arena: std.mem.Allocator, html: []const u8, max_chars: usize) ![]c
                 continue;
             }
         }
+        if (c >= 0x80) {
+            const seq = @min(utf8SeqLen(c), html.len - i);
+            if (n + seq > out.len) break;
+            @memcpy(out[n .. n + seq], html[i .. i + seq]);
+            n += seq;
+            i += seq - 1;
+            continue;
+        }
         n = appendSpace(out, n, c);
     }
     return std.mem.trim(u8, out[0..n], " \t\r\n");
 }
 
-fn startsTag(s: []const u8, tag: []const u8) bool {
-    return s.len > tag.len + 1 and s[0] == '<' and eqlFold(s[1 .. 1 + tag.len], tag);
-}
+fn startsTag(s: []const u8, tag: []const u8) bool { return s.len > tag.len + 1 and s[0] == '<' and eqlFold(s[1 .. 1 + tag.len], tag); }
 
 fn entity(s: []const u8) struct { char: u8, skip: usize } {
     const entities = [_]struct { text: []const u8, char: u8 }{
@@ -248,9 +280,19 @@ fn entity(s: []const u8) struct { char: u8, skip: usize } {
 fn plainClean(arena: std.mem.Allocator, text: []const u8, max_chars: usize) ![]const u8 {
     const out = try arena.alloc(u8, @min(text.len, max_chars));
     var n: usize = 0;
-    for (text) |c| {
+    var i: usize = 0;
+    while (i < text.len) {
+        const seq = @min(utf8SeqLen(text[i]), text.len - i);
+        if (seq > 1) {
+            if (n + seq > out.len) break;
+            @memcpy(out[n .. n + seq], text[i .. i + seq]);
+            n += seq;
+            i += seq;
+            continue;
+        }
         if (n >= out.len) break;
-        n = appendSpace(out, n, c);
+        n = appendSpace(out, n, text[i]);
+        i += 1;
     }
     return std.mem.trim(u8, out[0..n], " \t\r\n");
 }
@@ -275,6 +317,17 @@ fn appendSpace(out: []u8, n: usize, c: u8) usize {
     out[n] = normalized;
     return n + 1;
 }
+
+fn utf8SeqLen(first: u8) usize {
+    if (first < 0x80) return 1;
+    return if (first >= 0xF0) 4 else if (first >= 0xE0) 3 else if (first >= 0xC0) 2 else 1;
+}
+
+fn isContinuation(byte: u8) bool { return byte & 0xC0 == 0x80; }
+
+fn floorBoundary(bytes: []const u8, index: usize) usize { var i = @min(index, bytes.len); while (i > 0 and i < bytes.len and isContinuation(bytes[i])) : (i -= 1) {} return i; }
+
+fn ceilBoundary(bytes: []const u8, index: usize) usize { var i = @min(index, bytes.len); while (i < bytes.len and isContinuation(bytes[i])) : (i += 1) {} return i; }
 
 fn splitTerms(arena: std.mem.Allocator, query: []const u8) ![]const []const u8 {
     var temp = try arena.alloc([]const u8, 32);
@@ -306,8 +359,10 @@ fn writeSnippet(out: *Io.Writer, content: []const u8, terms: []const []const u8)
         at = idx;
         break;
     };
-    const start = if (at > 120) at - 120 else 0;
-    const end = @min(content.len, at + 300);
+    const raw_start = if (at > 120) at - 120 else 0;
+    const start = ceilBoundary(content, raw_start);
+    const raw_end = floorBoundary(content, @min(content.len, at + 300));
+    const end = @max(start, raw_end);
     try out.writeAll("Snippet: ");
     if (start > 0) try out.writeAll("…");
     try out.writeAll(content[start..end]);
@@ -315,9 +370,7 @@ fn writeSnippet(out: *Io.Writer, content: []const u8, terms: []const []const u8)
     try out.writeAll("\n");
 }
 
-fn moreRelevant(_: void, a: Doc, b: Doc) bool {
-    return a.score > b.score;
-}
+fn moreRelevant(_: void, a: Doc, b: Doc) bool { return a.score > b.score; }
 
 fn countFold(haystack: []const u8, needle: []const u8) u64 {
     if (needle.len == 0 or haystack.len < needle.len) return 0;
@@ -329,9 +382,7 @@ fn countFold(haystack: []const u8, needle: []const u8) u64 {
     return count;
 }
 
-fn containsFold(haystack: []const u8, needle: []const u8) bool {
-    return indexOfFold(haystack, needle) != null;
-}
+fn containsFold(haystack: []const u8, needle: []const u8) bool { return indexOfFold(haystack, needle) != null; }
 
 fn indexOfFold(haystack: []const u8, needle: []const u8) ?usize {
     if (needle.len == 0 or haystack.len < needle.len) return null;
@@ -346,6 +397,4 @@ fn eqlFold(a: []const u8, b: []const u8) bool {
     return true;
 }
 
-fn lower(c: u8) u8 {
-    return if (c >= 'A' and c <= 'Z') c + 32 else c;
-}
+fn lower(c: u8) u8 { return if (c >= 'A' and c <= 'Z') c + 32 else c; }

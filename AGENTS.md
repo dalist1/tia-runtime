@@ -27,3 +27,9 @@ bash test.sh
 - Do not force tool-using coding subagents through slim mode. For subagents that need tools or stock pi JSON events, use full JSON pi and reduce overhead with `--no-session --no-skills --no-prompt-templates --no-themes --no-context-files` where safe.
 - For compatibility tests or consumers that need stock JSON events, disable the slim path with `TIA_DISABLE_FAST_STREAM=1`.
 <!-- tia-runtime-guidance:end -->
+
+## Comment Policy
+
+- NEVER add comments to deleted code blocks.
+- Do not add comments that reference context from the transcript.
+- Avoid adding comments where not necessary.

@@ -43,7 +43,11 @@ TIA_NATIVE_SEARCH_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/native-search"
 TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
+TIA_FFF_SOURCE_FILE="${TIA_ROOT}/fff-source.txt"
 TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-nightly}"
+if [[ -z "${TIA_FFF_SOURCE:-}" && -f "${TIA_FFF_SOURCE_FILE}" ]]; then
+	TIA_FFF_SOURCE="$(tr -d '[:space:]' < "${TIA_FFF_SOURCE_FILE}")"
+fi
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
 TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.75.3}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
@@ -108,7 +112,8 @@ is_pi_package_dir() {
 
 find_pi_package_dir() {
 	local path="$1"
-	local dir
+	[[ -n "${path}" ]] || return 1
+	local dir prev_dir=""
 	if [[ -d "${path}" ]]; then
 		dir="${path}"
 	else
@@ -122,7 +127,11 @@ find_pi_package_dir() {
 		if [[ "${dir}" == "/" ]]; then
 			break
 		fi
+		prev_dir="${dir}"
 		dir="$(dirname "${dir}")"
+		if [[ "${dir}" == "${prev_dir}" ]]; then
+			break
+		fi
 	done
 	return 1
 }
@@ -195,8 +204,19 @@ install_fast_tool_helpers() {
 
 	if [[ "${built_any}" == "1" ]]; then
 		chmod +x "${TIA_FAST_TOOLS_DIR}"/* 2>/dev/null || true
-	elif [[ "${TIA_REQUIRE_FAST_HELPERS:-0}" == "1" ]]; then
-		die "native fast-tool helpers were not installed"
+	fi
+
+	if [[ "${TIA_REQUIRE_FAST_HELPERS:-0}" == "1" ]]; then
+		if [[ "${built_any}" != "1" ]]; then
+			die "native fast-tool helpers were not installed"
+		fi
+		local missing=""
+		for helper in ${helper_names}; do
+			[[ -x "${TIA_FAST_TOOLS_DIR}/${helper}" ]] || missing="${missing} ${helper}"
+		done
+		if [[ -n "${missing}" ]]; then
+			die "native fast-tool helpers missing:${missing}"
+		fi
 	fi
 }
 
@@ -246,7 +266,16 @@ install_fff_extension() {
 		return 0
 	fi
 
-	# Clean stale marker files when switching between fork and vanilla
+	case "${TIA_FFF_SOURCE}" in
+		vanilla|fork)
+			;;
+		*)
+			die "Unsupported TIA_FFF_SOURCE: ${TIA_FFF_SOURCE}"
+			;;
+	esac
+	mkdir -p "${TIA_ROOT}"
+	printf '%s\n' "${TIA_FFF_SOURCE}" > "${TIA_FFF_SOURCE_FILE}"
+
 	rm -f "${TIA_FFF_EXTENSION_DIR}/fff-extension.ts" "${TIA_FFF_EXTENSION_DIR}/query.ts"
 
 	if [[ "${TIA_FFF_SOURCE}" == "fork" ]]; then
@@ -427,6 +456,7 @@ TIA_PI_BIN="${TIA_PI_BIN}"
 TIA_PI_STREAM_BIN="${TIA_PI_STREAM_BIN}"
 TIA_PI_AGENT_DIR="${TIA_PI_AGENT_DIR}"
 TIA_FFF_STATE_DIR="${TIA_FFF_STATE_DIR}"
+TIA_FFF_SOURCE_FILE="${TIA_FFF_SOURCE_FILE}"
 
 should_use_fast_stream() {
   [[ "\${TIA_DISABLE_FAST_STREAM:-0}" != "1" ]] || return 1
@@ -480,7 +510,7 @@ should_use_fast_stream() {
 ensure_cliproxy_started() {
   [[ "\${PI_NO_PROXY_AUTO_START:-0}" != "1" ]] || return 0
   if command -v systemctl >/dev/null 2>&1; then
-    systemctl --user start cliproxyapi >/dev/null 2>&1 || true
+    systemctl --user is-active --quiet cliproxyapi 2>/dev/null || systemctl --user start cliproxyapi >/dev/null 2>&1 || true
   fi
 }
 
@@ -489,21 +519,23 @@ refresh_shell_agent_links() {
   if [[ "\${shell_agent_dir}" == "\${TIA_PI_AGENT_DIR}" ]]; then
     shell_agent_dir="\${HOME}/.pi/agent"
   fi
-  mkdir -p "\${TIA_PI_AGENT_DIR}"
+  mkdir -p "\${TIA_PI_AGENT_DIR}" || return 0
 
   for name in auth.json models.json settings.json keybindings.json; do
     local src="\${shell_agent_dir}/\${name}"
     local dest="\${TIA_PI_AGENT_DIR}/\${name}"
     if [[ -f "\${src}" ]]; then
+      [[ "\$(readlink "\${dest}" 2>/dev/null)" == "\${src}" ]] && continue
       local tmp
-      tmp="\$(mktemp "\${dest}.tmp.XXXXXX")"
-      rm -f "\${tmp}"
-      ln -s "\${src}" "\${tmp}"
-      mv -f "\${tmp}" "\${dest}"
+      tmp="\$(mktemp "\${dest}.tmp.XXXXXX" 2>/dev/null)" || continue
+      rm -f "\${tmp}" || true
+      ln -s "\${src}" "\${tmp}" || { rm -f "\${tmp}" || true; continue; }
+      mv -f "\${tmp}" "\${dest}" || { rm -f "\${tmp}" || true; continue; }
     else
-      rm -f "\${dest}"
+      rm -f "\${dest}" || true
     fi
   done
+  return 0
 }
 
 configure_fff_env() {
@@ -578,8 +610,10 @@ case "\${subcommand}" in
     fi
     if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/index.ts" ]]; then
       fff_source="vanilla"
-      if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/fff-extension.ts" ]]; then
+      if grep -q '@edxeth/pi-fff' "\${TIA_PI_AGENT_DIR}/extensions/fff/package.json" 2>/dev/null; then
         fff_source="fork (edxeth/fff)"
+      elif [[ -f "\${TIA_FFF_SOURCE_FILE}" ]]; then
+        fff_source="\$(cat "\${TIA_FFF_SOURCE_FILE}")"
       fi
       echo "fff extension:       \tenabled (source: \${fff_source}, mode: \${PI_FFF_MODE:-override})"
     else
@@ -640,8 +674,10 @@ status_all() {
 	fi
 	if [[ -f "${TIA_FFF_EXTENSION_DIR}/index.ts" ]]; then
 		local fff_source="vanilla"
-		if [[ -f "${TIA_FFF_EXTENSION_DIR}/fff-extension.ts" ]]; then
+		if grep -q '@edxeth/pi-fff' "${TIA_FFF_EXTENSION_DIR}/package.json" 2>/dev/null; then
 			fff_source="fork (edxeth/fff)"
+		elif [[ -f "${TIA_FFF_SOURCE_FILE}" ]]; then
+			fff_source="$(cat "${TIA_FFF_SOURCE_FILE}")"
 		fi
 		printf 'fff extension:       enabled (source: %s, mode: %s)\n' "${fff_source}" "${PI_FFF_MODE:-override}"
 	else

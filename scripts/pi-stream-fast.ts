@@ -1,17 +1,13 @@
 process.env.PI_PACKAGE_DIR ??= '__PI_PACKAGE_DIR__'
 
 import {join} from 'node:path'
-import {streamSimple} from '__PI_PACKAGE_DIR__/../pi-ai/dist/stream.js'
 import type {AssistantMessage, Context, SimpleStreamOptions} from '__PI_PACKAGE_DIR__/../pi-ai/dist/types.js'
-import {getAgentDir} from '__PI_PACKAGE_DIR__/dist/config.js'
-import {AuthStorage} from '__PI_PACKAGE_DIR__/dist/core/auth-storage.js'
-import {ModelRegistry} from '__PI_PACKAGE_DIR__/dist/core/model-registry.js'
-import {findInitialModel} from '__PI_PACKAGE_DIR__/dist/core/model-resolver.js'
-import {SettingsManager} from '__PI_PACKAGE_DIR__/dist/core/settings-manager.js'
 
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 type ParsedArgs = {provider?: string; modelId?: string; thinkingLevel?: ThinkingLevel; messages: string[]}
+
+type StreamSink = (chunk: string, callback: () => void) => boolean
 
 function isThinkingLevel(value: string): value is ThinkingLevel {
  return ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(value)
@@ -25,7 +21,7 @@ function requireValue(argv: string[], index: number, flag: string) {
  return value
 }
 
-function parseArgs(argv: string[]): ParsedArgs {
+export function parseArgs(argv: string[]): ParsedArgs {
  const parsed: ParsedArgs = {messages: []}
  for (let i = 0; i < argv.length; i += 1) {
   const arg = argv[i]
@@ -82,12 +78,21 @@ function parseArgs(argv: string[]): ParsedArgs {
  return parsed
 }
 
-class SlimStreamWriter {
+function defaultSink(chunk: string, callback: () => void): boolean {
+ return process.stdout.write(chunk, callback)
+}
+
+export class SlimStreamWriter {
  private outBuffer = ''
  private deltaBuffer = new Map<number, string>()
  private writing = false
  private waiters: Array<() => void> = []
  private timer: ReturnType<typeof setTimeout> | null = null
+ private sink: StreamSink
+
+ constructor(sink: StreamSink = defaultSink) {
+  this.sink = sink
+ }
 
  enqueue(event: unknown) {
   this.appendRaw(`${JSON.stringify(event)}\n`)
@@ -151,6 +156,16 @@ class SlimStreamWriter {
   }, 4)
  }
 
+ private settle() {
+  if (this.outBuffer.length > 0 || this.deltaBuffer.size > 0) {
+   this.flushSoon(true)
+   return
+  }
+  const waiters = this.waiters
+  this.waiters = []
+  for (const resolve of waiters) resolve()
+ }
+
  private flush() {
   this.flushDeltas()
   if (this.writing || this.outBuffer.length === 0) {
@@ -159,15 +174,9 @@ class SlimStreamWriter {
   this.writing = true
   const chunk = this.outBuffer
   this.outBuffer = ''
-  process.stdout.write(chunk, () => {
+  this.sink(chunk, () => {
    this.writing = false
-   if (this.outBuffer.length > 0 || this.deltaBuffer.size > 0) {
-    this.flushSoon(true)
-    return
-   }
-   const waiters = this.waiters
-   this.waiters = []
-   for (const resolve of waiters) resolve()
+   this.settle()
   })
  }
 
@@ -192,85 +201,111 @@ function resolveReasoning(level: ThinkingLevel | undefined, model: {reasoning?: 
  return level
 }
 
-const parsed = parseArgs(process.argv.slice(2))
-const cwd = process.cwd()
-const agentDir = getAgentDir()
-const authStorage = AuthStorage.create(join(agentDir, 'auth.json'))
-const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, 'models.json'))
-const settingsManager = SettingsManager.create(cwd, agentDir)
-
-const initialModel = await findInitialModel({
- cliProvider: parsed.provider,
- cliModel: parsed.modelId,
- scopedModels: [],
- isContinuing: false,
- defaultProvider: settingsManager.getDefaultProvider(),
- defaultModelId: settingsManager.getDefaultModel(),
- defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),
- modelRegistry
-})
-const model = initialModel.model
-if (!model) {
- throw new Error(initialModel.fallbackMessage ?? 'No configured model available')
-}
-const thinkingLevel = parsed.thinkingLevel ?? initialModel.thinkingLevel
-const auth = await modelRegistry.getApiKeyAndHeaders(model)
-if (!auth.ok) {
- throw new Error(auth.error)
+async function readStdin(): Promise<string> {
+ let data = ''
+ process.stdin.setEncoding('utf8')
+ for await (const chunk of process.stdin) {
+  data += chunk
+ }
+ return data.replace(/\n+$/, '')
 }
 
-const providerRetrySettings = settingsManager.getProviderRetrySettings()
-const streamOptions: SimpleStreamOptions = {
- apiKey: auth.apiKey,
- headers: auth.headers,
- reasoning: resolveReasoning(thinkingLevel, model),
- thinkingBudgets: settingsManager.getThinkingBudgets(),
- transport: settingsManager.getTransport(),
- timeoutMs: providerRetrySettings.timeoutMs,
- maxRetries: providerRetrySettings.maxRetries,
- maxRetryDelayMs: providerRetrySettings.maxRetryDelayMs
-}
+async function main() {
+ const {streamSimple} = await import('__PI_PACKAGE_DIR__/../pi-ai/dist/stream.js')
+ const {getAgentDir} = await import('__PI_PACKAGE_DIR__/dist/config.js')
+ const {AuthStorage} = await import('__PI_PACKAGE_DIR__/dist/core/auth-storage.js')
+ const {ModelRegistry} = await import('__PI_PACKAGE_DIR__/dist/core/model-registry.js')
+ const {findInitialModel} = await import('__PI_PACKAGE_DIR__/dist/core/model-resolver.js')
+ const {SettingsManager} = await import('__PI_PACKAGE_DIR__/dist/core/settings-manager.js')
 
-const writer = new SlimStreamWriter()
-writer.enqueue({t: 'session', model: model.id, provider: model.provider})
+ const parsed = parseArgs(process.argv.slice(2))
+ if (parsed.messages.length === 0 && !process.stdin.isTTY) {
+  const piped = await readStdin()
+  if (piped.length > 0) parsed.messages.push(piped)
+ }
+ const cwd = process.cwd()
+ const agentDir = getAgentDir()
+ const authStorage = AuthStorage.create(join(agentDir, 'auth.json'))
+ const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, 'models.json'))
+ const settingsManager = SettingsManager.create(cwd, agentDir)
 
-const messages: Context['messages'] = []
-
-async function prompt(message: string) {
- messages.push({role: 'user', content: message, timestamp: Date.now()})
- const context: Context = {systemPrompt: '', messages, tools: []}
- const stream = streamSimple(model, context, streamOptions)
- let finalMessage: AssistantMessage | undefined
-
- for await (const event of stream) {
-  if (event?.type === 'text_start') {
-   writer.enqueueTextStart(event.contentIndex)
-   continue
-  }
-  if (event?.type === 'text_delta') {
-   writer.enqueueDelta(event.contentIndex, event.delta ?? '')
-   continue
-  }
-  if (event?.type === 'text_end') {
-   writer.enqueueTextEnd(event.contentIndex)
-   continue
-  }
-  if (event?.type === 'done') {
-   finalMessage = event.message
-   continue
-  }
-  if (event?.type === 'error') {
-   finalMessage = event.error
-  }
+ const initialModel = await findInitialModel({
+  cliProvider: parsed.provider,
+  cliModel: parsed.modelId,
+  scopedModels: [],
+  isContinuing: false,
+  defaultProvider: settingsManager.getDefaultProvider(),
+  defaultModelId: settingsManager.getDefaultModel(),
+  defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),
+  modelRegistry
+ })
+ const model = initialModel.model
+ if (!model) {
+  throw new Error(initialModel.fallbackMessage ?? 'No configured model available')
+ }
+ const thinkingLevel = parsed.thinkingLevel ?? initialModel.thinkingLevel
+ const auth = await modelRegistry.getApiKeyAndHeaders(model)
+ if (!auth.ok) {
+  throw new Error(auth.error)
  }
 
- finalMessage ??= await stream.result()
- writer.flushDeltas()
- writer.enqueue({t: 'done', usage: finalMessage?.usage, stopReason: finalMessage?.stopReason, error: finalMessage?.errorMessage})
- if (finalMessage) messages.push(finalMessage)
+ const providerRetrySettings = settingsManager.getProviderRetrySettings()
+ const streamOptions: SimpleStreamOptions = {
+  apiKey: auth.apiKey,
+  headers: auth.headers,
+  reasoning: resolveReasoning(thinkingLevel, model),
+  thinkingBudgets: settingsManager.getThinkingBudgets(),
+  transport: settingsManager.getTransport(),
+  timeoutMs: providerRetrySettings.timeoutMs,
+  maxRetries: providerRetrySettings.maxRetries,
+  maxRetryDelayMs: providerRetrySettings.maxRetryDelayMs
+ }
+
+ const writer = new SlimStreamWriter()
+ writer.enqueue({t: 'session', model: model.id, provider: model.provider})
+
+ const messages: Context['messages'] = []
+
+ async function prompt(message: string) {
+  messages.push({role: 'user', content: message, timestamp: Date.now()})
+  const context: Context = {systemPrompt: '', messages, tools: []}
+  const stream = streamSimple(model, context, streamOptions)
+  let finalMessage: AssistantMessage | undefined
+
+  for await (const event of stream) {
+   if (event?.type === 'text_start') {
+    writer.enqueueTextStart(event.contentIndex)
+    continue
+   }
+   if (event?.type === 'text_delta') {
+    writer.enqueueDelta(event.contentIndex, event.delta ?? '')
+    continue
+   }
+   if (event?.type === 'text_end') {
+    writer.enqueueTextEnd(event.contentIndex)
+    continue
+   }
+   if (event?.type === 'done') {
+    finalMessage = event.message
+    continue
+   }
+   if (event?.type === 'error') {
+    finalMessage = event.error
+   }
+  }
+
+  finalMessage ??= await stream.result()
+  writer.flushDeltas()
+  writer.enqueue({t: 'done', usage: finalMessage?.usage, stopReason: finalMessage?.stopReason, error: finalMessage?.errorMessage})
+  if (finalMessage) messages.push(finalMessage)
+ }
+
+ for (const message of parsed.messages) {
+  await prompt(message)
+ }
+ await writer.drain()
 }
 
-for (const message of parsed.messages) {
- await prompt(message)
+if (import.meta.main) {
+ await main()
 }
-await writer.drain()
