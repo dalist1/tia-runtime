@@ -118,7 +118,6 @@ async function runZigNativeSearch(options: ZigSearchOptions): Promise<ToolTextRe
  const urlPath = join(tmpdir(), `tia-native-search-urls-${process.pid}-${Date.now()}.txt`)
  let stdoutText = ''
  let timeoutTimer: ReturnType<typeof setTimeout> | undefined
- let hardKillTimer: ReturnType<typeof setTimeout> | undefined
  try {
   writeFileSync(urlPath, `${options.urls.map(item => item.url).join('\n')}\n`)
   const proc = Bun.spawn([ZIG_SEARCH_BIN, '--urls', options.query, String(options.maxResults), String(options.contentChars), urlPath, String(originIntervalMs()), options.outputContent ? '1' : '0'], {stdout: 'pipe', stderr: 'pipe', signal: options.signal})
@@ -131,8 +130,6 @@ async function runZigNativeSearch(options: ZigSearchOptions): Promise<ToolTextRe
     options.progress.emit(`Watchdog timeout after ${options.overallTimeoutMs} ms; returning recovered progress.`, {phase: 'timeout', status: 'timeout', timeoutMs: options.overallTimeoutMs})
     proc.kill('SIGTERM')
     readerAbort.abort()
-    hardKillTimer = setTimeout(() => proc.kill('SIGKILL'), 1000)
-    hardKillTimer.unref?.()
     resolve({kind: 'timeout'})
    }, options.overallTimeoutMs)
   })
@@ -140,7 +137,8 @@ async function runZigNativeSearch(options: ZigSearchOptions): Promise<ToolTextRe
   const outcome = await Promise.race([complete, timeout])
   if (timeoutTimer) clearTimeout(timeoutTimer)
   if (outcome.kind === 'timeout') {
-   await Promise.race([proc.exited, delay(1000)])
+   // Give SIGTERM one second to land without leaving a dangling live timer.
+   await Promise.race([proc.exited, delay(1000, undefined, {ref: false})])
    proc.kill('SIGKILL')
    await proc.exited.catch(() => undefined)
    return timeoutResponse(options, stdoutText)
@@ -168,7 +166,6 @@ async function runZigNativeSearch(options: ZigSearchOptions): Promise<ToolTextRe
   }
  } finally {
   if (timeoutTimer) clearTimeout(timeoutTimer)
-  if (hardKillTimer) clearTimeout(hardKillTimer)
   rmSync(urlPath, {force: true})
  }
 }

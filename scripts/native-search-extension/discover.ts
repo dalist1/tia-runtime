@@ -11,6 +11,18 @@ export async function discoverSiteUrls(options: {site: string; pagesPerSite: num
  const found: DiscoveredUrl[] = [{url: seed, source: 'seed', priority: 100}]
  const docs = defaultDiscoveryDocs(seed)
 
+ // Same-origin probes are serialized by the per-origin rate limiter, so every
+ // speculative document costs a full delay slot. Probe the fallback variants
+ // (llms-full.txt, sitemap_index.xml) only when the primary probe fails.
+ const fallbackDocs = new Map([
+  [`${origin}/llms.txt`, `${origin}/llms-full.txt`],
+  [`${origin}/sitemap.xml`, `${origin}/sitemap_index.xml`]
+ ])
+ const enqueueFallback = (queue: string[], docUrl: string) => {
+  const fallback = fallbackDocs.get(docUrl)
+  if (fallback && !queue.includes(fallback) && queue.length < MAX_DISCOVERY_DOCS_PER_SITE) queue.push(fallback)
+ }
+
  const queue = unique(docs).slice(0, MAX_DISCOVERY_DOCS_PER_SITE)
  for (let index = 0; index < queue.length && index < MAX_DISCOVERY_DOCS_PER_SITE; index += 1) {
   const docUrl = queue[index]
@@ -18,6 +30,7 @@ export async function discoverSiteUrls(options: {site: string; pagesPerSite: num
    const fetched = await fetchTextUrl(docUrl, {timeoutMs: options.timeoutMs, maxBytes: DEFAULT_MAX_FETCH_BYTES, signal: options.signal, allowHttpErrors: true})
    if (fetched.status >= 400) {
     errors.push(`${docUrl}: HTTP ${fetched.status}`)
+    enqueueFallback(queue, docUrl)
     continue
    }
    const parsed = parseDiscoveryDocument(fetched.text, fetched.finalUrl, fetched.contentType)
@@ -31,6 +44,7 @@ export async function discoverSiteUrls(options: {site: string; pagesPerSite: num
    }
   } catch (error) {
    errors.push(`${docUrl}: ${error instanceof Error ? error.message : String(error)}`)
+   enqueueFallback(queue, docUrl)
   }
  }
 
@@ -46,9 +60,7 @@ function defaultDiscoveryDocs(seed: string) {
  const url = new URL(seed)
  const docs = [seed]
  docs.push(`${url.origin}/llms.txt`)
- docs.push(`${url.origin}/llms-full.txt`)
  docs.push(`${url.origin}/sitemap.xml`)
- docs.push(`${url.origin}/sitemap_index.xml`)
  if (url.pathname !== '/') docs.push(url.origin)
  return docs
 }

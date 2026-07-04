@@ -45,7 +45,12 @@ function collect(resultDir: string) {
    const results = data.results ?? []
    if (results.length === 0) continue
    suites[suite] ??= {}
-   baselines[suite] ??= results[0].command ?? 'baseline'
+   // Only real baseline commands anchor speedups; retained-only suites have no
+   // baseline and report speedup n/a instead of comparing a fast path to itself.
+   if (baselines[suite] === undefined) {
+    const firstBaseline = results.find((item: AnyObj) => isBaseline(String(item.command ?? '')))
+    if (firstBaseline) baselines[suite] = firstBaseline.command
+   }
    for (const item of results) {
     const command = item.command
     const bucket = (suites[suite][command] ??= {suite, command, strategy: strategyFor(command), times: [], exit_codes: [], hyperfine_means: [], rounds_seen: 0})
@@ -64,9 +69,9 @@ function finalize(suites: Record<string, Record<string, AnyObj>>, baselines: Rec
  const strategyScores: AnyObj = {}
  for (const suite of Object.keys(suites).sort()) {
   const commands = suites[suite]
-  const baselineName = baselines[suite] ?? Object.keys(commands)[0]
-  const baselineBucket = commands[baselineName] ?? Object.values(commands)[0]
-  const baselineMean = mean(baselineBucket.times ?? [])
+  const baselineName = baselines[suite]
+  const baselineBucket = baselineName === undefined ? undefined : commands[baselineName]
+  const baselineMean = mean(baselineBucket?.times ?? [])
   const rows = Object.entries(commands).map(([command, bucket]) => {
    const times = bucket.times ?? []
    const exitCodes = bucket.exit_codes ?? []
@@ -80,7 +85,7 @@ function finalize(suites: Record<string, Record<string, AnyObj>>, baselines: Rec
    return {
     command,
     strategy: bucket.strategy,
-    is_baseline: isBaseline(baselineName) && command === baselineName,
+    is_baseline: baselineName !== undefined && command === baselineName,
     mean_s: m,
     mean_ms: m * 1000,
     stddev_s: sd,
@@ -96,14 +101,14 @@ function finalize(suites: Record<string, Record<string, AnyObj>>, baselines: Rec
   const winner = ranked.find(row => row.success_rate >= 1) ?? ranked[0]
   if (winner) {
    const bucket = (strategyScores[winner.strategy] ??= {relative_scores: [], speedups: [], cvs: [], wins: 0, suites: []})
-   const baselineRow = rows.find(row => row.command === baselineName)
-   bucket.relative_scores.push(baselineRow?.score ? winner.score / baselineRow.score : winner.score)
+   const baselineRow = baselineName === undefined ? undefined : rows.find(row => row.command === baselineName)
+   if (baselineRow?.score) bucket.relative_scores.push(winner.score / baselineRow.score)
    if (winner.speedup_vs_baseline !== null) bucket.speedups.push(winner.speedup_vs_baseline)
    bucket.cvs.push(winner.cv)
    bucket.wins += 1
    bucket.suites.push(suite)
   }
-  suiteSummaries[suite] = {baseline: baselineName, winner, ranked}
+  suiteSummaries[suite] = {baseline: baselineName ?? null, winner, ranked}
  }
  const topStrategies = Object.entries(strategyScores)
   .map(([strategy, data]: [string, any]) => ({strategy, wins: data.wins, suites: data.suites, avg_relative_score_vs_baseline: mean(data.relative_scores), avg_speedup_vs_baseline: mean(data.speedups), avg_cv: mean(data.cvs)}))

@@ -402,7 +402,7 @@ install_pi_sandbox() {
 		fi
 	fi
 
-	bun build --compile "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
+	bun build --compile --minify "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
 	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
 	rm -rf "${TIA_PI_AGENT_DIR}/extensions/edit-classic.ts" "${TIA_PI_AGENT_DIR}/extensions/edit-diagnostics.ts" "${TIA_PI_AGENT_DIR}/extensions/edit-patch.ts" "${TIA_PI_AGENT_DIR}/extensions/fast-tools-lib"
 	local pi_node_modules
@@ -414,7 +414,11 @@ install_pi_sandbox() {
 
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
 	bun -e 'const fs=require("node:fs"); const [path, packageDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}"
-	bun build --compile "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}"
+	# Bytecode compilation cuts slim stream startup significantly; fall back to a
+	# plain minified compile when the bun/bundle combination cannot emit bytecode.
+	if ! bun build --compile --minify --bytecode "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}" >/dev/null 2>&1; then
+		bun build --compile --minify "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}"
+	fi
 	rm -rf "${pi_bin_dir}/dist" "${pi_bin_dir}/theme" "${pi_bin_dir}/assets" "${pi_bin_dir}/export-html" "${pi_bin_dir}/package.json" "${pi_bin_dir}/README.md" "${pi_bin_dir}/CHANGELOG.md" "${pi_bin_dir}/docs" "${pi_bin_dir}/examples"
 	ln -s "${pi_package_dir}/dist/modes/interactive/theme" "${pi_bin_dir}/theme"
 	ln -s "${pi_package_dir}/dist/modes/interactive/assets" "${pi_bin_dir}/assets"

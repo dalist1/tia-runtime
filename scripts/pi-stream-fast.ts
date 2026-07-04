@@ -1,4 +1,9 @@
-process.env.PI_PACKAGE_DIR ??= '__PI_PACKAGE_DIR__'
+// The placeholder is replaced with the real pi package path at install time.
+// Only export it once replaced, so importing this module in tests does not
+// poison PI_PACKAGE_DIR for other modules in the same process.
+if ('__PI_PACKAGE_DIR__'.includes('/')) {
+ process.env.PI_PACKAGE_DIR ??= '__PI_PACKAGE_DIR__'
+}
 
 import {join} from 'node:path'
 import type {AssistantMessage, Context, SimpleStreamOptions} from '__PI_PACKAGE_DIR__/../pi-ai/dist/types.js'
@@ -211,12 +216,14 @@ async function readStdin(): Promise<string> {
 }
 
 async function main() {
- const {streamSimple} = await import('__PI_PACKAGE_DIR__/../pi-ai/dist/stream.js')
- const {getAgentDir} = await import('__PI_PACKAGE_DIR__/dist/config.js')
- const {AuthStorage} = await import('__PI_PACKAGE_DIR__/dist/core/auth-storage.js')
- const {ModelRegistry} = await import('__PI_PACKAGE_DIR__/dist/core/model-registry.js')
- const {findInitialModel} = await import('__PI_PACKAGE_DIR__/dist/core/model-resolver.js')
- const {SettingsManager} = await import('__PI_PACKAGE_DIR__/dist/core/settings-manager.js')
+ const [{streamSimple}, {getAgentDir}, {AuthStorage}, {ModelRegistry}, {findInitialModel}, {SettingsManager}] = await Promise.all([
+  import('__PI_PACKAGE_DIR__/../pi-ai/dist/stream.js'),
+  import('__PI_PACKAGE_DIR__/dist/config.js'),
+  import('__PI_PACKAGE_DIR__/dist/core/auth-storage.js'),
+  import('__PI_PACKAGE_DIR__/dist/core/model-registry.js'),
+  import('__PI_PACKAGE_DIR__/dist/core/model-resolver.js'),
+  import('__PI_PACKAGE_DIR__/dist/core/settings-manager.js')
+ ])
 
  const parsed = parseArgs(process.argv.slice(2))
  if (parsed.messages.length === 0 && !process.stdin.isTTY) {
@@ -307,5 +314,9 @@ async function main() {
 }
 
 if (import.meta.main) {
- await main()
+ // No top-level await: it blocks bytecode compilation of the slim runner.
+ main().catch(error => {
+  console.error(error)
+  process.exit(1)
+ })
 }

@@ -2,6 +2,26 @@
 
 These are the latest benchmark highlights from the tia research harness.
 
+## 2026-07 optimization pass
+
+Measured on one Linux box with hyperfine (same machine before/after, sandboxed install):
+
+| Path | Before | After | Change |
+|---|---:|---:|---:|
+| `tia pi --version` startup (minified compile) | 838 ms | 534 ms | **-36%** |
+| `tia pi` RPC startup (`get_state`) | 1.068 s | 688 ms | **-36%** |
+| `tia pi` slim JSON stream startup (bytecode compile) | 471 ms | 205 ms | **-57%** |
+| extension `write` burst, 1 MB verified writes | ~27.7 ms/op | ~25.0 ms/op | within noise (one redundant read-back removed) |
+
+What changed:
+- the main `tia pi` binary is compiled with `--minify`
+- the slim stream runner is compiled with `--minify --bytecode` (with automatic fallback to a plain minified compile), and its module imports load in parallel
+- native `write` no longer re-verifies in JS what the `fastwrite` helper already verified twice (after temp write and after rename); verification coverage is unchanged
+- the `bash` fast path now defers to stock bash whenever preconditions do not hold (missing source, directory target, missing `rm` target), so exit codes and error output match real bash
+- `bench/hyperfine-tia-json-stream.sh` makes the slim-stream startup benchmark reproducible from the harness
+- `bench/fast-tools-extension-burst.ts` bursts the real installed extension code path instead of a harness re-implementation
+- feedback-loop summaries only report `speedup_vs_baseline` when a suite actually contains a baseline command (retained-only suites now report `n/a` instead of comparing the fast path to itself)
+
 ## Summary table
 
 | Path | Workload | Baseline | Optimized | Speedup |
@@ -68,7 +88,7 @@ Defaults:
 - retained candidates: compiled/native helpers, compiled/Zig-built helpers, and warm daemon/native helpers
 - native helper coverage now includes read, verified write, edit, and optimized bash drain/copy paths
 - retired slow approaches: stock Bun tool baseline and Bun source-runner fast path
-- `bench/feedback-loop.sh` auto-installs the pinned Zig nightly (`0.17.0-dev.305+bdfbf432d`) locally via `scripts/install-zig.sh` unless `SETUP_ZIG=0`
+- `bench/feedback-loop.sh` auto-installs the pinned Zig nightly (`0.17.0-dev.1158+1d1193aa7`) locally via `scripts/install-zig.sh` unless `SETUP_ZIG=0`
 - Zig is treated as a measured candidate only when `zig` can build helper variants and beat the current native helpers in this same loop
 
 Results are written under `results-feedback-loop/<run-id>/summary.md` and `summary.json`.
@@ -94,14 +114,7 @@ hyperfine --runs 4 --warmup 1 \
 
 ### tia slim JSON streaming
 ```bash
-mkdir -p results-tia-json-stream
-hyperfine --warmup 2 --runs 10 --shell=none \
-  --export-json results-tia-json-stream/startup.json \
-  --export-markdown results-tia-json-stream/startup.md \
-  --command-name 'tia slim json stream startup' \
-  'tia pi --mode json --no-session' \
-  --command-name 'tia full json startup' \
-  'env TIA_DISABLE_FAST_STREAM=1 tia pi --mode json --no-session'
+bash bench/hyperfine-tia-json-stream.sh
 ```
 
 This benchmark isolates local JSON streaming startup/runner overhead by sending no prompt. It does not measure provider first-token or token-throughput latency, which is network/model dependent.

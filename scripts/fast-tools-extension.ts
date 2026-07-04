@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto'
-import {createReadStream, existsSync, lstatSync, mkdirSync, renameSync, rmSync} from 'node:fs'
+import {createReadStream, existsSync, lstatSync, mkdirSync, renameSync, rmSync, statSync} from 'node:fs'
 import {homedir, tmpdir} from 'node:os'
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path'
 import {createBashTool, createBashToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@earendil-works/pi-coding-agent'
@@ -914,9 +914,10 @@ export async function fastWrite(cwd: string, pathArg: string, content: string, s
   mkdirSync(dirname(absolutePath), {recursive: true})
 
   if (existsSync(FASTWRITE_BIN())) {
+   // fastwrite already verifies exact bytes after the temporary write and after
+   // the final rename; a third JS-side read-back would only repeat that work.
    await runBinaryWithInput(FASTWRITE_BIN(), [absolutePath], content, signal)
    ensureNotAborted(signal)
-   await verifyWrittenText(absolutePath, pathArg, content, 'native write')
   } else if (isSymlink(absolutePath)) {
    await Bun.write(absolutePath, content)
    ensureNotAborted(signal)
@@ -1101,7 +1102,25 @@ async function runBinary(cmd: string, args: string[], signal?: AbortSignal) {
  }
 }
 
-function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | null {
+function statKind(path: string): 'file' | 'dir' | 'other' | 'missing' {
+ try {
+  const stats = lstatSync(path)
+  if (stats.isSymbolicLink()) {
+   try {
+    return statSync(path).isDirectory() ? 'dir' : 'file'
+   } catch {
+    return 'other'
+   }
+  }
+  if (stats.isDirectory()) return 'dir'
+  if (stats.isFile()) return 'file'
+  return 'other'
+ } catch {
+  return 'missing'
+ }
+}
+
+export function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | null {
  const parts = command
   .split('&&')
   .map(part => part.trim())
@@ -1112,11 +1131,15 @@ function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | 
  }
 
  const steps: OptimizedBashStep[] = []
+ const created = new Set<string>()
 
  for (const part of parts) {
   const catMatch = part.match(/^cat\s+(\S+)\s*>\s*\/dev\/null$/)
   if (catMatch) {
    const file = resolvePath(cwd, catMatch[1])
+   // Defer to stock bash unless the source is a plain readable file, so error
+   // output and exit codes match real bash for missing/special paths.
+   if (statKind(file) !== 'file' && !created.has(file)) return null
    steps.push({
     description: `drain ${catMatch[1]}`,
     run: async () => {
@@ -1134,6 +1157,11 @@ function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | 
   if (cpMatch) {
    const src = resolvePath(cwd, cpMatch[1])
    const dst = resolvePath(cwd, cpMatch[2])
+   // Real cp copies into an existing directory target; the fast path only
+   // handles plain file-to-file copies.
+   if (statKind(src) !== 'file' && !created.has(src)) return null
+   if (statKind(dst) === 'dir') return null
+   created.add(dst)
    steps.push({
     description: `copy ${cpMatch[1]} -> ${cpMatch[2]}`,
     run: async () => {
@@ -1151,6 +1179,11 @@ function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | 
   const rmMatch = part.match(/^rm\s+(\S+)$/)
   if (rmMatch) {
    const target = resolvePath(cwd, rmMatch[1])
+   // Real rm fails on missing paths and directories; only fast-path the
+   // plain-file case (or files created earlier in this same command).
+   const kind = statKind(target)
+   if (kind === 'dir' || (kind === 'missing' && !created.has(target))) return null
+   created.delete(target)
    steps.push({
     description: `rm ${rmMatch[1]}`,
     run: async () => {

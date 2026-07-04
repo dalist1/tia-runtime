@@ -1,6 +1,7 @@
 {
  "name": "tia",
  "private": true,
+ "description": "tia-runtime — Terminal Interactive Agents runtime: a sandboxed fast path for terminal coding agents (compiled pi startup, native Zig/C tool helpers, slim JSON streaming)",
  "scripts": {
   "bench:feedback": "bash bench/feedback-loop.sh",
   "install:zig": "bash scripts/install-zig.sh",

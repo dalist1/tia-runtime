@@ -1,9 +1,9 @@
 import {expect, test} from 'bun:test'
-import {mkdtempSync, rmSync} from 'node:fs'
+import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {readFile, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {combinedEditDiff, duplicateEditError, editToolDescription, editToolPromptSnippet, missingEditError, planClassicEdits, planPatch} from './fast-tools-extension'
+import {combinedEditDiff, duplicateEditError, editToolDescription, editToolPromptSnippet, missingEditError, planClassicEdits, planOptimizedBash, planPatch} from './fast-tools-extension'
 
 test('edit diagnostics explain indentation-only exact-match failures', () => {
  const content = 'function render() {\n\tfields.push({label:"skills",value:"—"});\n\tfields.push({label:"spawning",value:"false"});\n}\n'
@@ -472,5 +472,43 @@ Raw content without plus prefixes should still create the file.
   expect(plans[0]).toEqual(expect.objectContaining({path: 'notes.md', before: null, after: '# Notes\n\nRaw content without plus prefixes should still create the file.\n'}))
  } finally {
   rmSync(cwd, {recursive: true, force: true})
+ }
+})
+
+test('bash fast path plans plain-file drain/copy/rm chains and honors files created earlier in the chain', () => {
+ const dir = mkdtempSync(join(tmpdir(), 'tia-bash-plan-'))
+ try {
+  const src = join(dir, 'src.txt')
+  const copy = join(dir, 'copy.txt')
+  writeFileSync(src, 'payload\n')
+
+  const steps = planOptimizedBash(dir, `cat ${src} > /dev/null && cp ${src} ${copy} && rm ${copy}`)
+  expect(steps).not.toBeNull()
+  expect(steps!.map(step => step.description.split(' ')[0])).toEqual(['drain', 'copy', 'rm'])
+ } finally {
+  rmSync(dir, {recursive: true, force: true})
+ }
+})
+
+test('bash fast path defers to stock bash when semantics could diverge', () => {
+ const dir = mkdtempSync(join(tmpdir(), 'tia-bash-defer-'))
+ try {
+  const src = join(dir, 'src.txt')
+  const subdir = join(dir, 'subdir')
+  writeFileSync(src, 'payload\n')
+  mkdirSync(subdir)
+
+  // missing source: real cat/cp fail with an exit code the model should see
+  expect(planOptimizedBash(dir, `cat ${join(dir, 'missing.txt')} > /dev/null`)).toBeNull()
+  expect(planOptimizedBash(dir, `cp ${join(dir, 'missing.txt')} ${join(dir, 'out.txt')}`)).toBeNull()
+  // directory targets: real cp copies into the directory, real rm refuses
+  expect(planOptimizedBash(dir, `cp ${src} ${subdir}`)).toBeNull()
+  expect(planOptimizedBash(dir, `rm ${subdir}`)).toBeNull()
+  // missing rm target: real rm exits non-zero
+  expect(planOptimizedBash(dir, `rm ${join(dir, 'missing.txt')}`)).toBeNull()
+  // unknown commands never fast-path
+  expect(planOptimizedBash(dir, `ls ${dir}`)).toBeNull()
+ } finally {
+  rmSync(dir, {recursive: true, force: true})
  }
 })

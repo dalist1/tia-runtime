@@ -1,6 +1,6 @@
 # tia-runtime — Terminal Interactive Agents runtime
 
-Private research repo for **tia-runtime**, the Terminal Interactive Agents runtime.
+**tia-runtime** is an open runtime that makes terminal coding agents faster without patching upstream agent codebases.
 
 Goal:
 - make terminal coding agents faster without patching upstream agent codebases
@@ -66,12 +66,16 @@ Recent local benchmark runs show:
 | Path | Workload | Result |
 |---|---|---:|
 | `tia pi` | RPC startup (`get_state`) | about **1.9x** faster than stock `pi` |
+| `tia pi` | startup after minified compile | about **1.4x** faster than the previous unminified compile |
+| `tia pi` slim stream | JSON stream startup after bytecode compile | about **2.3x** faster than the previous compile, **3.7x** faster than the full JSON path |
 | retained tool path | `read` burst | about **2.1x** faster than stock in smoke loops |
 | retained tool path | `read` streaming burst | about **2.0x** faster than stock in smoke loops |
 | retained tool path | `edit` burst | about **2.1x** faster than stock in smoke loops |
 | retained tool path | verified `write` burst | about **1.5–1.6x** faster than stock in smoke loops |
 | retained tool path | `bash` drain/copy burst | about **1.9x** faster than stock in smoke loops |
 | `native_search` | full local Zig fixture/extract/rank | 2k raw docs in **11.3 ms** (zero network benchmark) |
+
+The tool burst rows above come from the standalone burst harness. `bench/fast-tools-extension-burst.ts` additionally measures the real installed `fast-tools` extension code path (mutation queues, native helper spawns, and verification included).
 
 Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
@@ -171,7 +175,7 @@ For a heavier confirmation pass:
 TIER=full ROUNDS=5 bash bench/feedback-loop.sh
 ```
 
-The feedback loop auto-installs the pinned Zig nightly (`0.17.0-dev.305+bdfbf432d`) locally for measured Zig-built helper candidates. You can also install it explicitly:
+The feedback loop auto-installs the pinned Zig nightly (`0.17.0-dev.1158+1d1193aa7`) locally for measured Zig-built helper candidates. You can also install it explicitly:
 
 ```bash
 bun run install:zig
@@ -206,6 +210,7 @@ What it covers:
 ```bash
 bash bench/feedback-loop.sh
 bash bench/hyperfine-tia-pi.sh
+bash bench/hyperfine-tia-json-stream.sh
 bash bench/hyperfine-pi-rpc-direct.sh
 bash bench/hyperfine-pi-tools-fast-burst.sh
 bash bench/hyperfine-pi-tools-fast-stream.sh
@@ -213,6 +218,12 @@ bash bench/hyperfine-pi-tools-persistent.sh
 bash bench/hyperfine-native-search-zig.sh
 bash bench/build-native-search-zig.sh
 TIA_NATIVE_SEARCH_LIVE=1 bash bench/native-search-live-smoke.sh
+```
+
+To burst the real installed fast-tools extension path directly:
+
+```bash
+PI_CODING_AGENT_DIR=~/.local/share/tia/pi-agent bun bench/fast-tools-extension-burst.ts write 25
 ```
 
 ## Fast stream path
@@ -230,6 +241,8 @@ TIA_DISABLE_FAST_STREAM=1 tia pi --mode json --no-session "Reply in five words."
 ```
 
 This path is intentionally optimized for speed over stock JSON event compatibility. It uses a compiled slim runner that calls pi's provider streaming layer directly, bypassing the full CLI, AgentSession, tools, extensions, skills, prompt templates, themes, and context-file discovery. Unsupported flags or sessionful JSON runs fall back to the normal compiled `tia pi` binary.
+
+The installer compiles the slim runner with bun bytecode generation (falling back to a plain minified compile when the toolchain cannot emit bytecode), and the main `tia pi` binary with `--minify`; both cut startup latency measurably.
 
 Subagent guidance: do not force tool-using coding subagents through slim mode. Use full JSON pi for subagents that need tools or stock pi JSON events, optionally with `--no-session --no-skills --no-prompt-templates --no-themes --no-context-files`. Reserve slim mode for model-only stateless subagents that can consume compact `t` events.
 

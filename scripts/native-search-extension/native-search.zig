@@ -345,7 +345,7 @@ fn scoreDoc(doc: Doc, terms: []const []const u8) u64 {
     var score: u64 = if (std.mem.eql(u8, doc.kind, "markdown")) 4 else 0;
     var matched: usize = 0;
     for (terms) |term| {
-        const term_score = countFold(doc.title, term) * 16 + countFold(doc.url, term) * 7 + @min(countFold(doc.content, term), 12) * 3;
+        const term_score = countFold(doc.title, term, std.math.maxInt(u64)) * 16 + countFold(doc.url, term, std.math.maxInt(u64)) * 7 + countFold(doc.content, term, 12) * 3;
         if (term_score > 0) matched += 1;
         score += term_score;
     }
@@ -372,11 +372,11 @@ fn writeSnippet(out: *Io.Writer, content: []const u8, terms: []const []const u8)
 
 fn moreRelevant(_: void, a: Doc, b: Doc) bool { return a.score > b.score; }
 
-fn countFold(haystack: []const u8, needle: []const u8) u64 {
-    if (needle.len == 0 or haystack.len < needle.len) return 0;
+fn countFold(haystack: []const u8, needle: []const u8, cap: u64) u64 {
+    if (needle.len == 0 or haystack.len < needle.len or cap == 0) return 0;
     var count: u64 = 0;
     var i: usize = 0;
-    while (i + needle.len <= haystack.len) : (i += 1) {
+    while (i + needle.len <= haystack.len and count < cap) : (i += 1) {
         if (eqlFold(haystack[i .. i + needle.len], needle)) count += 1;
     }
     return count;
