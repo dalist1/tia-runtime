@@ -14,6 +14,28 @@ Same pi source on both sides; isolates what `tia-runtime` adds. Toolchain: pi `0
 
 Reproduce: `bash bench/hyperfine-tia-pi.sh` (RPC) and `bash bench/hyperfine-tia-json-stream.sh` (stream). The stock baseline runs the same compiled pi package's `dist/cli.js`.
 
+## 2026-07 in-process fast-tools pass (10x read/write/edit)
+
+The extension's `read`/`write`/`edit` hot paths were rewritten to run fully in-process, replacing per-call native helper spawns (`fastread-window`, `fastwrite`, `fastedit`) with byte-level I/O inside the extension:
+
+- `read`: single-pass windowed scanner — memchr-backed `Buffer.indexOf` newline scan over a reused scratch buffer, one UTF-8 decode per contiguous accepted run, byte-level joins for lines spanning scan chunks (no split-codepoint decodes), 64KB first read for the common offset-1/50KB-cap window.
+- `write`: atomic temp-file + rename with one byte-for-byte read-back verification of the temp file before the rename replaces the target (rename moves the verified inode). `TIA_FASTWRITE_FSYNC=1` opts into fsync durability (data + parent dir); content verification never depends on it.
+- `edit` (single replacement): in-place byte-level search/replace with read-back verification and best-effort rollback; keeps the target's inode, mode, and symlink identity. Multi-edit and patch paths verify by byte comparison as well.
+
+Why this wins: each old call paid ~1.4 ms of process spawn plus pipe copies and duplicated verification reads; a windowed read or verified 1MB write is fundamentally a sub-millisecond-to-few-millisecond operation once it stays in-process.
+
+Measured on one Linux box (disk-backed `$TMPDIR`, bun 1.4.0, pi 0.80.3) with the real installed extension code path, `bun bench/fast-tools-extension-burst.ts <tool> 40`, medians across 5+ runs before/after:
+
+| Tool | Workload | Before | After | Speedup |
+|---|---|---:|---:|---:|
+| `read` | 5MB file, 50KB window burst | 2.56 ms/op | 0.17 ms/op | **14.7x** |
+| `write` | 1MB verified atomic write burst | 24.7 ms/op | 2.37 ms/op | **10.4x** |
+| `edit` | 100KB file, verified single replacement burst | 20.6 ms/op | 1.84 ms/op | **11.2x** |
+
+Verification semantics kept (all read-back based, none removed): write verifies exact bytes before the atomic rename; edit verifies exact bytes after the in-place write and restores the original on mismatch. Coverage added for chunk-boundary unicode windows, truncation messages, no-trailing-newline windows, CRLF payloads, fsync opt-in, write serialization, and large-file edits (`scripts/fast-tools-io.test.ts`).
+
+The `fastdrain`/`fastcopy` helpers remain on the `bash` fast path; `fastread-window`/`fastwrite`/`fastedit` binaries are now benchmark comparison baselines only and are no longer installed to the agent sandbox.
+
 ## 2026-07 optimization pass
 
 Measured on one Linux box with hyperfine (same machine before/after, sandboxed install). Also migrated the pinned pi runtime `0.75.3` → `0.80.3` (latest), which clears 4 Dependabot advisories including a high-severity local privilege-escalation; the slim stream runner's `pi-ai` import moved `stream.js` → `compat.js` to match the restructured package.

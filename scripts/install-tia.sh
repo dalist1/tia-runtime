@@ -173,20 +173,18 @@ ensure_pi_package_version() {
 install_fast_tool_helpers() {
 	mkdir -p "${TIA_FAST_TOOLS_DIR}"
 
-	local helper_names="fastdrain fastedit fastread-window fastcopy fastwrite"
+	# read/write/edit now run fully in-process inside the fast-tools extension;
+	# only the bash fast path still spawns native helpers.
+	local helper_names="fastdrain fastcopy"
 	local built_any=0
 	local helper
 
-	if [[ -d "${ROOT_DIR}/native" ]] && command -v zig >/dev/null 2>&1; then
-		for helper in fastread-window fastedit; do
-			[[ -f "${ROOT_DIR}/native/${helper}.zig" ]] || continue
-			zig build-exe -O ReleaseFast -fstrip \
-				-femit-bin="${TIA_FAST_TOOLS_DIR}/${helper}" \
-				"${ROOT_DIR}/native/${helper}.zig"
-			built_any=1
-		done
+	for helper in fastread-window fastedit fastwrite; do
+		rm -f "${TIA_FAST_TOOLS_DIR}/${helper}"
+	done
 
-		for helper in fastwrite fastdrain fastcopy; do
+	if [[ -d "${ROOT_DIR}/native" ]] && command -v zig >/dev/null 2>&1; then
+		for helper in ${helper_names}; do
 			[[ -f "${ROOT_DIR}/native/${helper}.c" ]] || continue
 			zig cc -O3 -pipe -march=native -s \
 				-o "${TIA_FAST_TOOLS_DIR}/${helper}" \

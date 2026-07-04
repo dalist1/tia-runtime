@@ -53,7 +53,8 @@ This path is smoke-tested from outside the repo checkout.
   - compiled pi startup path
   - sandboxed pi agent dir
   - fast-tools extension enabled
-  - low-level helper binaries installed under `~/.local/share/tia/pi-agent/fast-tools` when building from a local checkout (`fastread-window`, `fastwrite`, `fastedit`, `fastdrain`, `fastcopy`)
+  - in-process zero-spawn `read`/`write`/`edit` tool fast paths (no helper binaries on these paths anymore)
+  - low-level helper binaries installed under `~/.local/share/tia/pi-agent/fast-tools` for the `bash` fast path when building from a local checkout (`fastdrain`, `fastcopy`)
   - FFF (`@ff-labs/pi-fff`) installed as a sandboxed pi extension when available, giving FFF-backed `find`/`grep`/`multi_grep` and `@` file autocomplete (default `PI_FFF_MODE=override`)
   - current shell environment preserved for provider/model login env vars
   - auth/models/settings symlinks refreshed from the shell pi agent without self-linking the tia sandbox, preserving cliproxy model/provider linkage
@@ -93,7 +94,17 @@ These compare `tia pi`'s retained fast paths against tia's own slower reference 
 | retained tool path | `bash` drain/copy burst | about **1.9x** faster than the reference in smoke loops |
 | `native_search` | full local Zig fixture/extract/rank | 2k raw docs in **11.3 ms** (zero network benchmark) |
 
-The tool burst rows above come from the standalone burst harness. `bench/fast-tools-extension-burst.ts` additionally measures the real installed `fast-tools` extension code path (mutation queues, native helper spawns, and verification included).
+The tool burst rows above come from the standalone burst harness. `bench/fast-tools-extension-burst.ts` additionally measures the real installed `fast-tools` extension code path (mutation queues, verification, and result assembly included).
+
+### 2026-07 in-process read/write/edit pass (real extension code path)
+
+Same machine, same harness (`bun bench/fast-tools-extension-burst.ts <tool> 40`, medians across runs), before vs after replacing per-call native helper spawns with in-process byte-level I/O:
+
+| Tool | Workload | Before | After | Speedup |
+|---|---|---:|---:|---:|
+| `read` | 5MB file, 50KB window burst | 2.56 ms/op | 0.17 ms/op | **14.7x** |
+| `write` | 1MB verified atomic write burst | 24.7 ms/op | 2.37 ms/op | **10.4x** |
+| `edit` | 100KB file, verified single replacement burst | 20.6 ms/op | 1.84 ms/op | **11.2x** |
 
 Notes:
 - `compiled direct pi` is a benchmark reference, not a separate supported install mode.
@@ -109,15 +120,17 @@ More detail:
 
 The active tool-runtime loop now keeps only the approaches that remain useful:
 
-1. **compiled runner + native helpers** — default retained fast path; read/edit are pure Zig binaries and the remaining hot helpers are C built with `zig cc`.
+1. **compiled runner + in-process tools** — default retained fast path; `read`/`write`/`edit` run fully in-process and the remaining `bash` hot helpers are C built with `zig cc`.
 2. **warm daemon + native helpers** — retained for repeated-call and verified-write workloads where amortizing startup can still win.
 3. **gcc-built comparison helpers** — low-level comparison binaries only, not the active runtime path.
 
-The installed fast-tools extension now tries low-level helpers for every hot tool path:
-- `read` → `fastread-window`
-- `write` → `fastwrite` with exact verification
-- `edit` → `fastedit` for single exact replacements, JS multi-edit fallback otherwise
-- `bash` optimized drain/copy paths → `fastdrain` and `fastcopy`
+The installed fast-tools extension runs the hot tool paths fully in-process (no per-call process spawns):
+- `read` → single-pass windowed byte scanner (memchr-backed newline scan, one decode per contiguous run, UTF-8-safe chunk joins)
+- `write` → atomic temp-file + rename with byte-for-byte read-back verification before the rename (`TIA_FASTWRITE_FSYNC=1` opts into fsync durability)
+- `edit` → in-place byte-level single replacement with read-back verification (keeps inode/mode/symlink identity); JS multi-edit path otherwise
+- `bash` optimized drain/copy paths → `fastdrain` and `fastcopy` native helpers
+
+The native `fastread-window`/`fastwrite`/`fastedit` binaries remain in `native/` and `bin/` as benchmark comparison baselines only.
 
 Pass `--search` at install time to add the modular native search extension. Runtime sessions then use the installed `native_search` tool automatically; do not pass `--search` to `tia pi`:
 - `native_search` performs bounded website search from provided URLs/sites only; query-only URLs use exact direct-URL mode without discovery

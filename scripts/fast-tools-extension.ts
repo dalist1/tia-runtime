@@ -1,6 +1,6 @@
 import {randomUUID} from 'node:crypto'
-import {createReadStream, existsSync, lstatSync, mkdirSync, renameSync, rmSync, statSync} from 'node:fs'
-import {homedir, tmpdir} from 'node:os'
+import {closeSync, existsSync, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs'
+import {homedir} from 'node:os'
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path'
 import {createBashTool, createBashToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@earendil-works/pi-coding-agent'
 import {Container, Spacer, Text} from '@earendil-works/pi-tui'
@@ -9,12 +9,12 @@ import {Type} from '@sinclair/typebox'
 const fastToolsDir = () => join(getAgentDir(), 'fast-tools')
 const FASTDRAIN_BIN = () => join(fastToolsDir(), 'fastdrain')
 const FASTCOPY_BIN = () => join(fastToolsDir(), 'fastcopy')
-const FASTREAD_BIN = () => join(fastToolsDir(), 'fastread-window')
-const FASTEDIT_BIN = () => join(fastToolsDir(), 'fastedit')
-const FASTWRITE_BIN = () => join(fastToolsDir(), 'fastwrite')
-const READ_PROGRESS_MIN_LINES = 128
-const READ_PROGRESS_MIN_BYTES = 8 * 1024
-const READ_PROGRESS_MIN_INTERVAL_MS = 120
+const READ_SCAN_CHUNK = 256 * 1024
+const READ_FIRST_CHUNK = 64 * 1024
+
+// Reused scan buffer: scanReadWindow is fully synchronous, so a single
+// module-level scratch buffer can never be observed mid-use.
+let readScratch: Buffer | null = null
 
 type TextBlock = {type: 'text'; text: string}
 type TextToolUpdate = {content: TextBlock[]; details: any}
@@ -704,10 +704,76 @@ function writeVerificationError(pathArg: string, label: string, expected: string
  return new Error(`Write verification failed for ${pathArg} after ${label}: expected ${expected.length} chars/${expectedBytes} bytes, got ${actual.length} chars/${actualBytes} bytes; ${suffix}.`)
 }
 
-async function verifyWrittenText(absolutePath: string, pathArg: string, expected: string, label: string) {
- const actual = await Bun.file(absolutePath).text()
- if (actual !== expected) {
-  throw writeVerificationError(pathArg, label, expected, actual)
+function verifyWrittenBytes(absolutePath: string, pathArg: string, expected: Buffer, label: string) {
+ const actual = readFileSync(absolutePath)
+ if (!actual.equals(expected)) {
+  throw writeVerificationError(pathArg, label, expected.toString('utf8'), actual.toString('utf8'))
+ }
+}
+
+const writeDurability = () => process.env.TIA_FASTWRITE_FSYNC === '1'
+
+function fsyncDirOf(absolutePath: string) {
+ try {
+  const fd = openSync(dirname(absolutePath), 'r')
+  try {
+   fsyncSync(fd)
+  } finally {
+   closeSync(fd)
+  }
+ } catch {
+  // best effort: some filesystems refuse directory fsync
+ }
+}
+
+function writeAllSync(fd: number, data: Buffer) {
+ let written = 0
+ while (written < data.length) {
+  written += writeSync(fd, data, written, data.length - written)
+ }
+}
+
+// Atomic verified write: temp file in the target directory, byte-for-byte
+// read-back verification, then rename over the target (plus a final read-back).
+// Symlink targets are written in place so the link is preserved. fsync is
+// opt-in via TIA_FASTWRITE_FSYNC=1; content verification never depends on it.
+function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Buffer, signal?: AbortSignal) {
+ if (isSymlink(absolutePath)) {
+  writeFileSync(absolutePath, data)
+  ensureNotAborted(signal)
+  verifyWrittenBytes(absolutePath, pathArg, data, 'symlink-preserving write')
+  return
+ }
+
+ let mode = 0o644
+ let hadExisting = false
+ try {
+  mode = statSync(absolutePath).mode & 0o777
+  hadExisting = true
+ } catch {
+  // new file: default mode
+ }
+
+ const tmpPath = `${absolutePath}.tmp.${process.pid}.${Date.now()}.${randomUUID()}`
+ try {
+  const fd = openSync(tmpPath, 'wx', mode)
+  try {
+   if (hadExisting) fchmodSync(fd, mode)
+   writeAllSync(fd, data)
+   if (writeDurability()) fsyncSync(fd)
+  } finally {
+   closeSync(fd)
+  }
+  ensureNotAborted(signal)
+  // Verify the temp file before it replaces the target; rename() moves the
+  // same inode, so the verified bytes are exactly what lands at the target.
+  verifyWrittenBytes(tmpPath, pathArg, data, 'temporary write')
+  renameSync(tmpPath, absolutePath)
+  if (writeDurability()) fsyncDirOf(absolutePath)
+  ensureNotAborted(signal)
+ } catch (error) {
+  rmSync(tmpPath, {force: true})
+  throw error
  }
 }
 
@@ -733,65 +799,97 @@ function isAgentSkill(absolutePath: string, _cwd: string): boolean {
  return false
 }
 
-async function runBinaryCapture(cmd: string, args: string[], signal?: AbortSignal, onText?: (output: string) => void) {
- const proc = Bun.spawn([cmd, ...args], {stdout: 'pipe', stderr: 'pipe', signal})
- const stderrPromise = new Response(proc.stderr).text()
- const reader = proc.stdout.getReader()
- const decoder = new TextDecoder()
- let output = ''
+type ReadWindow = {output: string; outputLines: number; outputBytes: number; hitLineLimit: boolean; hitByteLimit: boolean; firstLineExcess: number; totalLines: number}
 
- while (true) {
-  const {value, done} = await reader.read()
-  if (done) break
-  output += decoder.decode(value, {stream: true})
-  onText?.(output)
- }
- output += decoder.decode()
+// Single-pass in-process windowed read: scans raw bytes with memchr-backed
+// Buffer.indexOf and decodes accepted lines straight from the scan buffer,
+// one decode per contiguous run. Decode boundaries always sit on '\n' bytes;
+// lines that span scan chunks are joined at byte level first, so multi-byte
+// UTF-8 sequences can never be split by a decode.
+function scanReadWindow(absolutePath: string, startLine: number, maxLines: number, maxBytes: number, unlimited: boolean, signal?: AbortSignal): ReadWindow {
+ const fd = openSync(absolutePath, 'r')
+ const chunk = readScratch ?? (readScratch = Buffer.allocUnsafe(READ_SCAN_CHUNK))
+ try {
+  let output = ''
+  let carry: Buffer[] = []
+  let carryBytes = 0
+  let currentLine = 1
+  let outputLines = 0
+  let outputBytes = 0
+  let hitLineLimit = false
+  let hitByteLimit = false
+  let firstLineExcess = 0
+  let firstRead = true
 
- const stderrText = await stderrPromise
- const exitCode = await proc.exited
- if (signal?.aborted) throw new Error('Operation aborted')
- if (exitCode !== 0) {
-  throw new Error(stderrText.trim() || `${cmd} exited with code ${exitCode}`)
- }
-
- return output
-}
-
-async function runBinaryWithInput(cmd: string, args: string[], input: string, signal?: AbortSignal) {
- const proc = Bun.spawn([cmd, ...args], {stdin: 'pipe', stdout: 'pipe', stderr: 'pipe', signal})
- const stdoutPromise = new Response(proc.stdout).text()
- const stderrPromise = new Response(proc.stderr).text()
- await proc.stdin.write(input)
- proc.stdin.end()
- const [stdoutText, stderrText, exitCode] = await Promise.all([stdoutPromise, stderrPromise, proc.exited])
- if (signal?.aborted) throw new Error('Operation aborted')
- if (exitCode !== 0) {
-  throw new Error(stderrText.trim() || `${cmd} exited with code ${exitCode}`)
- }
- return stdoutText
-}
-
-async function fastReadNative(absolutePath: string, startLine: number, maxLines: number, maxBytes: number, signal?: AbortSignal, onUpdate?: ToolUpdateFn) {
- let lastProgressAt = 0
- let lastProgressBytes = 0
- const onText = onUpdate
-  ? (output: string) => {
-     if (output.length === 0) return
-     const now = Date.now()
-     if (output.length - lastProgressBytes < READ_PROGRESS_MIN_BYTES && now - lastProgressAt < READ_PROGRESS_MIN_INTERVAL_MS) {
-      return
-     }
-     lastProgressAt = now
-     lastProgressBytes = output.length
-     emitTextUpdate(onUpdate, output)
+  while (true) {
+   ensureNotAborted(signal)
+   // The common case (offset 1, 50KB byte cap) never needs more than the
+   // first 64KB; long lines and deeper windows continue with full chunks.
+   const want = firstRead && startLine === 1 && !unlimited ? READ_FIRST_CHUNK : READ_SCAN_CHUNK
+   firstRead = false
+   const bytesRead = readSync(fd, chunk, 0, want, null)
+   if (bytesRead <= 0) break
+   let pos = 0
+   let flushFrom = -1
+   let flushTo = 0
+   while (pos < bytesRead) {
+    const newline = chunk.indexOf(10, pos)
+    if (newline === -1 || newline >= bytesRead) {
+     if (currentLine >= startLine) carry.push(Buffer.from(chunk.subarray(pos, bytesRead)))
+     carryBytes += bytesRead - pos
+     break
     }
-  : undefined
- const text = await runBinaryCapture(FASTREAD_BIN(), [absolutePath, String(startLine), String(maxLines), String(maxBytes)], signal, onText)
- if (onUpdate && text.length > 0 && text.length !== lastProgressBytes) {
-  emitTextUpdate(onUpdate, text)
+    const lineBytes = carryBytes + newline + 1 - pos
+    if (currentLine >= startLine) {
+     if (outputLines >= maxLines) {
+      hitLineLimit = true
+      break
+     }
+     if (!unlimited && outputBytes + lineBytes > maxBytes) {
+      hitByteLimit = true
+      if (outputLines === 0) firstLineExcess = lineBytes
+      break
+     }
+     if (carryBytes > 0) {
+      carry.push(Buffer.from(chunk.subarray(pos, newline + 1)))
+      output += Buffer.concat(carry).toString('utf8')
+      carry = []
+     } else {
+      if (flushFrom === -1) flushFrom = pos
+      flushTo = newline + 1
+     }
+     outputLines += 1
+     outputBytes += lineBytes
+    } else if (carry.length > 0) {
+     carry = []
+    }
+    carryBytes = 0
+    currentLine += 1
+    pos = newline + 1
+   }
+   if (flushFrom !== -1) output += chunk.toString('utf8', flushFrom, flushTo)
+   if (hitLineLimit || hitByteLimit) break
+  }
+
+  if (!hitLineLimit && !hitByteLimit && carryBytes > 0 && currentLine >= startLine) {
+   if (!unlimited && outputLines === 0 && carryBytes > maxBytes) {
+    hitByteLimit = true
+    firstLineExcess = carryBytes
+   } else if (outputLines >= maxLines) {
+    hitLineLimit = true
+   } else if (!unlimited && outputBytes + carryBytes > maxBytes) {
+    hitByteLimit = true
+   } else {
+    output += (carry.length === 1 ? carry[0] : Buffer.concat(carry)).toString('utf8')
+    outputLines += 1
+    outputBytes += carryBytes
+   }
+  }
+
+  return {output, outputLines, outputBytes, hitLineLimit, hitByteLimit, firstLineExcess, totalLines: currentLine}
+ } finally {
+  closeSync(fd)
  }
- return textResult(text)
 }
 
 export async function fastRead(cwd: string, pathArg: string, offset?: number, limit?: number, signal?: AbortSignal, onUpdate?: ToolUpdateFn) {
@@ -801,109 +899,28 @@ export async function fastRead(cwd: string, pathArg: string, offset?: number, li
  const agentSkill = isAgentSkill(absolutePath, cwd)
  const startLine = Math.max(1, offset ?? 1)
  const maxLines = agentSkill ? Number.MAX_SAFE_INTEGER : (limit ?? DEFAULT_MAX_LINES)
- if (existsSync(FASTREAD_BIN()) && !agentSkill) {
-  const result = await fastReadNative(absolutePath, startLine, maxLines, DEFAULT_MAX_BYTES, signal, onUpdate)
-  const nativeText = typeof result.content?.[0]?.text === 'string' ? result.content[0].text : ''
-  if (nativeText.length > 0 || startLine === 1) {
-   return result
-  }
- }
- let currentLine = 1
- let output = ''
- let outputLines = 0
- let outputBytes = 0
- let carry = ''
- let lastProgressAt = 0
- let lastProgressLines = 0
- let lastProgressBytes = 0
+ const window = scanReadWindow(absolutePath, startLine, maxLines, DEFAULT_MAX_BYTES, agentSkill, signal)
 
- const maybeEmitProgress = (force = false) => {
-  if (!onUpdate || outputLines === 0) {
-   return
-  }
-
-  const now = Date.now()
-  if (!force && outputLines - lastProgressLines < READ_PROGRESS_MIN_LINES && outputBytes - lastProgressBytes < READ_PROGRESS_MIN_BYTES && now - lastProgressAt < READ_PROGRESS_MIN_INTERVAL_MS) {
-   return
-  }
-
-  lastProgressAt = now
-  lastProgressLines = outputLines
-  lastProgressBytes = outputBytes
-  emitTextUpdate(onUpdate, output)
+ if (!window.hitLineLimit && !window.hitByteLimit && startLine > window.totalLines) {
+  throw new Error(`Offset ${offset} is beyond end of file (${window.totalLines} lines total)`)
  }
 
- const appendLine = (line: string) => {
-  if (currentLine >= startLine) {
-   if (outputLines >= maxLines) {
-    const endLine = startLine + outputLines - 1
-    const nextOffset = endLine + 1
-    return textResult(`${output}\n\n[Showing lines ${startLine}-${endLine}. Use offset=${nextOffset} to continue.]`, {truncation: {truncated: true, truncatedBy: 'lines', outputLines}})
-   }
-
-   const nextBytes = Buffer.byteLength(line, 'utf8')
-   if (!agentSkill && outputBytes + nextBytes > DEFAULT_MAX_BYTES) {
-    if (outputLines === 0) {
-     return textResult(`[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash for partial reads.]`, {truncation: {truncated: true, firstLineExceedsLimit: true}})
-    }
-    const endLine = startLine + outputLines - 1
-    const nextOffset = endLine + 1
-    return textResult(`${output}\n\n[Showing lines ${startLine}-${endLine} (${formatSize(outputBytes)} limit). Use offset=${nextOffset} to continue.]`, {truncation: {truncated: true, truncatedBy: 'bytes', outputLines}})
-   }
-
-   output += line
-   outputLines += 1
-   outputBytes += nextBytes
-   maybeEmitProgress()
-  }
-
-  currentLine += 1
-  return null
+ if (onUpdate && window.output.length > 0) {
+  emitTextUpdate(onUpdate, window.output)
  }
 
- for await (const chunk of createReadStream(absolutePath, {encoding: 'utf8', highWaterMark: 64 * 1024})) {
-  ensureNotAborted(signal)
-
-  const combined = carry + chunk
-  let lineStart = 0
-
-  while (true) {
-   const newlineIndex = combined.indexOf('\n', lineStart)
-   if (newlineIndex === -1) {
-    carry = combined.slice(lineStart)
-    break
-   }
-
-   const line = combined.slice(lineStart, newlineIndex + 1)
-   const result = appendLine(line)
-   if (result) {
-    return result
-   }
-
-   lineStart = newlineIndex + 1
-  }
+ const endLine = startLine + window.outputLines - 1
+ const nextOffset = endLine + 1
+ if (window.hitLineLimit) {
+  return textResult(`${window.output}\n\n[Showing lines ${startLine}-${endLine}. Use offset=${nextOffset} to continue.]`, {truncation: {truncated: true, truncatedBy: 'lines', outputLines: window.outputLines}})
  }
-
- ensureNotAborted(signal)
-
- if (startLine > currentLine) {
-  throw new Error(`Offset ${offset} is beyond end of file (${currentLine} lines total)`)
- }
-
- if (carry && currentLine >= startLine) {
-  const nextBytes = Buffer.byteLength(carry, 'utf8')
-  if (!agentSkill && outputLines === 0 && nextBytes > DEFAULT_MAX_BYTES) {
-   return textResult(`[Line ${startLine} is ${formatSize(nextBytes)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash for partial reads.]`, {truncation: {truncated: true, firstLineExceedsLimit: true}})
+ if (window.hitByteLimit) {
+  if (window.outputLines === 0) {
+   return textResult(`[Line ${startLine} is ${formatSize(window.firstLineExcess)}, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash for partial reads.]`, {truncation: {truncated: true, firstLineExceedsLimit: true}})
   }
-  if (outputLines < maxLines && (agentSkill || outputBytes + nextBytes <= DEFAULT_MAX_BYTES)) {
-   output += carry
-   outputLines += 1
-   outputBytes += nextBytes
-   maybeEmitProgress(true)
-  }
+  return textResult(`${window.output}\n\n[Showing lines ${startLine}-${endLine} (${formatSize(window.outputBytes)} limit). Use offset=${nextOffset} to continue.]`, {truncation: {truncated: true, truncatedBy: 'bytes', outputLines: window.outputLines}})
  }
-
- return textResult(output)
+ return textResult(window.output)
 }
 
 export async function fastWrite(cwd: string, pathArg: string, content: string, signal?: AbortSignal) {
@@ -913,32 +930,10 @@ export async function fastWrite(cwd: string, pathArg: string, content: string, s
   ensureNotAborted(signal)
   mkdirSync(dirname(absolutePath), {recursive: true})
 
-  if (existsSync(FASTWRITE_BIN())) {
-   // fastwrite already verifies exact bytes after the temporary write and after
-   // the final rename; a third JS-side read-back would only repeat that work.
-   await runBinaryWithInput(FASTWRITE_BIN(), [absolutePath], content, signal)
-   ensureNotAborted(signal)
-  } else if (isSymlink(absolutePath)) {
-   await Bun.write(absolutePath, content)
-   ensureNotAborted(signal)
-   await verifyWrittenText(absolutePath, pathArg, content, 'symlink-preserving write')
-  } else {
-   const tmpPath = `${absolutePath}.tmp.${process.pid}.${Date.now()}.${randomUUID()}`
-   try {
-    await Bun.write(tmpPath, content)
-    ensureNotAborted(signal)
-    await verifyWrittenText(tmpPath, pathArg, content, 'temporary write')
-    renameSync(tmpPath, absolutePath)
-    ensureNotAborted(signal)
-    await verifyWrittenText(absolutePath, pathArg, content, 'final rename')
-   } catch (error) {
-    rmSync(tmpPath, {force: true})
-    throw error
-   }
-  }
+  const data = Buffer.from(content, 'utf8')
+  atomicWriteVerifiedSync(absolutePath, pathArg, data, signal)
 
-  const bytes = Buffer.byteLength(content, 'utf8')
-  return textResult(`Successfully wrote and verified ${bytes} bytes to ${pathArg}`, {verified: true, bytes})
+  return textResult(`Successfully wrote and verified ${data.length} bytes to ${pathArg}`, {verified: true, bytes: data.length})
  })
 }
 
@@ -1019,8 +1014,9 @@ async function applyPlannedEdits(plans: Array<PlannedFileEdit | PlannedPatchFile
     if (plan.after === null) {
      rmSync(plan.absolutePath, {force: true})
     } else {
-     await Bun.write(plan.absolutePath, plan.after)
-     await verifyWrittenText(plan.absolutePath, plan.path, plan.after, 'edit write')
+     // In-place write keeps the target's inode, mode, and symlink identity.
+     writeFileSync(plan.absolutePath, plan.after)
+     verifyWrittenBytes(plan.absolutePath, plan.path, Buffer.from(plan.after, 'utf8'), 'edit write')
     }
     applied.push(plan)
     ensureNotAborted(signal)
@@ -1046,42 +1042,43 @@ export async function fastPatch(cwd: string, patch: string, signal?: AbortSignal
 }
 
 export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signal?: AbortSignal) {
- if (edits.length === 1 && existsSync(FASTEDIT_BIN())) {
+ if (edits.length === 1) {
   const edit = edits[0]
   const pathArg = edit.path!
+  if (edit.oldText.length === 0) {
+   throw new Error(`Edit 1 in ${pathArg} has empty oldText.`)
+  }
   if (edit.oldText === edit.newText) {
    throw new Error(`No changes made to ${pathArg}. The replacement produced identical content.`)
   }
   const absolutePath = resolvePath(cwd, pathArg)
   return withFileMutationQueue(absolutePath, async () => {
    ensureNotAborted(signal)
-   const before = await Bun.file(absolutePath).text()
-   const firstIndex = before.indexOf(edit.oldText)
-   const oldTextPath = join(tmpdir(), `tia-fastedit-old-${process.pid}-${randomUUID()}`)
-   const newTextPath = join(tmpdir(), `tia-fastedit-new-${process.pid}-${randomUUID()}`)
-   try {
-    await Bun.write(oldTextPath, edit.oldText)
-    await Bun.write(newTextPath, edit.newText)
-    try {
-     await runBinary(FASTEDIT_BIN(), [absolutePath, oldTextPath, newTextPath], signal)
-    } catch (error) {
-     ensureNotAborted(signal)
-     if (error instanceof Error && error.message === 'Operation aborted') throw error
-     if (firstIndex === -1) {
-      throw missingEditError(pathArg, 0, before, edit.oldText)
-     }
-     throw duplicateEditError(pathArg, 0, before, edit.oldText)
-    }
-    const after = await Bun.file(absolutePath).text()
-    const expected = before.slice(0, firstIndex) + edit.newText + before.slice(firstIndex + edit.oldText.length)
-    if (after !== expected) {
-     throw writeVerificationError(pathArg, 'native edit', expected, after)
-    }
-    return textResult(`Successfully replaced 1 block(s) in ${pathArg}.`, {diff: combinedEditDiff([{path: pathArg, absolutePath, before, after, editCount: 1}])})
-   } finally {
-    rmSync(oldTextPath, {force: true})
-    rmSync(newTextPath, {force: true})
+   const before = readFileSync(absolutePath)
+   // Byte-level search over UTF-8: an exact byte match of a valid UTF-8
+   // needle always lands on character boundaries.
+   const oldBytes = Buffer.from(edit.oldText, 'utf8')
+   const firstIndex = before.indexOf(oldBytes)
+   if (firstIndex === -1) {
+    throw missingEditError(pathArg, 0, before.toString('utf8'), edit.oldText)
    }
+   if (before.indexOf(oldBytes, firstIndex + oldBytes.length) !== -1) {
+    throw duplicateEditError(pathArg, 0, before.toString('utf8'), edit.oldText)
+   }
+   const after = Buffer.concat([before.subarray(0, firstIndex), Buffer.from(edit.newText, 'utf8'), before.subarray(firstIndex + oldBytes.length)])
+   // In-place write keeps the target's inode, mode, and symlink identity.
+   writeFileSync(absolutePath, after)
+   const actual = readFileSync(absolutePath)
+   if (!actual.equals(after)) {
+    try {
+     writeFileSync(absolutePath, before)
+    } catch {
+     // best-effort rollback; surface the verification failure instead
+    }
+    throw writeVerificationError(pathArg, 'edit write', after.toString('utf8'), actual.toString('utf8'))
+   }
+   ensureNotAborted(signal)
+   return textResult(`Successfully replaced 1 block(s) in ${pathArg}.`, {diff: combinedEditDiff([{path: pathArg, absolutePath, before: before.toString('utf8'), after: after.toString('utf8'), editCount: 1}])})
   })
  }
 
@@ -1224,7 +1221,7 @@ export default function (pi: ExtensionAPI) {
  pi.registerTool({
   name: 'read',
   label: 'read',
-  description: 'Read the contents of a file using a fast native Zig streaming implementation. Supports text files and returns truncated output with continuation hints.',
+  description: 'Read the contents of a file using an in-process zero-spawn windowed byte scanner. Supports offset/limit windows and returns truncated output with continuation hints.',
   parameters: readSchema,
   renderShell: stockRead.renderShell,
   renderCall: stockRead.renderCall,
@@ -1238,7 +1235,7 @@ export default function (pi: ExtensionAPI) {
  pi.registerTool({
   name: 'write',
   label: 'write',
-  description: 'Write content to a file using a zig cc-built atomic verified implementation.',
+  description: 'Write content to a file atomically (temp file + rename) with byte-for-byte read-back verification.',
   parameters: writeSchema,
   renderShell: stockWrite.renderShell,
   renderCall: stockWrite.renderCall,
