@@ -217,7 +217,7 @@ async function readStdin(): Promise<string> {
 
 async function main() {
  const [{streamSimple}, {getAgentDir}, {AuthStorage}, {ModelRegistry}, {findInitialModel}, {SettingsManager}] = await Promise.all([
-  import('__PI_PACKAGE_DIR__/../pi-ai/dist/stream.js'),
+  import('__PI_PACKAGE_DIR__/../pi-ai/dist/compat.js'),
   import('__PI_PACKAGE_DIR__/dist/config.js'),
   import('__PI_PACKAGE_DIR__/dist/core/auth-storage.js'),
   import('__PI_PACKAGE_DIR__/dist/core/model-registry.js'),

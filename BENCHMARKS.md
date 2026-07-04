@@ -2,9 +2,21 @@
 
 These are the latest benchmark highlights from the tia research harness.
 
+## `tia pi` vs stock `pi` (head-to-head, pi 0.80.3)
+
+Same pi source on both sides; isolates what `tia-runtime` adds. Toolchain: pi `0.80.3`, bun `1.4.0`, zig `0.17.0-dev.1158+1d1193aa7`, Linux x86_64 (8 cores). `hyperfine`, 12 runs / 3 warmup (startup), 10 runs / 2 warmup (RPC), no network.
+
+| Workload | stock `pi` | `tia pi` | Speedup |
+|---|---:|---:|---:|
+| Process startup (`--version`) | 751 ± 81 ms | 579 ± 36 ms | **1.30x** |
+| RPC startup (`get_state`) | 802 ± 73 ms | 742 ± 23 ms | **1.08x** |
+| JSON stream startup (`--mode json --no-session`, no prompt) | 769 ± 37 ms | 217 ± 10 ms | **3.54x** |
+
+Reproduce: `bash bench/hyperfine-tia-pi.sh` (RPC) and `bash bench/hyperfine-tia-json-stream.sh` (stream). The stock baseline runs the same compiled pi package's `dist/cli.js`.
+
 ## 2026-07 optimization pass
 
-Measured on one Linux box with hyperfine (same machine before/after, sandboxed install):
+Measured on one Linux box with hyperfine (same machine before/after, sandboxed install). Also migrated the pinned pi runtime `0.75.3` → `0.80.3` (latest), which clears 4 Dependabot advisories including a high-severity local privilege-escalation; the slim stream runner's `pi-ai` import moved `stream.js` → `compat.js` to match the restructured package.
 
 | Path | Before | After | Change |
 |---|---:|---:|---:|
@@ -22,7 +34,9 @@ What changed:
 - `bench/fast-tools-extension-burst.ts` bursts the real installed extension code path instead of a harness re-implementation
 - feedback-loop summaries only report `speedup_vs_baseline` when a suite actually contains a baseline command (retained-only suites now report `n/a` instead of comparing the fast path to itself)
 
-## Summary table
+## Summary table (historical research numbers)
+
+These earlier numbers used a `pi-node` (node-runtime) baseline, which starts slower than the bun-run stock `pi` used in the head-to-head above; treat the head-to-head table as the current apples-to-apples comparison.
 
 | Path | Workload | Baseline | Optimized | Speedup |
 |---|---|---:|---:|---:|
@@ -105,12 +119,10 @@ Recent loops found the retained set alternating between compiled/native, compile
 
 ### tia pi startup
 ```bash
-hyperfine --runs 4 --warmup 1 \
-  --command-name 'pi original rpc' \
-  'env -u PI_PACKAGE_DIR -u PI_CODING_AGENT_DIR ANTHROPIC_API_KEY=dummy pi-node --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes < ./payloads-rpc/empty.get-state.jsonl' \
-  --command-name 'tia pi rpc' \
-  'env -u PI_PACKAGE_DIR ANTHROPIC_API_KEY=dummy tia pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes < ./payloads-rpc/empty.get-state.jsonl'
+bash bench/hyperfine-tia-pi.sh
 ```
+
+This resolves a stock pi baseline automatically (installed `pi-node`/`pi`, else the compiled pi package's `dist/cli.js` via bun) and compares it against `tia pi` on the RPC `get_state` startup path.
 
 ### tia slim JSON streaming
 ```bash

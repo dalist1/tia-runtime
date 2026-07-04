@@ -59,20 +59,38 @@ This path is smoke-tested from outside the repo checkout.
   - auth/models/settings symlinks refreshed from the shell pi agent without self-linking the tia sandbox, preserving cliproxy model/provider linkage
 - combines runtime sandboxing with the pi fast path in one launcher
 
-## Current benchmark highlights
+## `tia pi` vs stock `pi` (head-to-head)
 
-Recent local benchmark runs show:
+Both runtimes execute the **same pi source** (`@earendil-works/pi-coding-agent`), so this isolates what `tia-runtime` adds: AOT-compiled + minified startup, a bytecode-compiled slim stream runner, and the sandbox wiring. Stock `pi` is run straight from `dist/cli.js`; `tia pi` is the installed launcher.
+
+Toolchain: pi `0.80.3`, bun `1.4.0`, zig `0.17.0-dev.1158+1d1193aa7`, Linux x86_64 (8 cores). Measured with `hyperfine` (12 runs / 3 warmup for startup, 10 runs / 2 warmup for RPC). No network: startup/stream benchmarks send no prompt and use a dummy API key.
+
+| Workload | stock `pi` | `tia pi` | Speedup |
+|---|---:|---:|---:|
+| Process startup (`--version`) | 751 ± 81 ms | 579 ± 36 ms | **1.30x** |
+| RPC startup (`get_state`) | 802 ± 73 ms | 742 ± 23 ms | **1.08x** |
+| JSON stream startup (`--mode json --no-session`, no prompt) | 769 ± 37 ms | 217 ± 10 ms | **3.54x** |
+
+The slim stream path is where `tia pi` pulls furthest ahead: it bypasses the full CLI/AgentSession/tools/extensions and calls pi's provider streaming layer directly from a bytecode-compiled runner. The full-CLI RPC path shares most of pi's startup cost with stock, so tia's edge there is just the compiled+minified binary.
+
+Reproduce startup/stream:
+
+```bash
+bash bench/hyperfine-tia-json-stream.sh   # slim vs full JSON stream startup
+bash bench/hyperfine-tia-pi.sh            # tia pi vs stock pi RPC startup
+```
+
+## Internal fast-path highlights
+
+These compare `tia pi`'s retained fast paths against tia's own slower reference paths (not stock `pi`), from the burst/feedback-loop harness:
 
 | Path | Workload | Result |
 |---|---|---:|
-| `tia pi` | RPC startup (`get_state`) | about **1.9x** faster than stock `pi` |
-| `tia pi` | startup after minified compile | about **1.4x** faster than the previous unminified compile |
-| `tia pi` slim stream | JSON stream startup after bytecode compile | about **2.3x** faster than the previous compile, **3.7x** faster than the full JSON path |
-| retained tool path | `read` burst | about **2.1x** faster than stock in smoke loops |
-| retained tool path | `read` streaming burst | about **2.0x** faster than stock in smoke loops |
-| retained tool path | `edit` burst | about **2.1x** faster than stock in smoke loops |
-| retained tool path | verified `write` burst | about **1.5–1.6x** faster than stock in smoke loops |
-| retained tool path | `bash` drain/copy burst | about **1.9x** faster than stock in smoke loops |
+| retained tool path | `read` burst | about **2.1x** faster than the reference in smoke loops |
+| retained tool path | `read` streaming burst | about **2.0x** faster than the reference in smoke loops |
+| retained tool path | `edit` burst | about **2.1x** faster than the reference in smoke loops |
+| retained tool path | verified `write` burst | about **1.5–1.6x** faster than the reference in smoke loops |
+| retained tool path | `bash` drain/copy burst | about **1.9x** faster than the reference in smoke loops |
 | `native_search` | full local Zig fixture/extract/rank | 2k raw docs in **11.3 ms** (zero network benchmark) |
 
 The tool burst rows above come from the standalone burst harness. `bench/fast-tools-extension-burst.ts` additionally measures the real installed `fast-tools` extension code path (mutation queues, native helper spawns, and verification included).

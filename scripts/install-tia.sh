@@ -49,7 +49,7 @@ if [[ -z "${TIA_FFF_SOURCE:-}" && -f "${TIA_FFF_SOURCE_FILE}" ]]; then
 	TIA_FFF_SOURCE="$(tr -d '[:space:]' < "${TIA_FFF_SOURCE_FILE}")"
 fi
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
-TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.75.3}"
+TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.80.3}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 
 usage() {
