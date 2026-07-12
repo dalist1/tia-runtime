@@ -64,13 +64,13 @@ This path is smoke-tested from outside the repo checkout.
 
 Both runtimes execute the **same pi source** (`@earendil-works/pi-coding-agent`), so this isolates what `tia-runtime` adds: AOT-compiled + minified startup, a bytecode-compiled slim stream runner, and the sandbox wiring. Stock `pi` is run straight from `dist/cli.js`; `tia pi` is the installed launcher.
 
-Toolchain: pi `0.80.3`, bun `1.4.0`, zig `0.17.0-dev.1158+1d1193aa7`, Linux x86_64 (8 cores). Measured with `hyperfine` (12 runs / 3 warmup for startup, 10 runs / 2 warmup for RPC). No network: startup/stream benchmarks send no prompt and use a dummy API key.
+Current benchmark marker: **`2026-07-low-level-v2`**. Toolchain: pi `0.80.6` (latest npm release verified 2026-07-12), bun `1.4.0`, zig `0.17.0-dev.305+bdfbf432d`, Linux x86_64 (8 cores). No network: startup/stream benchmarks send no prompt and use a dummy API key. The complete machine-readable record is `bench/history/2026-07-low-level-v2.json`.
 
-| Workload | stock `pi` | `tia pi` | Speedup |
+| Workload | Baseline | `tia pi` optimized | Speedup |
 |---|---:|---:|---:|
-| Process startup (`--version`) | 751 ± 81 ms | 579 ± 36 ms | **1.30x** |
-| RPC startup (`get_state`) | 802 ± 73 ms | 742 ± 23 ms | **1.08x** |
-| JSON stream startup (`--mode json --no-session`, no prompt) | 769 ± 37 ms | 217 ± 10 ms | **3.54x** |
+| Process startup (`--version`) | stock: 1.037 ± 0.172 s | 742.2 ± 121.1 ms | **1.40x** |
+| RPC startup (`get_state`) | stock: 1.901 ± 0.172 s | 661.4 ± 49.1 ms | **2.87x** |
+| JSON stream startup (`--mode json --no-session`, no prompt) | full tia: 656.9 ± 30.0 ms | 236.2 ± 18.9 ms | **2.78x** |
 
 The slim stream path is where `tia pi` pulls furthest ahead: it bypasses the full CLI/AgentSession/tools/extensions and calls pi's provider streaming layer directly from a bytecode-compiled runner. The full-CLI RPC path shares most of pi's startup cost with stock, so tia's edge there is just the compiled+minified binary.
 
@@ -159,7 +159,7 @@ TIA_FFF_SOURCE=vanilla bash install.sh tia install
 
 Verify which source is active with `tia status | grep fff`.
 
-The installer ensures `@mariozechner/pi-coding-agent` is installed at the pinned latest version before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pin, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
+The installer ensures `@earendil-works/pi-coding-agent` is installed at the pinned latest version before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pin, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
 
 Set `TIA_ENABLE_FFF=0` to skip FFF entirely, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior. Set `TIA_ENABLE_NATIVE_SEARCH=1` or pass `bash install.sh tia install --search` to install native search; omit it or pass `--no-search` to leave runtime behavior to whatever global/user extensions are already installed. Extensions from the shell/global pi agent are loaded via the shared `settings.json` packages list.
 
@@ -173,7 +173,7 @@ Removed from active tool benchmarking and harness code:
 Writes are now optimized for correctness first:
 
 - normal file writes use a same-directory temporary file followed by atomic rename
-- writes verify exact text after the temporary write and after final rename
+- writes verify exact bytes through the open temporary file descriptor before atomic rename; rename moves that verified inode into place
 - symlink writes preserve the symlink and verify the target content
 - per-file mutation queues serialize concurrent writes/edits to the same path
 - mismatch errors include expected/got character counts, byte counts, and first mismatch location

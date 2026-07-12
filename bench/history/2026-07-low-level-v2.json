@@ -1,0 +1,21 @@
+{
+ "optimizationVersion": "2026-07-low-level-v2",
+ "dateUtc": "2026-07-12T07:42:14Z",
+ "runtime": {"piPackage": "@earendil-works/pi-coding-agent", "piVersion": "0.80.6", "latestVersionVerifiedWith": "npm view @earendil-works/pi-coding-agent version", "bunVersion": "1.4.0", "zigVersion": "0.17.0-dev.305+bdfbf432d"},
+ "host": {"kernel": "Linux 6.6.135-09383-g1140e4f27e24 x86_64", "cpu": "AMD Ryzen 5 3500U with Radeon Vega Mobile Gfx", "logicalCores": 8},
+ "benchmarks": {
+  "versionStartup": {"runs": 12, "warmup": 3, "stockMeanMs": 1037.0, "stockStddevMs": 172.0, "tiaMeanMs": 742.2, "tiaStddevMs": 121.1, "speedup": 1.4},
+  "rpcStartup": {"runs": 12, "warmup": 3, "stockMeanMs": 1901.1, "stockStddevMs": 171.5, "tiaMeanMs": 661.4, "tiaStddevMs": 49.1, "speedup": 2.87},
+  "slimJsonStartup": {"runs": 20, "warmup": 5, "fullMeanMs": 656.9, "fullStddevMs": 30.0, "slimMeanMs": 236.2, "slimStddevMs": 18.9, "speedup": 2.78},
+  "verifiedWrite1MiB": {"alternatingRounds": 12, "beforeMedianMsPerOperation": 2.825, "afterMedianMsPerOperation": 2.111, "speedup": 1.34},
+  "verifiedEdit100KiB": {"alternatingRounds": 12, "beforeMedianMsPerOperation": 2.028, "afterMedianMsPerOperation": 1.647, "speedup": 1.23},
+  "slimStreamWriter": {"runs": 15, "warmup": 3, "deltasPerRun": 10000000, "beforeMeanMs": 1296.0, "beforeStddevMs": 76.0, "afterMeanMs": 961.3, "afterStddevMs": 48.1, "speedup": 1.35}
+ },
+ "commands": ["bash bench/hyperfine-tia-pi.sh", "bash bench/hyperfine-tia-json-stream.sh", "bun bench/fast-tools-extension-burst.ts <read|write|edit> <iterations>", "bun bench/slim-stream-writer-burst.ts 1000 10000"],
+ "notes": [
+  "Network-free startup runs used no prompt and a dummy provider key.",
+  "Stock and tia RPC commands used the same pi 0.80.6 package source.",
+  "Benchmarks were run sequentially; an earlier parallel exploratory run was discarded.",
+  "Static-import and x64-modern slim runner candidates were measured and rejected because gains were not statistically significant."
+ ]
+}

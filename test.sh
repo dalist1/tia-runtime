@@ -38,8 +38,12 @@ TIA_REQUIRE_FFF=1 bash "${ROOT_DIR}/install.sh" tia install --search >/dev/null
 printf '[2/11] check tia status\n'
 tia status > "${TMP_DIR}/tia-status.txt"
 rg -n "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
+rg -n "optimization:.*$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")" "${TMP_DIR}/tia-status.txt" >/dev/null
+rg -n "pi version:.*0\.80\.6" "${TMP_DIR}/tia-status.txt" >/dev/null
 rg -n "fff extension:.*enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
 ! rg -n "opencode" "${TMP_DIR}/tia-status.txt" >/dev/null
+PI_PACKAGE_DIR="$(cat "${HOME}/.local/share/tia/pi-package-dir.txt")"
+[[ "$(bun -e 'console.log(require(process.argv[1]).version)' "${PI_PACKAGE_DIR}/package.json")" == "0.80.6" ]]
 
 printf '[3/11] verify tia refreshes shell pi agent links at launch\n'
 CUSTOM_AGENT_DIR="${TMP_DIR}/custom-agent"

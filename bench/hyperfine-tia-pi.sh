@@ -42,6 +42,18 @@ fi
 
 mkdir -p "${RESULT_DIR}" "${RPC_PAYLOAD_DIR}"
 bash "${ROOT_DIR}/bench/build-pi-rpc-payloads.sh" >/dev/null
+OPTIMIZATION_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION" 2>/dev/null || printf 'unversioned')"
+PI_VERSION="$(bun -e 'console.log(require(process.argv[1]).version ?? "unknown")' "$(cat "${HOME}/.local/share/tia/pi-package-dir.txt")/package.json")"
+cat > "${RESULT_DIR}/benchmark-info.json" <<EOF
+{
+  "suite": "tia-pi-rpc",
+  "optimizationVersion": "${OPTIMIZATION_VERSION}",
+  "piVersion": "${PI_VERSION}",
+  "dateUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "runs": ${RUNS},
+  "warmup": ${WARMUP}
+}
+EOF
 
 hyperfine \
 	--runs "${RUNS}" \

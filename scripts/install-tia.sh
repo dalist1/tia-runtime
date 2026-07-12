@@ -49,7 +49,12 @@ if [[ -z "${TIA_FFF_SOURCE:-}" && -f "${TIA_FFF_SOURCE_FILE}" ]]; then
 	TIA_FFF_SOURCE="$(tr -d '[:space:]' < "${TIA_FFF_SOURCE_FILE}")"
 fi
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
-TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.80.3}"
+TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.80.6}"
+TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-}"
+if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" ]]; then
+	TIA_OPTIMIZATION_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")"
+fi
+TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-07-low-level-v2}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 
 usage() {
@@ -69,6 +74,8 @@ Options:
 Environment:
   TIA_FFF_SOURCE  FFF source: vanilla (npm @ff-labs/pi-fff) or fork (edxeth/fff GitHub).
                   Set to "fork" to use the forked FFF pi-fff extension.
+  TIA_PROXY_CHECK_INTERVAL_SECONDS
+                  Cache cliproxy service checks for this many seconds (default: 30; 0 disables caching).
 EOF2
 }
 
@@ -450,6 +457,14 @@ cleanup_removed_features() {
 
 write_tia_wrapper() {
 	mkdir -p "${TIA_BIN_DIR}"
+	local installed_pi_version="unknown"
+	if [[ -f "${TIA_ROOT}/pi-package-dir.txt" ]]; then
+		local installed_pi_dir
+		installed_pi_dir="$(cat "${TIA_ROOT}/pi-package-dir.txt")"
+		if is_pi_package_dir "${installed_pi_dir}"; then
+			installed_pi_version="$(pi_package_version "${installed_pi_dir}")"
+		fi
+	fi
 	cat > "${TIA_CMD_PATH}" <<EOF2
 #!/usr/bin/env bash
 set -euo pipefail
@@ -459,6 +474,8 @@ TIA_PI_STREAM_BIN="${TIA_PI_STREAM_BIN}"
 TIA_PI_AGENT_DIR="${TIA_PI_AGENT_DIR}"
 TIA_FFF_STATE_DIR="${TIA_FFF_STATE_DIR}"
 TIA_FFF_SOURCE_FILE="${TIA_FFF_SOURCE_FILE}"
+TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION}"
+TIA_PI_VERSION="${installed_pi_version}"
 
 should_use_fast_stream() {
   [[ "\${TIA_DISABLE_FAST_STREAM:-0}" != "1" ]] || return 1
@@ -512,7 +529,15 @@ should_use_fast_stream() {
 ensure_cliproxy_started() {
   [[ "\${PI_NO_PROXY_AUTO_START:-0}" != "1" ]] || return 0
   if command -v systemctl >/dev/null 2>&1; then
+    local marker="\${TIA_ROOT}/.cliproxy-checked" checked=0 interval="\${TIA_PROXY_CHECK_INTERVAL_SECONDS:-30}"
+    if [[ -r "\${marker}" ]]; then
+      read -r checked < "\${marker}" || checked=0
+    fi
+    if [[ "\${checked}" =~ ^[0-9]+$ && "\${interval}" =~ ^[0-9]+$ && \$((EPOCHSECONDS - checked)) -ge 0 && \$((EPOCHSECONDS - checked)) -lt "\${interval}" ]]; then
+      return 0
+    fi
     systemctl --user is-active --quiet cliproxyapi 2>/dev/null || systemctl --user start cliproxyapi >/dev/null 2>&1 || true
+    printf '%s\n' "\${EPOCHSECONDS}" > "\${marker}" 2>/dev/null || true
   fi
 }
 
@@ -521,7 +546,14 @@ refresh_shell_agent_links() {
   if [[ "\${shell_agent_dir}" == "\${TIA_PI_AGENT_DIR}" ]]; then
     shell_agent_dir="\${HOME}/.pi/agent"
   fi
-  mkdir -p "\${TIA_PI_AGENT_DIR}" || return 0
+  [[ -d "\${TIA_PI_AGENT_DIR}" ]] || mkdir -p "\${TIA_PI_AGENT_DIR}" || return 0
+  local marker="\${TIA_PI_AGENT_DIR}/.shell-links-source" cached_source=""
+  if [[ -r "\${marker}" ]]; then
+    read -r cached_source < "\${marker}" || cached_source=""
+    if [[ "\${cached_source}" == "\${shell_agent_dir}" && ( ! -d "\${shell_agent_dir}" || ! "\${shell_agent_dir}" -nt "\${marker}" ) ]]; then
+      return 0
+    fi
+  fi
 
   for name in auth.json models.json settings.json keybindings.json; do
     local src="\${shell_agent_dir}/\${name}"
@@ -537,11 +569,12 @@ refresh_shell_agent_links() {
       rm -f "\${dest}" || true
     fi
   done
+  printf '%s\n' "\${shell_agent_dir}" > "\${marker}" 2>/dev/null || true
   return 0
 }
 
 configure_fff_env() {
-  mkdir -p "\${TIA_FFF_STATE_DIR}"
+  [[ -d "\${TIA_FFF_STATE_DIR}" ]] || mkdir -p "\${TIA_FFF_STATE_DIR}"
   local arg prev="" cli_mode=""
   for arg in "\$@"; do
     if [[ "\${prev}" == "--fff-mode" ]]; then
@@ -601,6 +634,8 @@ case "\${subcommand}" in
     echo "tia pi bin:          \t\${TIA_PI_BIN}"
     echo "tia stream:          \t\${TIA_PI_STREAM_BIN}"
     echo "tia pi agent:        \t\${TIA_PI_AGENT_DIR}"
+    echo "optimization:        \t\${TIA_OPTIMIZATION_VERSION}"
+    echo "pi version:          \t\${TIA_PI_VERSION}"
     echo "shell pi agent:      \t\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
     echo "history mode:        \tunchanged by tia pi startup"
     echo "cliproxy auto-start:\tenabled for tia pi when systemd user services are available"
@@ -665,6 +700,12 @@ status_all() {
 	printf 'tia stream:          %s\n' "${TIA_PI_STREAM_BIN}"
 	printf 'tia ext:             %s\n' "${TIA_EXTENSION_PATH}"
 	printf 'tia pi agent:        %s\n' "${TIA_PI_AGENT_DIR}"
+	printf 'optimization:        %s\n' "${TIA_OPTIMIZATION_VERSION}"
+	if [[ -f "${TIA_ROOT}/pi-package-dir.txt" ]] && is_pi_package_dir "$(cat "${TIA_ROOT}/pi-package-dir.txt")"; then
+		printf 'pi version:          %s\n' "$(pi_package_version "$(cat "${TIA_ROOT}/pi-package-dir.txt")")"
+	else
+		printf 'pi version:          unknown\n'
+	fi
 	printf 'shell pi agent:      %s\n' "${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}"
 	printf 'history mode:        unchanged by tia pi startup\n'
 	printf 'cliproxy auto-start: enabled for tia pi when systemd user services are available\n'

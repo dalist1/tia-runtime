@@ -3,13 +3,14 @@
  "description": "tia-runtime — Terminal Interactive Agents runtime: an open, sandboxed fast path for terminal coding agents (in-process zero-spawn read/write/edit tools with byte-verified atomic writes, compiled pi startup, slim JSON streaming)",
  "scripts": {
   "bench:feedback": "bash bench/feedback-loop.sh",
+  "bench:writer": "bun bench/slim-stream-writer-burst.ts 1000 10000",
   "install:zig": "bash scripts/install-zig.sh",
-  "lint": "oxlint -c .oxlintrc.json scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts --deny-warnings",
-  "format": "oxfmt --check scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json",
-  "format:write": "oxfmt --write scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts package.json .oxlintrc.json"
+  "lint": "oxlint -c .oxlintrc.json scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts --deny-warnings",
+  "format": "oxfmt --check scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts bench/history/*.json package.json .oxlintrc.json",
+  "format:write": "oxfmt --write scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts bench/history/*.json package.json .oxlintrc.json"
  },
  "devDependencies": {
-  "@earendil-works/pi-coding-agent": "0.80.3",
+  "@earendil-works/pi-coding-agent": "0.80.6",
   "@sinclair/typebox": "^0.34.49",
   "@types/node": "^25.8.0",
   "bun-types": "^1.3.14",

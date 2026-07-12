@@ -1,5 +1,4 @@
-import {randomUUID} from 'node:crypto'
-import {closeSync, existsSync, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs'
+import {closeSync, existsSync, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs'
 import {homedir} from 'node:os'
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path'
 import {createBashTool, createBashToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@earendil-works/pi-coding-agent'
@@ -15,6 +14,8 @@ const READ_FIRST_CHUNK = 64 * 1024
 // Reused scan buffer: scanReadWindow is fully synchronous, so a single
 // module-level scratch buffer can never be observed mid-use.
 let readScratch: Buffer | null = null
+let verifyScratch: Buffer | null = null
+let temporaryFileNonce = Date.now()
 
 type TextBlock = {type: 'text'; text: string}
 type TextToolUpdate = {content: TextBlock[]; details: any}
@@ -108,17 +109,50 @@ function editDisplayMode(args: any) {
  return undefined
 }
 
+function lineStarts(text: string) {
+ const starts: number[] = [0]
+ let newline = text.indexOf('\n')
+ while (newline !== -1) {
+  starts.push(newline + 1)
+  newline = text.indexOf('\n', newline + 1)
+ }
+ if (starts[starts.length - 1] === text.length) starts.pop()
+ return starts
+}
+
+function lineEnd(text: string, starts: number[], index: number) {
+ if (index + 1 < starts.length) return starts[index + 1] - 1
+ return text.charCodeAt(text.length - 1) === 10 ? text.length - 1 : text.length
+}
+
+function linesEqual(left: string, leftStarts: number[], leftIndex: number, right: string, rightStarts: number[], rightIndex: number) {
+ const leftStart = leftStarts[leftIndex]
+ const rightStart = rightStarts[rightIndex]
+ const leftEnd = lineEnd(left, leftStarts, leftIndex)
+ const rightEnd = lineEnd(right, rightStarts, rightIndex)
+ const length = leftEnd - leftStart
+ if (length !== rightEnd - rightStart) return false
+ for (let i = 0; i < length; i += 1) {
+  if (left.charCodeAt(leftStart + i) !== right.charCodeAt(rightStart + i)) return false
+ }
+ return true
+}
+
+function lineText(text: string, starts: number[], index: number) {
+ return text.slice(starts[index], lineEnd(text, starts, index))
+}
+
 function lineDiff(before: string | null, after: string | null) {
- const beforeLines = (before ?? '').split('\n')
- const afterLines = (after ?? '').split('\n')
- if (beforeLines[beforeLines.length - 1] === '') beforeLines.pop()
- if (afterLines[afterLines.length - 1] === '') afterLines.pop()
+ const beforeText = before ?? ''
+ const afterText = after ?? ''
+ const beforeLines = lineStarts(beforeText)
+ const afterLines = lineStarts(afterText)
 
  let prefix = 0
- while (prefix < beforeLines.length && prefix < afterLines.length && beforeLines[prefix] === afterLines[prefix]) prefix += 1
+ while (prefix < beforeLines.length && prefix < afterLines.length && linesEqual(beforeText, beforeLines, prefix, afterText, afterLines, prefix)) prefix += 1
 
  let suffix = 0
- while (suffix < beforeLines.length - prefix && suffix < afterLines.length - prefix && beforeLines[beforeLines.length - 1 - suffix] === afterLines[afterLines.length - 1 - suffix]) suffix += 1
+ while (suffix < beforeLines.length - prefix && suffix < afterLines.length - prefix && linesEqual(beforeText, beforeLines, beforeLines.length - 1 - suffix, afterText, afterLines, afterLines.length - 1 - suffix)) suffix += 1
 
  const context = 4
  const start = Math.max(0, prefix - context)
@@ -128,10 +162,10 @@ function lineDiff(before: string | null, after: string | null) {
  const lines: string[] = []
 
  if (start > 0) lines.push(` ${''.padStart(width)} ...`)
- for (let i = start; i < prefix; i += 1) lines.push(` ${String(i + 1).padStart(width)} ${beforeLines[i]}`)
- for (let i = prefix; i < beforeLines.length - suffix; i += 1) lines.push(`-${String(i + 1).padStart(width)} ${beforeLines[i]}`)
- for (let i = prefix; i < afterLines.length - suffix; i += 1) lines.push(`+${String(i + 1).padStart(width)} ${afterLines[i]}`)
- for (let i = afterLines.length - suffix; i < afterEnd; i += 1) lines.push(` ${String(i + 1).padStart(width)} ${afterLines[i]}`)
+ for (let i = start; i < prefix; i += 1) lines.push(` ${String(i + 1).padStart(width)} ${lineText(beforeText, beforeLines, i)}`)
+ for (let i = prefix; i < beforeLines.length - suffix; i += 1) lines.push(`-${String(i + 1).padStart(width)} ${lineText(beforeText, beforeLines, i)}`)
+ for (let i = prefix; i < afterLines.length - suffix; i += 1) lines.push(`+${String(i + 1).padStart(width)} ${lineText(afterText, afterLines, i)}`)
+ for (let i = afterLines.length - suffix; i < afterEnd; i += 1) lines.push(` ${String(i + 1).padStart(width)} ${lineText(afterText, afterLines, i)}`)
  if (afterEnd < afterLines.length || beforeEnd < beforeLines.length) lines.push(` ${''.padStart(width)} ...`)
 
  return lines.join('\n')
@@ -704,9 +738,36 @@ function writeVerificationError(pathArg: string, label: string, expected: string
  return new Error(`Write verification failed for ${pathArg} after ${label}: expected ${expected.length} chars/${expectedBytes} bytes, got ${actual.length} chars/${actualBytes} bytes; ${suffix}.`)
 }
 
+function openFdMatches(fd: number, expected: Buffer) {
+ if (fstatSync(fd).size !== expected.length) return false
+ const scratch = verifyScratch ?? (verifyScratch = Buffer.allocUnsafe(256 * 1024))
+ let offset = 0
+ while (offset < expected.length) {
+  const wanted = Math.min(scratch.length, expected.length - offset)
+  let received = 0
+  while (received < wanted) {
+   const count = readSync(fd, scratch, received, wanted - received, offset + received)
+   if (count === 0) return false
+   received += count
+  }
+  if (expected.compare(scratch, 0, wanted, offset, offset + wanted) !== 0) return false
+  offset += wanted
+ }
+ return true
+}
+
+function writtenBytesMatch(absolutePath: string, expected: Buffer) {
+ const fd = openSync(absolutePath, 'r')
+ try {
+  return openFdMatches(fd, expected)
+ } finally {
+  closeSync(fd)
+ }
+}
+
 function verifyWrittenBytes(absolutePath: string, pathArg: string, expected: Buffer, label: string) {
- const actual = readFileSync(absolutePath)
- if (!actual.equals(expected)) {
+ if (!writtenBytesMatch(absolutePath, expected)) {
+  const actual = readFileSync(absolutePath)
   throw writeVerificationError(pathArg, label, expected.toString('utf8'), actual.toString('utf8'))
  }
 }
@@ -734,54 +795,53 @@ function writeAllSync(fd: number, data: Buffer) {
 }
 
 // Atomic verified write: temp file in the target directory, byte-for-byte
-// read-back verification, then rename over the target (plus a final read-back).
+// read-back verification, then rename over the target.
 // Symlink targets are written in place so the link is preserved. fsync is
 // opt-in via TIA_FASTWRITE_FSYNC=1; content verification never depends on it.
 function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Buffer, signal?: AbortSignal) {
- if (isSymlink(absolutePath)) {
+ let mode = 0o644
+ let hadExisting = false
+ let targetStat: ReturnType<typeof lstatSync> | undefined
+ try {
+  targetStat = lstatSync(absolutePath)
+ } catch {
+  // new file: default mode
+ }
+ if (targetStat?.isSymbolicLink()) {
   writeFileSync(absolutePath, data)
   ensureNotAborted(signal)
   verifyWrittenBytes(absolutePath, pathArg, data, 'symlink-preserving write')
   return
  }
-
- let mode = 0o644
- let hadExisting = false
- try {
-  mode = statSync(absolutePath).mode & 0o777
+ if (targetStat) {
+  mode = targetStat.mode & 0o777
   hadExisting = true
- } catch {
-  // new file: default mode
  }
 
- const tmpPath = `${absolutePath}.tmp.${process.pid}.${Date.now()}.${randomUUID()}`
+ temporaryFileNonce += 1
+ const tmpPath = `${absolutePath}.tmp.${process.pid}.${temporaryFileNonce}`
  try {
-  const fd = openSync(tmpPath, 'wx', mode)
+  const fd = openSync(tmpPath, 'wx+', mode)
   try {
    if (hadExisting) fchmodSync(fd, mode)
    writeAllSync(fd, data)
-   if (writeDurability()) fsyncSync(fd)
+   const durable = writeDurability()
+   if (durable) fsyncSync(fd)
+   ensureNotAborted(signal)
+   if (!openFdMatches(fd, data)) {
+    throw new Error(`Write verification failed for ${pathArg} after temporary write.`)
+   }
   } finally {
    closeSync(fd)
   }
-  ensureNotAborted(signal)
   // Verify the temp file before it replaces the target; rename() moves the
   // same inode, so the verified bytes are exactly what lands at the target.
-  verifyWrittenBytes(tmpPath, pathArg, data, 'temporary write')
   renameSync(tmpPath, absolutePath)
   if (writeDurability()) fsyncDirOf(absolutePath)
   ensureNotAborted(signal)
  } catch (error) {
   rmSync(tmpPath, {force: true})
   throw error
- }
-}
-
-function isSymlink(path: string) {
- try {
-  return lstatSync(path).isSymbolicLink()
- } catch {
-  return false
  }
 }
 
@@ -1065,11 +1125,15 @@ export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signa
    if (before.indexOf(oldBytes, firstIndex + oldBytes.length) !== -1) {
     throw duplicateEditError(pathArg, 0, before.toString('utf8'), edit.oldText)
    }
-   const after = Buffer.concat([before.subarray(0, firstIndex), Buffer.from(edit.newText, 'utf8'), before.subarray(firstIndex + oldBytes.length)])
+   const newBytes = Buffer.from(edit.newText, 'utf8')
+   const after = Buffer.allocUnsafe(before.length - oldBytes.length + newBytes.length)
+   before.copy(after, 0, 0, firstIndex)
+   newBytes.copy(after, firstIndex)
+   before.copy(after, firstIndex + newBytes.length, firstIndex + oldBytes.length)
    // In-place write keeps the target's inode, mode, and symlink identity.
    writeFileSync(absolutePath, after)
-   const actual = readFileSync(absolutePath)
-   if (!actual.equals(after)) {
+   if (!writtenBytesMatch(absolutePath, after)) {
+    const actual = readFileSync(absolutePath)
     try {
      writeFileSync(absolutePath, before)
     } catch {

@@ -88,11 +88,15 @@ function defaultSink(chunk: string, callback: () => void): boolean {
 }
 
 export class SlimStreamWriter {
- private outBuffer = ''
- private deltaBuffer = new Map<number, string>()
+ private outChunks: string[] = []
+ private outLength = 0
+ private deltaIndex: number | undefined
+ private deltaText = ''
+ private extraDeltas = new Map<number, string>()
  private writing = false
  private waiters: Array<() => void> = []
  private timer: ReturnType<typeof setTimeout> | null = null
+ private flushQueued = false
  private sink: StreamSink
 
  constructor(sink: StreamSink = defaultSink) {
@@ -113,8 +117,22 @@ export class SlimStreamWriter {
  }
 
  enqueueDelta(index: number, delta: string) {
-  this.deltaBuffer.set(index, `${this.deltaBuffer.get(index) ?? ''}${delta}`)
-  if ((this.deltaBuffer.get(index)?.length ?? 0) >= 96) {
+  let buffered: string
+  if (this.deltaIndex === index) {
+   buffered = this.deltaText + delta
+   this.deltaText = buffered
+  } else if (this.extraDeltas.has(index)) {
+   buffered = this.extraDeltas.get(index)! + delta
+   this.extraDeltas.set(index, buffered)
+  } else if (this.deltaIndex === undefined) {
+   this.deltaIndex = index
+   buffered = delta
+   this.deltaText = delta
+  } else {
+   buffered = `${this.extraDeltas.get(index) ?? ''}${delta}`
+   this.extraDeltas.set(index, buffered)
+  }
+  if (buffered.length >= 96) {
    this.flushDeltaIndex(index)
    this.flushSoon(true)
    return
@@ -123,22 +141,42 @@ export class SlimStreamWriter {
  }
 
  flushDeltaIndex(index: number) {
-  const delta = this.deltaBuffer.get(index)
+  const isPrimary = this.deltaIndex === index
+  const delta = isPrimary ? this.deltaText : this.extraDeltas.get(index)
   if (!delta) return
-  this.deltaBuffer.delete(index)
+  if (isPrimary) {
+   this.deltaIndex = undefined
+   this.deltaText = ''
+  } else {
+   this.extraDeltas.delete(index)
+  }
   this.appendRaw(`{"t":"d","i":${index},"s":${JSON.stringify(delta)}}\n`, false)
  }
 
  flushDeltas() {
-  for (const index of [...this.deltaBuffer.keys()].sort((a, b) => a - b)) {
+  if (this.deltaIndex !== undefined && this.extraDeltas.size === 0) {
+   this.flushDeltaIndex(this.deltaIndex)
+   return
+  }
+  if (this.deltaIndex === undefined && this.extraDeltas.size === 1) {
+   this.flushDeltaIndex(this.extraDeltas.keys().next().value!)
+   return
+  }
+  const indices = this.deltaIndex === undefined ? [...this.extraDeltas.keys()] : [this.deltaIndex, ...this.extraDeltas.keys()]
+  for (const index of indices.sort((a, b) => a - b)) {
    this.flushDeltaIndex(index)
   }
  }
 
+ private hasDeltas() {
+  return this.deltaIndex !== undefined || this.extraDeltas.size > 0
+ }
+
  private appendRaw(line: string, schedule = true) {
-  this.outBuffer += line
+  this.outChunks.push(line)
+  this.outLength += line.length
   if (!schedule) return
-  if (this.outBuffer.length >= 16384) {
+  if (this.outLength >= 16384) {
    this.flushSoon(true)
    return
   }
@@ -151,8 +189,13 @@ export class SlimStreamWriter {
    clearTimeout(this.timer)
    this.timer = null
   }
+  if (this.flushQueued) return
   if (immediate) {
-   queueMicrotask(() => this.flush())
+   this.flushQueued = true
+   queueMicrotask(() => {
+    this.flushQueued = false
+    this.flush()
+   })
    return
   }
   this.timer = setTimeout(() => {
@@ -162,7 +205,7 @@ export class SlimStreamWriter {
  }
 
  private settle() {
-  if (this.outBuffer.length > 0 || this.deltaBuffer.size > 0) {
+  if (this.outLength > 0 || this.hasDeltas()) {
    this.flushSoon(true)
    return
   }
@@ -173,12 +216,13 @@ export class SlimStreamWriter {
 
  private flush() {
   this.flushDeltas()
-  if (this.writing || this.outBuffer.length === 0) {
+  if (this.writing || this.outLength === 0) {
    return
   }
   this.writing = true
-  const chunk = this.outBuffer
-  this.outBuffer = ''
+  const chunk = this.outChunks.length === 1 ? this.outChunks[0] : this.outChunks.join('')
+  this.outChunks = []
+  this.outLength = 0
   this.sink(chunk, () => {
    this.writing = false
    this.settle()
@@ -191,7 +235,7 @@ export class SlimStreamWriter {
    this.timer = null
   }
   this.flush()
-  if (!this.writing && this.outBuffer.length === 0 && this.deltaBuffer.size === 0) {
+  if (!this.writing && this.outLength === 0 && !this.hasDeltas()) {
    return
   }
   await new Promise<void>(resolve => {

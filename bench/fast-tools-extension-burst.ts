@@ -1,6 +1,5 @@
-// Burst benchmark for the REAL fast-tools extension code path (scripts/fast-tools-extension.ts),
-// including mutation queues, native helper spawns, and post-write verification.
-// Usage: PI_CODING_AGENT_DIR=<agent dir with fast-tools/> bun bench/fast-tools-extension-burst.ts <read|write|edit|bash> <iterations>
+// Burst benchmark for the real in-process fast-tools extension code path.
+// Usage: PI_CODING_AGENT_DIR=<agent dir> bun bench/fast-tools-extension-burst.ts <read|write|edit> <iterations>
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -9,17 +8,17 @@ import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+const optimizationVersion = readFileSync(join(ROOT_DIR, "OPTIMIZATION_VERSION"), "utf8").trim();
 const tool = process.argv[2];
 const iterations = Number(process.argv[3] ?? 20);
 
 if (!tool || !Number.isFinite(iterations) || iterations <= 0) {
 	throw new Error("Usage: fast-tools-extension-burst.ts <read|write|edit> <iterations>");
 }
-if (!process.env.PI_CODING_AGENT_DIR) {
-	throw new Error("Set PI_CODING_AGENT_DIR to an agent dir containing fast-tools helpers");
-}
+if (!process.env.PI_CODING_AGENT_DIR) throw new Error("Set PI_CODING_AGENT_DIR");
 
-const ext = await import("../scripts/fast-tools-extension.ts");
+const extensionPath = process.env.TIA_FAST_TOOLS_EXTENSION ?? "../scripts/fast-tools-extension.ts";
+const ext = await import(extensionPath);
 
 const workDir = join(tmpdir(), `tia-ext-burst-${process.pid}-${randomUUID()}`);
 mkdirSync(workDir, { recursive: true });
@@ -68,4 +67,4 @@ const start = performance.now();
 await run();
 const end = performance.now();
 
-console.log(JSON.stringify({ tool, iterations, elapsedMs: end - start, perIterationMs: (end - start) / iterations }));
+console.log(JSON.stringify({ optimizationVersion, tool, iterations, elapsedMs: end - start, perIterationMs: (end - start) / iterations }));

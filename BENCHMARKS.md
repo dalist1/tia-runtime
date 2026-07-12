@@ -2,7 +2,40 @@
 
 These are the latest benchmark highlights from the tia research harness.
 
-## `tia pi` vs stock `pi` (head-to-head, pi 0.80.3)
+## Optimization version `2026-07-low-level-v2` (current)
+
+The runtime and development baseline are pinned to `@earendil-works/pi-coding-agent` **0.80.6**, verified as the latest npm release on 2026-07-12. `tia status` prints the optimization version so installed runtimes can be tied back to benchmark records. The machine-readable record is committed at `bench/history/2026-07-low-level-v2.json`.
+
+Current no-network startup comparison, run sequentially on the same pi 0.80.6 source:
+
+| Workload | Baseline | Optimized | Speedup |
+|---|---:|---:|---:|
+| Process startup (`--version`) | stock: 1.037 ± 0.172 s | `tia pi`: 742.2 ± 121.1 ms | **1.40x** |
+| RPC startup (`get_state`) | stock: 1.901 ± 0.172 s | `tia pi`: 661.4 ± 49.1 ms | **2.87x** |
+| JSON startup (`--mode json --no-session`) | full tia: 656.9 ± 30.0 ms | slim tia: 236.2 ± 18.9 ms | **2.78x** |
+
+Component before/after measurements retained by this optimization version:
+
+| Path | Workload | Before | After | Speedup |
+|---|---|---:|---:|---:|
+| extension `write` | 1MB verified atomic writes | 2.825 ms/op | 2.111 ms/op | **1.34x** |
+| extension `edit` | 100KB verified single replacement + rendered diff | 2.028 ms/op | 1.647 ms/op | **1.23x** |
+| slim stream writer | 10M small deltas | 1.296 ± 0.076 s | 961.3 ± 48.1 ms | **1.35x** |
+| `tia pi` slim launcher | no-prompt JSON startup | 233.3 ± 11.4 ms | 189.9 ± 19.0 ms | **1.23x** |
+
+Tool numbers are medians from 12 alternating baseline/optimized rounds. The stream-writer comparison used `hyperfine`, 15 runs / 3 warmup. The launcher comparison used 30 runs / 5 warmup; its direct slim binary measured 184.2 ± 19.2 ms, reducing wrapper overhead from about 49 ms to about 6 ms.
+
+Low-level changes:
+- atomic writes now verify bytes directly through the already-open temporary file descriptor with a reused 256KB comparison buffer, avoiding a close/reopen cycle and a full-size verification allocation
+- target type/mode uses one `lstat` instead of separate `lstat` + `stat` calls, and collision-safe per-process temp nonces replace timestamp/UUID generation
+- exact edit verification uses the same allocation-bounded scanner; output assembly writes into one exact-size buffer
+- diff generation stores numeric line offsets and materializes only displayed lines instead of splitting both complete files into thousands of strings
+- the launcher caches cliproxy checks for 30 seconds, refreshes shell-agent links only when the source directory changes, and avoids unconditional `mkdir` subprocesses; set `TIA_PROXY_CHECK_INTERVAL_SECONDS=0` for an uncached proxy check
+- the slim stream writer batches output in chunk arrays, avoids repeated buffer lookups, specializes the one-index flush path, and coalesces redundant queued microtasks
+
+Correctness gates included the complete fast-tools I/O/patch suite and a 5,000-case randomized parity check against the previous line-diff formatter.
+
+## Previous head-to-head record (pi 0.80.3)
 
 Same pi source on both sides; isolates what `tia-runtime` adds. Toolchain: pi `0.80.3`, bun `1.4.0`, zig `0.17.0-dev.1158+1d1193aa7`, Linux x86_64 (8 cores). `hyperfine`, 12 runs / 3 warmup (startup), 10 runs / 2 warmup (RPC), no network.
 
