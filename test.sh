@@ -41,9 +41,11 @@ rg -n "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:
 rg -n "optimization:.*$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")" "${TMP_DIR}/tia-status.txt" >/dev/null
 rg -n "pi version:.*0\.80\.6" "${TMP_DIR}/tia-status.txt" >/dev/null
 rg -n "fff extension:.*enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
-! rg -n "opencode" "${TMP_DIR}/tia-status.txt" >/dev/null
 PI_PACKAGE_DIR="$(cat "${HOME}/.local/share/tia/pi-package-dir.txt")"
 [[ "$(bun -e 'console.log(require(process.argv[1]).version)' "${PI_PACKAGE_DIR}/package.json")" == "0.80.6" ]]
+[[ -x "${HOME}/.local/share/tia/bin/pi-stream-fast" ]]
+[[ -f "${HOME}/.local/share/tia/stream-runtime/anthropic-messages.mjs" ]]
+[[ -f "${HOME}/.local/share/tia/stream-runtime/openai-responses.mjs" ]]
 
 printf '[3/11] verify tia refreshes shell pi agent links at launch\n'
 CUSTOM_AGENT_DIR="${TMP_DIR}/custom-agent"
@@ -143,7 +145,6 @@ XDG_BIN_HOME="${BOOTSTRAP_BIN_HOME}" \
 XDG_DATA_HOME="${BOOTSTRAP_DATA_HOME}" \
 "${BOOTSTRAP_BIN_HOME}/tia" status > "${TMP_DIR}/bootstrap-status.txt"
 rg -n "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
-! rg -n "opencode" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
 assert_clean_native_search_dir "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/extensions/native-search"
 ! grep -q -- 'set -- --search' "${BOOTSTRAP_BIN_HOME}/tia"
 [[ ! -e "${BOOTSTRAP_BIN_HOME}/max" ]]

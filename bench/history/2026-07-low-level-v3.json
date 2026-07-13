@@ -1,0 +1,17 @@
+{
+ "optimizationVersion": "2026-07-low-level-v3",
+ "dateUtc": "2026-07-12T11:20:00Z",
+ "runtime": {"piPackage": "@earendil-works/pi-coding-agent", "piVersion": "0.80.6", "bunVersion": "1.4.0"},
+ "benchmarks": {
+  "slimJsonStartup": {"runs": 20, "warmup": 5, "previousMeanMs": 236.2, "optimizedMeanMs": 97.5, "optimizedStddevMs": 9.6, "speedupVsPrevious": 2.42},
+  "slimJsonVsFull": {"runs": 20, "warmup": 5, "fullMeanMs": 1161.0, "slimMeanMs": 97.5, "speedup": 11.91},
+  "loopbackAnthropicEndToEnd": {"runs": 15, "warmup": 3, "previousMeanMs": 238.9, "optimizedMeanMs": 116.9, "optimizedStddevMs": 11.5, "speedupVsPrevious": 2.04}
+ },
+ "commands": ["bash bench/hyperfine-tia-json-stream.sh", "hyperfine --shell=none --warmup 3 --runs 15 'env PI_CODING_AGENT_DIR=/tmp/pi-agent ~/.local/share/tia/bin/pi-stream-fast --mode json --no-session --provider anthropic --model claude-opus-4-8 hi'"],
+ "notes": [
+  "The startup benchmark is network-free and sends no prompt.",
+  "The loopback benchmark includes process startup, configuration, provider implementation loading, one local HTTP/SSE request, JSON framing, and process shutdown.",
+  "Provider implementations are minified split ESM assets and only the selected API is loaded.",
+  "The slim runner reads settings, auth, and model configuration directly and does not initialize the full coding-agent registry stack."
+ ]
+}

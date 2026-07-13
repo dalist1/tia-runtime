@@ -37,6 +37,7 @@ export PATH="${TIA_BIN_DIR}:${PATH}"
 TIA_CMD_PATH="${TIA_BIN_DIR}/tia"
 TIA_PI_BIN="${TIA_ROOT}/bin/pi"
 TIA_PI_STREAM_BIN="${TIA_ROOT}/bin/pi-stream-fast"
+TIA_PI_STREAM_RUNTIME_DIR="${TIA_ROOT}/stream-runtime"
 TIA_PI_AGENT_DIR="${TIA_ROOT}/pi-agent"
 TIA_EXTENSION_PATH="${TIA_PI_AGENT_DIR}/extensions/fast-tools.ts"
 TIA_NATIVE_SEARCH_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/native-search"
@@ -54,7 +55,7 @@ TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-}"
 if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" ]]; then
 	TIA_OPTIMIZATION_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")"
 fi
-TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-07-low-level-v2}"
+TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-07-low-level-v3}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 
 usage() {
@@ -418,7 +419,26 @@ install_pi_sandbox() {
 	install_fff_extension
 
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
-	bun -e 'const fs=require("node:fs"); const [path, packageDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}"
+	rm -rf "${TIA_PI_STREAM_RUNTIME_DIR}"
+	mkdir -p "${TIA_PI_STREAM_RUNTIME_DIR}"
+	local pi_ai_dir
+	pi_ai_dir="$(dirname -- "${pi_package_dir}")/pi-ai"
+	[[ -f "${pi_ai_dir}/dist/api/anthropic-messages.js" ]] || die "Could not locate pi-ai stream implementations"
+	bun build --target=bun --format=esm --minify --splitting \
+		--entry-naming='[name].mjs' \
+		--chunk-naming='chunks/[name]-[hash].mjs' \
+		--outdir="${TIA_PI_STREAM_RUNTIME_DIR}" \
+		"${pi_ai_dir}/dist/api/anthropic-messages.js" \
+		"${pi_ai_dir}/dist/api/azure-openai-responses.js" \
+		"${pi_ai_dir}/dist/api/bedrock-converse-stream.js" \
+		"${pi_ai_dir}/dist/api/google-generative-ai.js" \
+		"${pi_ai_dir}/dist/api/google-vertex.js" \
+		"${pi_ai_dir}/dist/api/mistral-conversations.js" \
+		"${pi_ai_dir}/dist/api/openai-codex-responses.js" \
+		"${pi_ai_dir}/dist/api/openai-completions.js" \
+		"${pi_ai_dir}/dist/api/openai-responses.js" \
+		"${pi_ai_dir}/dist/oauth.js" >/dev/null
+	bun -e 'const fs=require("node:fs"); const [path, packageDir, runtimeDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir).replaceAll("__STREAM_RUNTIME_DIR__", runtimeDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}" "${TIA_PI_STREAM_RUNTIME_DIR}"
 	# Bytecode compilation cuts slim stream startup significantly; fall back to a
 	# plain minified compile when the bun/bundle combination cannot emit bytecode.
 	if ! bun build --compile --minify --bytecode "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}" >/dev/null 2>&1; then
@@ -448,11 +468,6 @@ install_pi_sandbox() {
 	fi
 
 	printf '%s\n' "${pi_package_dir}" > "${TIA_ROOT}/pi-package-dir.txt"
-}
-
-cleanup_removed_features() {
-	rm -f "${TIA_ROOT}/opencode-command.txt"
-	rm -rf "${TIA_ROOT}/opencode"
 }
 
 write_tia_wrapper() {
@@ -611,17 +626,25 @@ case "\${subcommand}" in
       echo "tia pi is not installed. Re-run: bash install.sh tia install" >&2
       exit 1
     }
+    export TIA_ACTIVE=1
+    export TIA_COMMAND="tia pi"
+    if should_use_fast_stream "\$@"; then
+      ensure_cliproxy_started
+      TIA_STREAM_AGENT_DIR="\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
+      if [[ "\${TIA_STREAM_AGENT_DIR}" == "\${TIA_PI_AGENT_DIR}" ]]; then
+        TIA_STREAM_AGENT_DIR="\${HOME}/.pi/agent"
+      fi
+      export TIA_STREAM_AGENT_DIR
+      export PI_CODING_AGENT_DIR="\${TIA_PI_AGENT_DIR}"
+      export PI_PACKAGE_DIR="${TIA_ROOT}/bin"
+      exec "\${TIA_PI_STREAM_BIN}" "\$@"
+    fi
     ensure_cliproxy_started
     refresh_shell_agent_links
     configure_fff_env "\$@"
-    export TIA_ACTIVE=1
-    export TIA_COMMAND="tia pi"
     export PI_CODING_AGENT_DIR="\${TIA_PI_AGENT_DIR}"
     export PI_PACKAGE_DIR="${TIA_ROOT}/bin"
     export NODE_PATH="\${TIA_PI_AGENT_DIR}/node_modules\${NODE_PATH:+:\${NODE_PATH}}"
-    if should_use_fast_stream "\$@"; then
-      exec "\${TIA_PI_STREAM_BIN}" "\$@"
-    fi
     exec "\${TIA_PI_BIN}" "\$@"
     ;;
   status)
@@ -670,7 +693,6 @@ EOF2
 
 install_all() {
 	need_cmd bun
-	cleanup_removed_features
 	install_pi_sandbox
 	write_tia_wrapper
 	printf 'Installed %s command at %s\n' "${RUNTIME_NAME}" "${TIA_CMD_PATH}"

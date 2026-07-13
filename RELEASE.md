@@ -6,11 +6,10 @@ Tia runtime release.
 
 ### Highlights
 - `install.sh` now supports only the `tia` top-level target
-- runtime subcommands now include `tia pi` and `tia opencode`
+- `tia pi` is the only supported coding-agent runtime command
 - deprecated top-level modes `max`, `fast-pi`, and `fast-pi-max` are now rejected
 - docs and release assets were simplified around the tia runtime
 - `tia pi` remains the path that combines startup and tool optimization without patching upstream pi
-- `tia opencode` adds opencode launch support via tia-managed XDG wrapper directories while preserving the same shell credentials and session state
 
 ### Recommended install
 
@@ -28,7 +27,7 @@ curl -fsSL https://your.host/install.sh | \
 ```
 
 ### Notes
-- supported runtime subcommands: `tia pi`, `tia opencode`
+- supported coding-agent runtime command: `tia pi`
 - benchmark-only reference path: compiled direct `pi`
 
 ## v0.1.6

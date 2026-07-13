@@ -1,9 +1,9 @@
 # tia-runtime — Terminal Interactive Agents runtime
 
-**tia-runtime** is an open runtime that makes terminal coding agents faster without patching upstream agent codebases.
+**tia-runtime** is an open runtime that makes the pi coding agent faster without patching its upstream codebase.
 
 Goal:
-- make terminal coding agents faster without patching upstream agent codebases
+- make the pi coding agent faster without patching its upstream codebase
 - keep the fast path simple and sandboxed
 - expose the user-facing `tia pi` runtime from this project
 
@@ -11,7 +11,9 @@ Reference baselines still exist for comparison:
 - stock/native `pi`
 - compiled direct `pi` benchmark path
 
-## Supported modes
+## Supported coding agent
+
+The pi coding agent is the only coding agent currently supported by tia-runtime.
 
 Install the `tia` launcher with:
 
@@ -62,17 +64,17 @@ This path is smoke-tested from outside the repo checkout.
 
 ## `tia pi` vs stock `pi` (head-to-head)
 
-Both runtimes execute the **same pi source** (`@earendil-works/pi-coding-agent`), so this isolates what `tia-runtime` adds: AOT-compiled + minified startup, a bytecode-compiled slim stream runner, and the sandbox wiring. Stock `pi` is run straight from `dist/cli.js`; `tia pi` is the installed launcher.
+Both runtimes execute the **same pi source** (`@earendil-works/pi-coding-agent`), so this isolates what `tia-runtime` adds: AOT-compiled + minified startup, a low-level slim stream runner with on-demand provider modules, and the sandbox wiring. Stock `pi` is run straight from `dist/cli.js`; `tia pi` is the installed launcher.
 
-Current benchmark marker: **`2026-07-low-level-v2`**. Toolchain: pi `0.80.6` (latest npm release verified 2026-07-12), bun `1.4.0`, zig `0.17.0-dev.305+bdfbf432d`, Linux x86_64 (8 cores). No network: startup/stream benchmarks send no prompt and use a dummy API key. The complete machine-readable record is `bench/history/2026-07-low-level-v2.json`.
+Current benchmark marker: **`2026-07-low-level-v3`**. Toolchain: pi `0.80.6`, bun `1.4.0`, Linux x86_64 (8 cores). The complete machine-readable record is `bench/history/2026-07-low-level-v3.json`.
 
 | Workload | Baseline | `tia pi` optimized | Speedup |
 |---|---:|---:|---:|
 | Process startup (`--version`) | stock: 1.037 ± 0.172 s | 742.2 ± 121.1 ms | **1.40x** |
 | RPC startup (`get_state`) | stock: 1.901 ± 0.172 s | 661.4 ± 49.1 ms | **2.87x** |
-| JSON stream startup (`--mode json --no-session`, no prompt) | full tia: 656.9 ± 30.0 ms | 236.2 ± 18.9 ms | **2.78x** |
+| JSON stream startup (`--mode json --no-session`, no prompt) | full tia: 1.161 s | 97.5 ± 9.6 ms | **11.91x** |
 
-The slim stream path is where `tia pi` pulls furthest ahead: it bypasses the full CLI/AgentSession/tools/extensions and calls pi's provider streaming layer directly from a bytecode-compiled runner. The full-CLI RPC path shares most of pi's startup cost with stock, so tia's edge there is just the compiled+minified binary.
+The slim stream path is where `tia pi` pulls furthest ahead: it bypasses the full CLI/AgentSession/tools/extensions, resolves its small read-only configuration path directly, and loads only the selected provider implementation. Compared with the prior slim runtime, no-network startup improved from 236.2 ms to 97.5 ms (**2.42x**) and a complete loopback HTTP/SSE stream improved from 238.9 ms to 116.9 ms (**2.04x**). Text deltas are microtask-coalesced instead of waiting for the 4 ms batching timer.
 
 Reproduce startup/stream:
 

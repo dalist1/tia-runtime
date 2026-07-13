@@ -62,7 +62,7 @@ bash scripts/install-tia.sh uninstall
 - reuses your current shell agent auth/settings/models via symlinks refreshed at launch time
 - avoids self-linking the tia sandbox if `PI_CODING_AGENT_DIR` already points there, preserving shell pi / cliproxy linkage
 - preserves the current shell environment for provider/model login env vars
-- supports an opt-in slim stream runtime for `--mode json --no-session`
+- uses a low-level slim stream runtime by default for `--mode json --no-session`, with provider code loaded on demand
 - keeps FFF frecency/history state in the tia sandbox under `~/.local/share/tia/pi-agent/fff`
 - covers both startup and tool-runtime optimization in one launcher path
 

@@ -2,7 +2,21 @@
 
 These are the latest benchmark highlights from the tia research harness.
 
-## Optimization version `2026-07-low-level-v2` (current)
+## Optimization version `2026-07-low-level-v3` (current)
+
+The slim streaming path now keeps only its small control plane in the compiled executable. Provider implementations are installed as minified split ESM assets and loaded on demand, while settings, auth, model overrides, and model selection are resolved directly without initializing the full coding-agent registry stack.
+
+| Workload | Previous | Optimized | Speedup |
+|---|---:|---:|---:|
+| Slim JSON startup, no network | 236.2 ± 18.9 ms | 97.5 ± 9.6 ms | **2.42x** |
+| End-to-end loopback Anthropic stream | 238.9 ms | 116.9 ± 11.5 ms | **2.04x** |
+| Full tia JSON vs slim JSON startup | 1.161 s | 97.5 ms | **11.91x** |
+
+The loopback measurement includes process launch, configuration/model/auth resolution, loading the selected provider implementation, an HTTP/SSE request, stream framing, and shutdown. It therefore checks that reducing executable startup does not merely move the cost into first request setup. Text deltas now bypass the 4 ms batching timer and are microtask-coalesced, preserving same-turn batching without adding timer latency.
+
+The launcher routes slim calls before FFF setup and shell-agent symlink refresh. It passes the source agent directory directly to the runner, while retaining the cliproxy availability check. The machine-readable record is `bench/history/2026-07-low-level-v3.json`.
+
+## Optimization version `2026-07-low-level-v2`
 
 The runtime and development baseline are pinned to `@earendil-works/pi-coding-agent` **0.80.6**, verified as the latest npm release on 2026-07-12. `tia status` prints the optimization version so installed runtimes can be tied back to benchmark records. The machine-readable record is committed at `bench/history/2026-07-low-level-v2.json`.
 

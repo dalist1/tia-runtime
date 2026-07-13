@@ -148,3 +148,17 @@ test('drain() resolves and delivers all bytes even when the sink applies backpre
  expect(delta).toBe('x'.repeat(200))
  expect(frames.some(frame => frame.t === 'e' && frame.i === 0)).toBe(true)
 })
+
+test('the first text delta is emitted without the batching timer delay', async () => {
+ const capture = createCapture()
+ const writer = new SlimStreamWriter(capture.sink)
+ writer.enqueueTextStart(0)
+ writer.enqueueDelta(0, 'first')
+ await new Promise<void>(resolve => queueMicrotask(resolve))
+ const frames = parseFrames(capture.read())
+ expect(frames).toEqual([
+  {t: 's', i: 0},
+  {t: 'd', i: 0, s: 'first'}
+ ])
+ await writer.drain()
+})
