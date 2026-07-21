@@ -12,7 +12,7 @@ INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/
 usage() {
 	cat <<'EOF'
 Usage:
-  install.sh [tia] [install|status|uninstall] [--search]
+  install.sh [tia] [install|status|uninstall]
 
 Defaults to:
   install.sh tia install
@@ -20,13 +20,11 @@ Defaults to:
 Examples:
   bash install.sh
   bash install.sh tia install
-  bash install.sh tia install --search
   bash install.sh tia status
 
 Notes:
   - tia is the only supported top-level installer target.
   - Installed tia runtime supports the `pi` subcommand.
-  - Pass --search to install the native_search extension; runtime invocations do not need --search.
   - If the repo is cloned locally, this script delegates to ./scripts/* directly.
   - If run via curl, set INSTALL_BASE_URL on the bash side of the pipeline to a
     location serving the scripts/ directory if the default raw GitHub URL is not
@@ -57,11 +55,7 @@ case "${MODE}" in
 		;;
 esac
 
-if [[ "${MODE}" == "--search" || "${MODE}" == "--no-search" ]]; then
-	EXTRA_ARGS=("$@")
-	MODE="tia"
-	ACTION="install"
-elif [[ "${MODE}" == "tia" ]]; then
+if [[ "${MODE}" == "tia" ]]; then
 	if [[ "${2:-}" == --* ]]; then
 		ACTION="install"
 		EXTRA_ARGS=("${@:2}")

@@ -5,9 +5,9 @@
   "bench:feedback": "bash bench/feedback-loop.sh",
   "bench:writer": "bun bench/slim-stream-writer-burst.ts 1000 10000",
   "install:zig": "bash scripts/install-zig.sh",
-  "lint": "oxlint -c .oxlintrc.json scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts --deny-warnings",
-  "format": "oxfmt --check scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts bench/history/*.json package.json .oxlintrc.json",
-  "format:write": "oxfmt --write scripts/*.ts scripts/native-search-extension/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts bench/history/*.json package.json .oxlintrc.json"
+  "lint": "oxlint -c .oxlintrc.json scripts/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts --deny-warnings",
+  "format": "oxfmt --check scripts/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts bench/history/*.json package.json .oxlintrc.json",
+  "format:write": "oxfmt --write scripts/*.ts bench/summarize-feedback-loop.ts bench/slim-stream-writer-burst.ts bench/history/*.json package.json .oxlintrc.json"
  },
  "devDependencies": {
   "@earendil-works/pi-coding-agent": "0.80.6",

@@ -94,7 +94,6 @@ These compare `tia pi`'s retained fast paths against tia's own slower reference 
 | retained tool path | `edit` burst | about **2.1x** faster than the reference in smoke loops |
 | retained tool path | verified `write` burst | about **1.5–1.6x** faster than the reference in smoke loops |
 | retained tool path | `bash` drain/copy burst | about **1.9x** faster than the reference in smoke loops |
-| `native_search` | full local Zig fixture/extract/rank | 2k raw docs in **11.3 ms** (zero network benchmark) |
 
 The tool burst rows above come from the standalone burst harness. `bench/fast-tools-extension-burst.ts` additionally measures the real installed `fast-tools` extension code path (mutation queues, verification, and result assembly included).
 
@@ -134,15 +133,6 @@ The installed fast-tools extension runs the hot tool paths fully in-process (no 
 
 The native `fastread-window`/`fastwrite`/`fastedit` binaries remain in `native/` and `bin/` as benchmark comparison baselines only.
 
-Pass `--search` at install time to add the modular native search extension. Runtime sessions then use the installed `native_search` tool automatically; do not pass `--search` to `tia pi`:
-- `native_search` performs bounded website search from provided URLs/sites only; query-only URLs use exact direct-URL mode without discovery
-- vanilla implementation: no third-party extraction libraries and no search-engine/tool APIs
-- discovers `llms.txt`, sitemaps, and same-origin links in bounded site mode
-- final exact URL fetch, markdown/html extraction, ranking, and output are handled by the compiled Zig backend
-- default `balanced` planning uses divide-and-conquer round-robin candidate selection across origins; `deep` and `direct` strategies are available
-- stays bounded by explicit sites/URLs, caps pages/results, and applies a per-origin/inter-request delay
-- live smoke benchmarking is opt-in and runs exact URL fetch/extract/rank through Zig only
-
 The installer also attempts to add the official FFF pi extension, using the upstream `nightly` dist-tag by default:
 - `find`/`grep` are backed by FFF in the default `override` mode
 - `multi_grep` adds FFF multi-pattern content search
@@ -163,7 +153,7 @@ Verify which source is active with `tia status | grep fff`.
 
 The installer ensures `@earendil-works/pi-coding-agent` is installed at the pinned latest version before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pin, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
 
-Set `TIA_ENABLE_FFF=0` to skip FFF entirely, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior. Set `TIA_ENABLE_NATIVE_SEARCH=1` or pass `bash install.sh tia install --search` to install native search; omit it or pass `--no-search` to leave runtime behavior to whatever global/user extensions are already installed. Extensions from the shell/global pi agent are loaded via the shared `settings.json` packages list.
+Set `TIA_ENABLE_FFF=0` to skip FFF entirely, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior. Extensions from the shell/global pi agent are loaded via the shared `settings.json` packages list.
 
 Removed from active tool benchmarking and harness code:
 
@@ -208,7 +198,7 @@ For a heavier confirmation pass:
 TIER=full ROUNDS=5 bash bench/feedback-loop.sh
 ```
 
-The feedback loop auto-installs the pinned Zig nightly (`0.17.0-dev.1158+1d1193aa7`) locally for measured Zig-built helper candidates. You can also install it explicitly:
+The feedback loop auto-installs the pinned Zig nightly (`0.17.0-dev.1441+d5181a9c9`) locally for measured Zig-built helper candidates. You can also install it explicitly:
 
 ```bash
 bun run install:zig
@@ -248,9 +238,6 @@ bash bench/hyperfine-pi-rpc-direct.sh
 bash bench/hyperfine-pi-tools-fast-burst.sh
 bash bench/hyperfine-pi-tools-fast-stream.sh
 bash bench/hyperfine-pi-tools-persistent.sh
-bash bench/hyperfine-native-search-zig.sh
-bash bench/build-native-search-zig.sh
-TIA_NATIVE_SEARCH_LIVE=1 bash bench/native-search-live-smoke.sh
 ```
 
 To burst the real installed fast-tools extension path directly:

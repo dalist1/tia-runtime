@@ -6,20 +6,9 @@ ACTION="${1:-install}"
 if [[ "$#" -gt 0 ]]; then
 	shift
 fi
-TIA_INSTALL_NATIVE_SEARCH="${TIA_ENABLE_NATIVE_SEARCH:-0}"
 for arg in "$@"; do
-	case "${arg}" in
-		--search)
-			TIA_INSTALL_NATIVE_SEARCH=1
-			;;
-		--no-search)
-			TIA_INSTALL_NATIVE_SEARCH=0
-			;;
-		*)
-			printf 'Error: unsupported installer option: %s\n' "${arg}" >&2
-			exit 1
-			;;
-	esac
+	printf 'Error: unsupported installer option: %s\n' "${arg}" >&2
+	exit 1
 done
 SOURCE_PATH="${BASH_SOURCE[0]:-$0}"
 if [[ -f "${SOURCE_PATH}" ]]; then
@@ -40,7 +29,6 @@ TIA_PI_STREAM_BIN="${TIA_ROOT}/bin/pi-stream-fast"
 TIA_PI_STREAM_RUNTIME_DIR="${TIA_ROOT}/stream-runtime"
 TIA_PI_AGENT_DIR="${TIA_ROOT}/pi-agent"
 TIA_EXTENSION_PATH="${TIA_PI_AGENT_DIR}/extensions/fast-tools.ts"
-TIA_NATIVE_SEARCH_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/native-search"
 TIA_FAST_TOOLS_DIR="${TIA_PI_AGENT_DIR}/fast-tools"
 TIA_FFF_EXTENSION_DIR="${TIA_PI_AGENT_DIR}/extensions/fff"
 TIA_FFF_STATE_DIR="${TIA_PI_AGENT_DIR}/fff"
@@ -61,16 +49,12 @@ PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 usage() {
 	cat <<EOF2
 Usage:
-  install-tia.sh install [--search]
+  install-tia.sh install
   install-tia.sh uninstall
   install-tia.sh status
 
 Installs the tia-runtime launcher command so you can run:
   tia pi [args...]
-
-Options:
-  --search     Install the native_search extension. Runtime invocations do not need --search.
-  --no-search  Remove/skip the native_search extension (default unless TIA_ENABLE_NATIVE_SEARCH=1).
 
 Environment:
   TIA_FFF_SOURCE  FFF source: vanilla (npm @ff-labs/pi-fff) or fork (edxeth/fff GitHub).
@@ -179,6 +163,7 @@ ensure_pi_package_version() {
 }
 
 install_fast_tool_helpers() {
+	rm -rf "${TIA_FAST_TOOLS_DIR}"
 	mkdir -p "${TIA_FAST_TOOLS_DIR}"
 
 	# read/write/edit now run fully in-process inside the fast-tools extension;
@@ -223,46 +208,6 @@ install_fast_tool_helpers() {
 		if [[ -n "${missing}" ]]; then
 			die "native fast-tool helpers missing:${missing}"
 		fi
-	fi
-}
-
-install_native_search_extension() {
-	if [[ "${TIA_INSTALL_NATIVE_SEARCH}" != "1" ]]; then
-		rm -rf "${TIA_NATIVE_SEARCH_EXTENSION_DIR}"
-		rm -f "${TIA_FAST_TOOLS_DIR}/native-search-zig"
-		return 0
-	fi
-
-	rm -rf "${TIA_NATIVE_SEARCH_EXTENSION_DIR}"
-	mkdir -p "${TIA_NATIVE_SEARCH_EXTENSION_DIR}"
-	local file
-	for file in \
-		config.ts \
-		discover.ts \
-		http.ts \
-		index.ts \
-		progress.ts \
-		render.ts \
-		text.ts \
-		tool.ts \
-		types.ts \
-		native-search.zig; do
-		copy_or_fetch_script_asset \
-			"native-search-extension/${file}" \
-			"${TIA_NATIVE_SEARCH_EXTENSION_DIR}/${file}"
-	done
-
-	if command -v zig >/dev/null 2>&1; then
-		zig build-exe \
-			-O ReleaseFast \
-			-fsingle-threaded \
-			-fstrip \
-			--cache-dir "${TIA_ROOT}/zig-cache" \
-			--global-cache-dir "${HOME}/.cache/zig" \
-			"${TIA_NATIVE_SEARCH_EXTENSION_DIR}/native-search.zig" \
-			-femit-bin="${TIA_FAST_TOOLS_DIR}/native-search-zig" >/dev/null
-	elif [[ -x "${ROOT_DIR}/bin/native-search-zig" ]]; then
-		cp "${ROOT_DIR}/bin/native-search-zig" "${TIA_FAST_TOOLS_DIR}/native-search-zig"
 	fi
 }
 
@@ -409,13 +354,13 @@ install_pi_sandbox() {
 	fi
 
 	bun build --compile --minify "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
+	rm -rf "${TIA_PI_AGENT_DIR}/extensions"
+	mkdir -p "$(dirname -- "${TIA_EXTENSION_PATH}")"
 	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
-	rm -rf "${TIA_PI_AGENT_DIR}/extensions/edit-classic.ts" "${TIA_PI_AGENT_DIR}/extensions/edit-diagnostics.ts" "${TIA_PI_AGENT_DIR}/extensions/edit-patch.ts" "${TIA_PI_AGENT_DIR}/extensions/fast-tools-lib"
 	local pi_node_modules
 	pi_node_modules="$(dirname -- "$(dirname -- "${pi_package_dir}")")"
 	ln -sfn "${pi_node_modules}" "${TIA_PI_AGENT_DIR}/node_modules"
 	install_fast_tool_helpers
-	install_native_search_extension
 	install_fff_extension
 
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
@@ -663,11 +608,6 @@ case "\${subcommand}" in
     echo "history mode:        \tunchanged by tia pi startup"
     echo "cliproxy auto-start:\tenabled for tia pi when systemd user services are available"
     echo "fast stream:         \tenabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)"
-    if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/native-search/index.ts" ]]; then
-      echo "native search:       \tinstalled (native_search tool enabled)"
-    else
-      echo "native search:       \tnot installed"
-    fi
     if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/index.ts" ]]; then
       fff_source="vanilla"
       if grep -q '@edxeth/pi-fff' "\${TIA_PI_AGENT_DIR}/extensions/fff/package.json" 2>/dev/null; then
@@ -732,11 +672,6 @@ status_all() {
 	printf 'history mode:        unchanged by tia pi startup\n'
 	printf 'cliproxy auto-start: enabled for tia pi when systemd user services are available\n'
 	printf 'fast stream:         enabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)\n'
-	if [[ -f "${TIA_NATIVE_SEARCH_EXTENSION_DIR}/index.ts" ]]; then
-		printf 'native search:       installed (native_search tool enabled)\n'
-	else
-		printf 'native search:       not installed\n'
-	fi
 	if [[ -f "${TIA_FFF_EXTENSION_DIR}/index.ts" ]]; then
 		local fff_source="vanilla"
 		if grep -q '@edxeth/pi-fff' "${TIA_FFF_EXTENSION_DIR}/package.json" 2>/dev/null; then

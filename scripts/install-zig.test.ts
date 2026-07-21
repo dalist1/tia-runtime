@@ -29,7 +29,7 @@ test('install-zig resolves pinned macOS and Linux archive platforms before downl
  ]) {
   const result = await installZigWithFakeTools(machine, system)
   expect(result.exitCode).toBe(99)
-  expect(result.stderr).toContain(`zig-${platform}-0.17.0-dev.1158+1d1193aa7.tar.xz`)
+  expect(result.stderr).toContain(`zig-${platform}-0.17.0-dev.1441+d5181a9c9.tar.xz`)
   expect(result.stderr).not.toContain('Unsupported Zig platform')
  }
 })
