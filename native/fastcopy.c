@@ -16,6 +16,8 @@
 
 enum { BUFFER_SIZE = 1 << 20 };
 
+static char copy_buffer[BUFFER_SIZE];
+
 static void fail(const char *message) {
 	perror(message);
 	exit(errno ? errno : 1);
@@ -29,50 +31,55 @@ static void write_all(int fd, const char *buffer, size_t size) {
 			if (errno == EINTR) continue;
 			fail("write");
 		}
+		if (bytes_written == 0) {
+			errno = EIO;
+			fail("write");
+		}
 		written += (size_t)bytes_written;
 	}
 }
 
 static void copy_read_write(int src_fd, int dst_fd) {
-	char *buffer = NULL;
-	if (posix_memalign((void **)&buffer, 4096, BUFFER_SIZE) != 0) {
-		fail("posix_memalign");
-	}
-
 #ifdef POSIX_FADV_SEQUENTIAL
 	(void)posix_fadvise(src_fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
 
 	for (;;) {
-		ssize_t bytes_read = read(src_fd, buffer, BUFFER_SIZE);
+		ssize_t bytes_read = read(src_fd, copy_buffer, BUFFER_SIZE);
 		if (bytes_read == 0) break;
 		if (bytes_read < 0) {
 			if (errno == EINTR) continue;
-			free(buffer);
 			fail("read");
 		}
-		write_all(dst_fd, buffer, (size_t)bytes_read);
+		write_all(dst_fd, copy_buffer, (size_t)bytes_read);
 	}
-
-	free(buffer);
 }
 
-static bool copy_copy_file_range(int src_fd, int dst_fd) {
+static bool copy_copy_file_range(int src_fd, int dst_fd, off_t total_size) {
 #ifdef __linux__
-	for (;;) {
-		ssize_t copied = copy_file_range(src_fd, NULL, dst_fd, NULL, 1 << 20, 0);
+	off_t copied_total = 0;
+	do {
+		off_t remaining = total_size - copied_total;
+		size_t count = total_size == 0 ? (1 << 30) : (size_t)(remaining > (off_t)(1 << 30) ? (1 << 30) : remaining);
+		ssize_t copied = copy_file_range(src_fd, NULL, dst_fd, NULL, count, 0);
 		if (copied == 0) return true;
 		if (copied < 0) {
 			if (errno == EINTR) continue;
 			if (errno == EXDEV || errno == EINVAL || errno == ENOSYS || errno == EPERM) {
 				return false;
 			}
+#ifdef EOPNOTSUPP
+			if (errno == EOPNOTSUPP) return false;
+#endif
 			fail("copy_file_range");
 		}
-	}
+		copied_total += copied;
+	} while (total_size == 0 || copied_total < total_size);
+	return true;
 #else
 	(void)src_fd;
 	(void)dst_fd;
+	(void)total_size;
 	return false;
 #endif
 }
@@ -90,9 +97,12 @@ static bool copy_sendfile_loop(int src_fd, int dst_fd, off_t total_size) {
 		if (sent == 0) return true;
 		if (sent < 0) {
 			if (errno == EINTR) continue;
-			if (errno == EINVAL || errno == ENOSYS || errno == EXDEV) {
+			if (errno == EINVAL || errno == ENOSYS || errno == EXDEV || errno == EPERM) {
 				return false;
 			}
+#ifdef EOPNOTSUPP
+			if (errno == EOPNOTSUPP) return false;
+#endif
 			fail("sendfile");
 		}
 	}
@@ -103,6 +113,12 @@ static bool copy_sendfile_loop(int src_fd, int dst_fd, off_t total_size) {
 	(void)total_size;
 	return false;
 #endif
+}
+
+static void reset_copy(int src_fd, int dst_fd) {
+	if (lseek(src_fd, 0, SEEK_SET) < 0) fail("lseek src reset");
+	if (lseek(dst_fd, 0, SEEK_SET) < 0) fail("lseek dst reset");
+	if (ftruncate(dst_fd, 0) != 0) fail("truncate dst reset");
 }
 
 int main(int argc, char **argv) {
@@ -122,16 +138,16 @@ int main(int argc, char **argv) {
 	int dst_fd = open(dst_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, st.st_mode & 0777);
 	if (dst_fd < 0) fail("open dst");
 
-	bool copied = copy_copy_file_range(src_fd, dst_fd);
+	bool copied = copy_copy_file_range(src_fd, dst_fd, st.st_size);
 	if (!copied) {
+		reset_copy(src_fd, dst_fd);
 		copied = copy_sendfile_loop(src_fd, dst_fd, st.st_size);
 	}
 	if (!copied) {
-		if (lseek(src_fd, 0, SEEK_SET) < 0) fail("lseek src reset");
+		reset_copy(src_fd, dst_fd);
 		copy_read_write(src_fd, dst_fd);
 	}
 
-	if (fsync(dst_fd) != 0) fail("fsync dst");
 	if (close(dst_fd) != 0) fail("close dst");
 	if (close(src_fd) != 0) fail("close src");
 

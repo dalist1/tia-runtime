@@ -12,6 +12,9 @@
 #include <unistd.h>
 
 #define READ_CHUNK_SIZE (1 << 20)
+#define VERIFY_CHUNK_SIZE (1 << 18)
+
+static char verify_buffer[VERIFY_CHUNK_SIZE];
 
 static void fail(const char *message) {
 	perror(message);
@@ -31,6 +34,7 @@ static void write_all_fd(int fd, const char *buffer, size_t size) {
 			if (errno == EINTR) continue;
 			fail("write");
 		}
+		if (bytes_written == 0) fail_message("write returned zero bytes");
 		written += (size_t)bytes_written;
 	}
 }
@@ -63,28 +67,27 @@ static char *read_all_fd(int fd, size_t *size_out) {
 	return buffer;
 }
 
-static char *read_file(const char *path, size_t *size_out) {
-	int fd = open(path, O_RDONLY | O_CLOEXEC);
-	if (fd < 0) fail("open verify");
-	char *buffer = read_all_fd(fd, size_out);
-	if (close(fd) != 0) fail("close verify");
-	return buffer;
-}
-
-static void verify_file_exact(const char *path, const char *expected, size_t expected_size, const char *stage) {
-	size_t actual_size = 0;
-	char *actual = read_file(path, &actual_size);
-	if (actual_size != expected_size || memcmp(actual, expected, expected_size) != 0) {
-		fprintf(
-			stderr,
-			"write verification failed after %s: expected %zu bytes, got %zu bytes\n",
-			stage,
-			expected_size,
-			actual_size);
-		free(actual);
+static void verify_fd_exact(int fd, const char *expected, size_t expected_size, const char *stage) {
+	struct stat st;
+	if (fstat(fd, &st) != 0) fail("fstat verify");
+	if (st.st_size < 0 || (uintmax_t)st.st_size != (uintmax_t)expected_size) {
+		fprintf(stderr, "write verification failed after %s: expected %zu bytes, got %jd bytes\n", stage, expected_size, (intmax_t)st.st_size);
 		exit(1);
 	}
-	free(actual);
+	size_t offset = 0;
+	while (offset < expected_size) {
+		size_t wanted = expected_size - offset < VERIFY_CHUNK_SIZE ? expected_size - offset : VERIFY_CHUNK_SIZE;
+		ssize_t bytes_read = pread(fd, verify_buffer, wanted, (off_t)offset);
+		if (bytes_read < 0) {
+			if (errno == EINTR) continue;
+			fail("pread verify");
+		}
+		if (bytes_read == 0 || memcmp(verify_buffer, expected + offset, (size_t)bytes_read) != 0) {
+			fprintf(stderr, "write verification failed after %s at byte %zu\n", stage, offset);
+			exit(1);
+		}
+		offset += (size_t)bytes_read;
+	}
 }
 
 static bool is_symlink_path(const char *path) {
@@ -108,10 +111,8 @@ static void fsync_parent_dir(const char *path) {
 	if (!copy) fail("strdup");
 	char *slash = strrchr(copy, '/');
 	if (!slash) {
-		free(copy);
-		return;
-	}
-	if (slash == copy) {
+		strcpy(copy, ".");
+	} else if (slash == copy) {
 		slash[1] = '\0';
 	} else {
 		*slash = '\0';
@@ -125,12 +126,13 @@ static void fsync_parent_dir(const char *path) {
 }
 
 static void write_verified_path(const char *path, const char *content, size_t content_size, mode_t mode) {
-	int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
+	int fd = open(path, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, mode);
 	if (fd < 0) fail("open output");
+	if (fchmod(fd, mode) != 0) fail("fchmod output");
 	write_all_fd(fd, content, content_size);
 	if (fsync(fd) != 0) fail("fsync output");
+	verify_fd_exact(fd, content, content_size, "write");
 	if (close(fd) != 0) fail("close output");
-	verify_file_exact(path, content, content_size, "write");
 }
 
 int main(int argc, char **argv) {
@@ -144,7 +146,7 @@ int main(int argc, char **argv) {
 	char *content = read_all_fd(STDIN_FILENO, &content_size);
 
 	if (is_symlink_path(target_path)) {
-		write_verified_path(target_path, content, content_size, 0644);
+		write_verified_path(target_path, content, content_size, target_mode_or_default(target_path));
 		printf("{\"ok\":true,\"bytes\":%zu,\"mode\":\"symlink\"}\n", content_size);
 		free(content);
 		return 0;
@@ -161,7 +163,6 @@ int main(int argc, char **argv) {
 		fail("rename output");
 	}
 	fsync_parent_dir(target_path);
-	verify_file_exact(target_path, content, content_size, "rename");
 
 	printf("{\"ok\":true,\"bytes\":%zu,\"mode\":\"atomic\"}\n", content_size);
 	free(content);

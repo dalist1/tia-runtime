@@ -45,8 +45,6 @@ function collect(resultDir: string) {
    const results = data.results ?? []
    if (results.length === 0) continue
    suites[suite] ??= {}
-   // Only real baseline commands anchor speedups; retained-only suites have no
-   // baseline and report speedup n/a instead of comparing a fast path to itself.
    if (baselines[suite] === undefined) {
     const firstBaseline = results.find((item: AnyObj) => isBaseline(String(item.command ?? '')))
     if (firstBaseline) baselines[suite] = firstBaseline.command
@@ -132,7 +130,8 @@ function writeMarkdown(resultDir: string, config: AnyObj, summary: AnyObj) {
   lines.push('')
  }
  lines.push('## Winners by suite', '', '| Suite | Winner | Mean | Speedup | CV | Success |', '|---|---|---:|---:|---:|---:|')
- for (const entry of Object.entries(summary.suites).sort()) {
+ const suites: Record<string, AnyObj> = summary.suites
+ for (const entry of Object.entries(suites).sort()) {
   const suite = entry[0]
   const item = entry[1]
   const w = item.winner

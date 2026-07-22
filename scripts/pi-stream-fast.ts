@@ -1,4 +1,3 @@
-// These placeholders are replaced with installed paths before compilation.
 if ('__PI_PACKAGE_DIR__'.includes('/')) {
  process.env.PI_PACKAGE_DIR ??= '__PI_PACKAGE_DIR__'
 }
@@ -6,20 +5,20 @@ if ('__PI_PACKAGE_DIR__'.includes('/')) {
 import {existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmdirSync, writeFileSync} from 'node:fs'
 import {homedir} from 'node:os'
 import {join} from 'node:path'
-import type {AssistantMessage, Context, SimpleStreamOptions} from '__PI_PACKAGE_DIR__/../pi-ai/dist/types.js'
+import type {AssistantMessage, AssistantMessageEventStream, Context, SimpleStreamOptions} from '@earendil-works/pi-ai'
 
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 type ParsedArgs = {provider?: string; modelId?: string; thinkingLevel?: ThinkingLevel; messages: string[]}
 type StreamSink = (chunk: string, callback: () => void) => boolean
-type JsonObject = Record<string, unknown>
+type JsonObject = Record<string, any>
 type Model = {id: string; name?: string; api: string; provider: string; baseUrl: string; reasoning?: boolean; thinkingLevelMap?: JsonObject; input: string[]; cost: JsonObject; contextWindow: number; maxTokens: number; headers?: Record<string, string>; compat?: JsonObject}
 
-type RuntimeConfig = {model: Model; thinkingLevel?: ThinkingLevel; streamOptions: SimpleStreamOptions; loadApi: () => Promise<{streamSimple: (model: Model, context: Context, options: SimpleStreamOptions) => AsyncIterable<unknown> & {result: () => Promise<AssistantMessage>}}>}
+type RuntimeConfig = {model: Model; thinkingLevel?: ThinkingLevel; streamOptions: SimpleStreamOptions; loadApi: () => Promise<{streamSimple: (model: Model, context: Context, options: SimpleStreamOptions) => AssistantMessageEventStream}>}
+type RuntimeFiles = {settings: JsonObject; authPath: string; auth: JsonObject; modelsConfig: JsonObject}
 
 const STREAM_RUNTIME_DIR = '__STREAM_RUNTIME_DIR__'
 const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'medium'
 const EMPTY_COST = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}
-const SUPPORTED_APIS = new Set(['anthropic-messages', 'azure-openai-responses', 'bedrock-converse-stream', 'google-generative-ai', 'google-vertex', 'mistral-conversations', 'openai-codex-responses', 'openai-completions', 'openai-responses'])
 const API_KEY_ENV: Record<string, string[]> = {
  'ant-ling': ['ANT_LING_API_KEY'],
  anthropic: ['ANTHROPIC_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
@@ -150,7 +149,9 @@ export class SlimStreamWriter {
  private outLength = 0
  private deltaIndex: number | undefined
  private deltaText = ''
- private extraDeltas = new Map<number, string>()
+ private extraIndex: number | undefined
+ private extraText = ''
+ private extraDeltas: Map<number, string> | undefined
  private writing = false
  private waiters: Array<() => void> = []
  private timer: ReturnType<typeof setTimeout> | null = null
@@ -176,19 +177,28 @@ export class SlimStreamWriter {
 
  enqueueDelta(index: number, delta: string) {
   let buffered: string
+  let mapped: string | undefined
   if (this.deltaIndex === index) {
    buffered = this.deltaText + delta
    this.deltaText = buffered
-  } else if (this.extraDeltas.has(index)) {
-   buffered = this.extraDeltas.get(index)! + delta
-   this.extraDeltas.set(index, buffered)
+  } else if (this.extraIndex === index) {
+   buffered = this.extraText + delta
+   this.extraText = buffered
+  } else if ((mapped = this.extraDeltas?.get(index)) !== undefined) {
+   buffered = mapped + delta
+   this.extraDeltas?.set(index, buffered)
   } else if (this.deltaIndex === undefined) {
    this.deltaIndex = index
    buffered = delta
    this.deltaText = delta
+  } else if (this.extraIndex === undefined) {
+   this.extraIndex = index
+   buffered = delta
+   this.extraText = delta
   } else {
-   buffered = `${this.extraDeltas.get(index) ?? ''}${delta}`
-   this.extraDeltas.set(index, buffered)
+   const extraDeltas = this.extraDeltas ?? (this.extraDeltas = new Map())
+   buffered = delta
+   extraDeltas.set(index, buffered)
   }
   if (buffered.length >= 96) {
    this.flushDeltaIndex(index)
@@ -198,32 +208,47 @@ export class SlimStreamWriter {
 
  flushDeltaIndex(index: number) {
   const isPrimary = this.deltaIndex === index
-  const delta = isPrimary ? this.deltaText : this.extraDeltas.get(index)
-  if (!delta) return
+  const isExtra = this.extraIndex === index
+  const delta = isPrimary ? this.deltaText : isExtra ? this.extraText : this.extraDeltas?.get(index)
   if (isPrimary) {
    this.deltaIndex = undefined
    this.deltaText = ''
+  } else if (isExtra) {
+   this.extraIndex = undefined
+   this.extraText = ''
   } else {
-   this.extraDeltas.delete(index)
+   this.extraDeltas?.delete(index)
+   if (this.extraDeltas?.size === 0) this.extraDeltas = undefined
   }
+  if (!delta) return
   this.appendRaw(`{"t":"d","i":${index},"s":${JSON.stringify(delta)}}\n`, false)
  }
 
  flushDeltas() {
-  if (this.deltaIndex !== undefined && this.extraDeltas.size === 0) {
-   this.flushDeltaIndex(this.deltaIndex)
+  if (!this.extraDeltas) {
+   const primaryIndex = this.deltaIndex
+   const extraIndex = this.extraIndex
+   if (primaryIndex === undefined) {
+    if (extraIndex !== undefined) this.flushDeltaIndex(extraIndex)
+   } else if (extraIndex === undefined) {
+    this.flushDeltaIndex(primaryIndex)
+   } else if (primaryIndex < extraIndex) {
+    this.flushDeltaIndex(primaryIndex)
+    this.flushDeltaIndex(extraIndex)
+   } else {
+    this.flushDeltaIndex(extraIndex)
+    this.flushDeltaIndex(primaryIndex)
+   }
    return
   }
-  if (this.deltaIndex === undefined && this.extraDeltas.size === 1) {
-   this.flushDeltaIndex(this.extraDeltas.keys().next().value!)
-   return
-  }
-  const indices = this.deltaIndex === undefined ? [...this.extraDeltas.keys()] : [this.deltaIndex, ...this.extraDeltas.keys()]
+  const indices = [...this.extraDeltas.keys()]
+  if (this.deltaIndex !== undefined) indices.push(this.deltaIndex)
+  if (this.extraIndex !== undefined) indices.push(this.extraIndex)
   for (const index of indices.sort((a, b) => a - b)) this.flushDeltaIndex(index)
  }
 
  private hasDeltas() {
-  return this.deltaIndex !== undefined || this.extraDeltas.size > 0
+  return this.deltaIndex !== undefined || this.extraIndex !== undefined || this.extraDeltas !== undefined
  }
 
  private appendRaw(line: string, schedule = true) {
@@ -296,9 +321,21 @@ function stripJsonComments(input: string) {
 }
 
 function readJson(path: string, comments = false) {
- if (!existsSync(path)) return {}
- const content = readFileSync(path, 'utf8')
- return JSON.parse(comments ? stripJsonComments(content) : content)
+ return readOptionalJson(path, comments) ?? {}
+}
+
+function readOptionalText(path: string) {
+ try {
+  return readFileSync(path, 'utf8')
+ } catch (error) {
+  if (typeof error === 'object' && error !== null && Reflect.get(error, 'code') === 'ENOENT') return undefined
+  throw error
+ }
+}
+
+function readOptionalJson(path: string, comments = false) {
+ const content = readOptionalText(path)
+ return content === undefined ? undefined : JSON.parse(comments ? stripJsonComments(content) : content)
 }
 
 function deepMerge(base: JsonObject, overrides: JsonObject): JsonObject {
@@ -342,10 +379,10 @@ function createModelMap(catalog: JsonObject, config: JsonObject) {
  const providers = new Map<string, Model[]>()
  const requestConfig = new Map<string, JsonObject>()
  const modelHeaders = new Map<string, Record<string, string>>()
- for (const [provider, values] of Object.entries(catalog)) providers.set(provider, Object.values(values).slice())
+ for (const [provider, values] of Object.entries(catalog)) providers.set(provider, Object.values(values))
  const configuredProviders = config.providers && typeof config.providers === 'object' ? config.providers : {}
  for (const [provider, rawProviderConfig] of Object.entries(configuredProviders)) {
-  const providerConfig = rawProviderConfig ?? {}
+  const providerConfig: JsonObject = rawProviderConfig ?? {}
   requestConfig.set(provider, providerConfig)
   const current = providers.get(provider) ?? []
   let models = current.map(model => {
@@ -438,6 +475,49 @@ function hasAuth(provider: string, auth: JsonObject, requestConfig: Map<string, 
  return typeof value === 'string' && templateConfigured(value)
 }
 
+function configuredAuth(provider: string, auth: JsonObject, modelsConfig: JsonObject) {
+ if (auth[provider] || envApiKey(provider)) return true
+ const configuredProviders = modelsConfig.providers
+ if (!configuredProviders || typeof configuredProviders !== 'object') return false
+ const providerConfig = Reflect.get(configuredProviders, provider)
+ if (!providerConfig || typeof providerConfig !== 'object') return false
+ const value = Reflect.get(providerConfig, 'apiKey')
+ return typeof value === 'string' && templateConfigured(value)
+}
+
+function preferredCatalogProvider(parsed: ParsedArgs, files: RuntimeFiles) {
+ if (parsed.provider) return parsed.provider
+ if (parsed.modelId?.includes('/')) return parsed.modelId.slice(0, parsed.modelId.indexOf('/'))
+ if (parsed.modelId) {
+  const index = readOptionalText(join(STREAM_RUNTIME_DIR, 'model-index.txt'))
+  if (index) {
+   const marker = `\n${splitThinking(parsed.modelId).pattern.toLowerCase()}\t`
+   const position = index.indexOf(marker)
+   if (position !== -1) {
+    const start = position + marker.length
+    const end = index.indexOf('\n', start)
+    if (end !== -1) return index.slice(start, end)
+   }
+  }
+  return undefined
+ }
+ const defaultProvider = typeof files.settings.defaultProvider === 'string' ? files.settings.defaultProvider : undefined
+ const defaultModel = typeof files.settings.defaultModel === 'string' ? files.settings.defaultModel : undefined
+ if (defaultProvider && defaultModel && configuredAuth(defaultProvider, files.auth, files.modelsConfig)) return defaultProvider
+ for (const provider in DEFAULT_MODEL) {
+  if (configuredAuth(provider, files.auth, files.modelsConfig)) return provider
+ }
+ return undefined
+}
+
+function loadCatalog(provider: string | undefined) {
+ if (provider && /^[a-z0-9-]+$/.test(provider)) {
+  const models = readOptionalJson(join(STREAM_RUNTIME_DIR, 'models', `${provider}.json`))
+  if (models && typeof models === 'object') return {[provider]: models}
+ }
+ return readJson(join(STREAM_RUNTIME_DIR, 'models.json'))
+}
+
 function splitThinking(pattern: string) {
  const colon = pattern.lastIndexOf(':')
  if (colon < 0) return {pattern}
@@ -491,9 +571,9 @@ function selectModel(parsed: ParsedArgs, settings: JsonObject, providers: Map<st
   const found = providers.get(defaultProvider)?.find(model => model.id === defaultModel)
   if (found) return {model: found, thinkingLevel: typeof settings.defaultThinkingLevel === 'string' && isThinkingLevel(settings.defaultThinkingLevel) ? settings.defaultThinkingLevel : undefined}
  }
- for (const [candidateProvider, modelId] of Object.entries(DEFAULT_MODEL)) {
+ for (const candidateProvider in DEFAULT_MODEL) {
   if (!hasAuth(candidateProvider, auth, requestConfig)) continue
-  const found = providers.get(candidateProvider)?.find(model => model.id === modelId)
+  const found = providers.get(candidateProvider)?.find(model => model.id === DEFAULT_MODEL[candidateProvider])
   if (found) return {model: found, thinkingLevel}
  }
  for (const [candidateProvider, models] of providers) {
@@ -554,7 +634,7 @@ async function resolveOAuth(providerId: string, credential: JsonObject, auth: Js
  return {apiKey: access, credential: current}
 }
 
-async function prepareRuntime(parsed: ParsedArgs, catalog: JsonObject): Promise<RuntimeConfig> {
+function readRuntimeFiles(): RuntimeFiles {
  const agentDir = process.env.TIA_STREAM_AGENT_DIR || process.env.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent')
  const globalSettings = readJson(join(agentDir, 'settings.json'))
  const projectSettings = readJson(join(process.cwd(), '.pi', 'settings.json'))
@@ -562,6 +642,11 @@ async function prepareRuntime(parsed: ParsedArgs, catalog: JsonObject): Promise<
  const authPath = join(agentDir, 'auth.json')
  const auth = readJson(authPath)
  const modelsConfig = readJson(join(agentDir, 'models.json'), true)
+ return {settings, authPath, auth, modelsConfig}
+}
+
+async function prepareRuntime(parsed: ParsedArgs, catalog: JsonObject, files: RuntimeFiles): Promise<RuntimeConfig> {
+ const {settings, authPath, auth, modelsConfig} = files
  const {providers, requestConfig, modelHeaders} = createModelMap(catalog, modelsConfig)
  const selected = selectModel(parsed, settings, providers, auth, requestConfig)
  let model = selected.model
@@ -597,8 +682,25 @@ async function prepareRuntime(parsed: ParsedArgs, catalog: JsonObject): Promise<
   maxRetryDelayMs: retry.maxRetryDelayMs ?? 60000
  }
  const apiPath = join(STREAM_RUNTIME_DIR, `${model.api}.mjs`)
- if (!SUPPORTED_APIS.has(model.api) || !existsSync(apiPath)) throw new Error(`Unsupported API for direct stream runner: ${model.api}`)
+ if (!supportedApi(model.api) || !existsSync(apiPath)) throw new Error(`Unsupported API for direct stream runner: ${model.api}`)
  return {model, thinkingLevel: selected.thinkingLevel, streamOptions, loadApi: () => import(apiPath)}
+}
+
+function supportedApi(api: string) {
+ switch (api) {
+  case 'anthropic-messages':
+  case 'azure-openai-responses':
+  case 'bedrock-converse-stream':
+  case 'google-generative-ai':
+  case 'google-vertex':
+  case 'mistral-conversations':
+  case 'openai-codex-responses':
+  case 'openai-completions':
+  case 'openai-responses':
+   return true
+  default:
+   return false
+ }
 }
 
 function resolveReasoning(level: ThinkingLevel | undefined, model: {reasoning?: boolean}): SimpleStreamOptions['reasoning'] {
@@ -616,10 +718,11 @@ async function readStdin(): Promise<string> {
 async function main() {
  const parsed = parseArgs(process.argv.slice(2))
  const inputPromise = parsed.messages.length === 0 && !process.stdin.isTTY ? readStdin() : undefined
- const catalogPromise = import('__PI_PACKAGE_DIR__/../pi-ai/dist/models.generated.js')
- const [catalogModule, piped] = await Promise.all([catalogPromise, inputPromise])
+ const files = readRuntimeFiles()
+ const catalog = loadCatalog(preferredCatalogProvider(parsed, files))
+ const piped = await inputPromise
  if (piped) parsed.messages.push(piped)
- const runtime = await prepareRuntime(parsed, catalogModule.MODELS)
+ const runtime = await prepareRuntime(parsed, catalog, files)
  const apiPromise = parsed.messages.length > 0 ? runtime.loadApi() : undefined
  const writer = new SlimStreamWriter()
  writer.enqueue({t: 'session', model: runtime.model.id, provider: runtime.model.provider})

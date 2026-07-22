@@ -67,14 +67,6 @@ fn writeJson(bytes: usize) void {
     writeAllFd(1, text);
 }
 
-fn fsyncParentDir(path: []const u8) void {
-    const slash = std.mem.lastIndexOfScalar(u8, path, '/');
-    const dir = if (slash) |idx| (if (idx == 0) path[0..1] else path[0..idx]) else ".";
-    const fd = posix.openat(posix.AT.FDCWD, dir, .{ .ACCMODE = .RDONLY, .DIRECTORY = true, .CLOEXEC = true }, 0) catch return;
-    _ = system.fsync(fd);
-    _ = system.close(fd);
-}
-
 fn writeContent(fd: posix.fd_t, target: []const u8, new_text: []const u8, prefix_size: usize, suffix_offset: usize) void {
     writeAllFd(fd, target[0..prefix_size]);
     writeAllFd(fd, new_text);
@@ -98,7 +90,6 @@ fn writeOutput(target_path: []const u8, tmp_path: []const u8, target: []const u8
     }
     writeContent(fd, target, new_text, prefix_size, suffix_offset);
     renamePath(tmp_path, target_path);
-    fsyncParentDir(target_path);
 }
 
 fn writeThrough(target_path: []const u8, target: []const u8, new_text: []const u8, prefix_size: usize, suffix_offset: usize) void {

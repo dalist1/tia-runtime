@@ -2,28 +2,20 @@
 
 #include <errno.h>
 #include <fcntl.h>
-#include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <unistd.h>
 
 enum { BUFFER_SIZE = 1 << 20 };
 
+static char drain_buffer[BUFFER_SIZE];
+
 static int drain_fd(int fd) {
-	void *buffer = NULL;
-	uint64_t total = 0;
-
-	if (posix_memalign(&buffer, 4096, BUFFER_SIZE) != 0) {
-		perror("posix_memalign");
-		return 1;
-	}
-
 #ifdef POSIX_FADV_SEQUENTIAL
 	(void)posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
 
 	for (;;) {
-		ssize_t bytes_read = read(fd, buffer, BUFFER_SIZE);
+		ssize_t bytes_read = read(fd, drain_buffer, BUFFER_SIZE);
 		if (bytes_read == 0) {
 			break;
 		}
@@ -32,19 +24,9 @@ static int drain_fd(int fd) {
 				continue;
 			}
 			perror("read");
-			free(buffer);
 			return 1;
 		}
-		total += (uint64_t)bytes_read;
 	}
-
-	free(buffer);
-
-	if (total == UINT64_MAX) {
-		fputs("overflow\n", stderr);
-		return 1;
-	}
-
 	return 0;
 }
 
@@ -66,8 +48,9 @@ int main(int argc, char **argv) {
 
 	int status = drain_fd(fd);
 
-	if (fd != STDIN_FILENO) {
-		close(fd);
+	if (fd != STDIN_FILENO && close(fd) != 0) {
+		perror("close");
+		status = 1;
 	}
 
 	return status;

@@ -54,7 +54,7 @@ bash scripts/install-tia.sh uninstall
 ## What it does
 
 ### `tia pi`
-- ensures `@mariozechner/pi-coding-agent` is installed at the pinned latest version, then uses a sandboxed compiled pi binary
+- ensures `@earendil-works/pi-coding-agent` is installed at the pinned version, then uses a sandboxed compiled pi binary
 - uses a sandboxed pi agent dir
 - loads the fast-tools extension automatically
 - runs `read`/`write`/`edit` tool fast paths fully in-process (zero-spawn, byte-verified); installs low-level helper binaries for the `bash` fast path when building from a local checkout (`fastdrain`/`fastcopy` via `zig cc`)
@@ -69,14 +69,12 @@ bash scripts/install-tia.sh uninstall
 ## Benchmarks
 
 ### `tia pi`
-- startup / rpc:
-  - about **1.86x** faster than the original `pi` launcher
-- isolated tool burst benchmarks:
-  - `read`: about **5.18x** faster
-  - `read` streaming burst: about **5.49x** faster
-  - `write`: about **1.01x** faster
-  - `edit`: about **2.50x** faster
-  - `bash`: about **1.59x** faster on the tested drain/copy workload
+- `--version` startup: **1.33x** faster than stock pi
+- RPC startup: **1.24x** faster than stock pi
+- slim JSON startup: **10.87x** faster than full tia JSON startup
+- bounded verified edit path: **1.40x** faster than the previous formatter
+- slim stream framing: **1.15x** faster
+- native bash drain/copy chain: **3.19x** faster
 
 ## Notes
 

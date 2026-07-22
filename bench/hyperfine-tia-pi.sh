@@ -18,9 +18,6 @@ command -v hyperfine >/dev/null 2>&1 || {
 	exit 1
 }
 
-# Resolve a stock pi invocation that runs the SAME pi source tia compiled, so the
-# comparison isolates tia's compiled/minified/sandboxed runtime, not a version gap.
-# Prefer an installed node-run `pi-node`/`pi`; otherwise run dist/cli.js via bun.
 STOCK_PI=""
 if command -v pi-node >/dev/null 2>&1; then
 	STOCK_PI="pi-node"

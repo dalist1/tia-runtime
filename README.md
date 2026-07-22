@@ -66,15 +66,15 @@ This path is smoke-tested from outside the repo checkout.
 
 Both runtimes execute the **same pi source** (`@earendil-works/pi-coding-agent`), so this isolates what `tia-runtime` adds: AOT-compiled + minified startup, a low-level slim stream runner with on-demand provider modules, and the sandbox wiring. Stock `pi` is run straight from `dist/cli.js`; `tia pi` is the installed launcher.
 
-Current benchmark marker: **`2026-07-low-level-v3`**. Toolchain: pi `0.80.6`, bun `1.4.0`, Linux x86_64 (8 cores). The complete machine-readable record is `bench/history/2026-07-low-level-v3.json`.
+Current benchmark marker: **`2026-07-low-level-v4`**. Toolchain: pi `0.81.1`, bun `1.4.0`, Zig `0.17.0-dev.1441+d5181a9c9`, Linux x86_64 (16 logical cores). The complete machine-readable record is `bench/history/2026-07-low-level-v4.json`.
 
 | Workload | Baseline | `tia pi` optimized | Speedup |
 |---|---:|---:|---:|
-| Process startup (`--version`) | stock: 1.037 ± 0.172 s | 742.2 ± 121.1 ms | **1.40x** |
-| RPC startup (`get_state`) | stock: 1.901 ± 0.172 s | 661.4 ± 49.1 ms | **2.87x** |
-| JSON stream startup (`--mode json --no-session`, no prompt) | full tia: 1.161 s | 97.5 ± 9.6 ms | **11.91x** |
+| Process startup (`--version`) | stock: 304.8 ± 25.3 ms | 229.1 ± 4.5 ms | **1.33x** |
+| RPC startup (`get_state`) | stock: 324.1 ± 9.6 ms | 261.8 ± 4.4 ms | **1.24x** |
+| JSON stream startup (`--mode json --no-session`, no prompt) | full tia: 262.8 ± 13.0 ms | 24.2 ± 3.2 ms | **10.87x** |
 
-The slim stream path is where `tia pi` pulls furthest ahead: it bypasses the full CLI/AgentSession/tools/extensions, resolves its small read-only configuration path directly, and loads only the selected provider implementation. Compared with the prior slim runtime, no-network startup improved from 236.2 ms to 97.5 ms (**2.42x**) and a complete loopback HTTP/SSE stream improved from 238.9 ms to 116.9 ms (**2.04x**). Text deltas are microtask-coalesced instead of waiting for the 4 ms batching timer.
+The slim stream path is where `tia pi` pulls furthest ahead: it bypasses the full CLI/AgentSession/tools/extensions and loads only the selected provider implementation and provider model catalog. In paired direct-runner measurements, provider-selective startup improved from 20.07 ms to 17.87 ms (**1.12x**); unqualified model lookup improved from 20.49 ms to 19.76 ms (**1.04x**) through a compact text index. Text deltas remain microtask-coalesced instead of waiting for the 4 ms batching timer.
 
 Reproduce startup/stream:
 
@@ -89,11 +89,12 @@ These compare `tia pi`'s retained fast paths against tia's own slower reference 
 
 | Path | Workload | Result |
 |---|---|---:|
-| retained tool path | `read` burst | about **2.1x** faster than the reference in smoke loops |
-| retained tool path | `read` streaming burst | about **2.0x** faster than the reference in smoke loops |
-| retained tool path | `edit` burst | about **2.1x** faster than the reference in smoke loops |
-| retained tool path | verified `write` burst | about **1.5–1.6x** faster than the reference in smoke loops |
-| retained tool path | `bash` drain/copy burst | about **1.9x** faster than the reference in smoke loops |
+| in-process extension | 100KB verified edit + rendered diff | **1.40x** mean / **1.45x** median |
+| slim stream writer | 2M interleaved deltas | **1.15x** |
+| native helper | 50KB read window | **1.13x** |
+| native helper | exact edit | **1.79x** |
+| native helper | verified write | **1.03x** |
+| native helpers | `bash` drain/copy chain | **3.19x** |
 
 The tool burst rows above come from the standalone burst harness. `bench/fast-tools-extension-burst.ts` additionally measures the real installed `fast-tools` extension code path (mutation queues, verification, and result assembly included).
 
@@ -151,7 +152,7 @@ TIA_FFF_SOURCE=vanilla bash install.sh tia install
 
 Verify which source is active with `tia status | grep fff`.
 
-The installer ensures `@earendil-works/pi-coding-agent` is installed at the pinned latest version before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pin, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
+The installer ensures `@earendil-works/pi-coding-agent` is installed at the pinned version before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pin, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
 
 Set `TIA_ENABLE_FFF=0` to skip FFF entirely, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior. Extensions from the shell/global pi agent are loaded via the shared `settings.json` packages list.
 

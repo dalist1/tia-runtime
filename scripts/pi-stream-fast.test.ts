@@ -162,3 +162,40 @@ test('the first text delta is emitted without the batching timer delay', async (
  ])
  await writer.drain()
 })
+
+test('empty deltas drain without emitting empty frames', async () => {
+ const capture = createCapture()
+ const writer = new SlimStreamWriter(capture.sink)
+ writer.enqueueTextStart(0)
+ writer.enqueueDelta(0, '')
+ writer.enqueueTextEnd(0)
+ await writer.drain()
+ expect(parseFrames(capture.read())).toEqual([
+  {t: 's', i: 0},
+  {t: 'e', i: 0}
+ ])
+})
+
+test('interleaved deltas beyond the two-slot fast path preserve every index', async () => {
+ const capture = createCapture()
+ const writer = new SlimStreamWriter(capture.sink)
+ const expected = new Map<number, string>()
+ for (let index = 0; index < 5; index += 1) {
+  expected.set(index, '')
+  writer.enqueueTextStart(index)
+ }
+ for (let round = 0; round < 40; round += 1) {
+  for (let index = 4; index >= 0; index -= 1) {
+   const delta = `${index}:${round};`
+   expected.set(index, `${expected.get(index)}${delta}`)
+   writer.enqueueDelta(index, delta)
+  }
+ }
+ for (let index = 0; index < 5; index += 1) writer.enqueueTextEnd(index)
+ await writer.drain()
+ const actual = new Map<number, string>()
+ for (const frame of parseFrames(capture.read())) {
+  if (frame.t === 'd') actual.set(frame.i, `${actual.get(frame.i) ?? ''}${frame.s}`)
+ }
+ expect(actual).toEqual(expected)
+})

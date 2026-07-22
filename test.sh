@@ -53,12 +53,15 @@ printf '[2/10] check tia status\n'
 tia status > "${TMP_DIR}/tia-status.txt"
 grep -En "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
 grep -En "optimization:.*$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")" "${TMP_DIR}/tia-status.txt" >/dev/null
-grep -En "pi version:.*0\.80\.6" "${TMP_DIR}/tia-status.txt" >/dev/null
+grep -En "pi version:.*0\.81\.1" "${TMP_DIR}/tia-status.txt" >/dev/null
 grep -En "fff extension:.*enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
 PI_PACKAGE_DIR="$(cat "${HOME}/.local/share/tia/pi-package-dir.txt")"
 HOST_PI_PACKAGE_DIR="${PI_PACKAGE_DIR}"
-[[ "$(bun -e 'console.log(require(process.argv[1]).version)' "${PI_PACKAGE_DIR}/package.json")" == "0.80.6" ]]
+[[ "$(bun -e 'console.log(require(process.argv[1]).version)' "${PI_PACKAGE_DIR}/package.json")" == "0.81.1" ]]
 [[ -x "${HOME}/.local/share/tia/bin/pi-stream-fast" ]]
+[[ -f "${HOME}/.local/share/tia/stream-runtime/models.json" ]]
+[[ -f "${HOME}/.local/share/tia/stream-runtime/model-index.txt" ]]
+[[ -f "${HOME}/.local/share/tia/stream-runtime/models/anthropic.json" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/anthropic-messages.mjs" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/openai-responses.mjs" ]]
 
@@ -114,6 +117,15 @@ ANTHROPIC_API_KEY=dummy \
 	run_with_optional_timeout tia pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes \
 	< "${ROOT_DIR}/payloads-rpc/empty.get-state.jsonl" > "${TMP_DIR}/tia-pi-rpc.jsonl"
 bun -e 'const fs=require("node:fs"); const lines=fs.readFileSync(process.argv[1], "utf8").trim().split(/\n+/); const response=lines.map((line)=>JSON.parse(line)).find((obj)=>obj.type === "response"); if (!response || response.command !== "get_state" || response.success !== true) process.exit(1);' "${TMP_DIR}/tia-pi-rpc.jsonl"
+
+STREAM_AGENT_DIR="${TMP_DIR}/stream-agent"
+mkdir -p "${STREAM_AGENT_DIR}"
+env -i HOME="${HOME}" PATH="${PATH}" ANTHROPIC_API_KEY=dummy PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
+	tia pi --mode json --no-session --provider anthropic > "${TMP_DIR}/tia-stream-provider.jsonl"
+env -i HOME="${HOME}" PATH="${PATH}" ANTHROPIC_API_KEY=dummy PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
+	tia pi --mode json --no-session --model claude-opus-4-8 > "${TMP_DIR}/tia-stream-model.jsonl"
+bun -e 'for (const path of process.argv.slice(1)) { const event=JSON.parse(require("node:fs").readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== "anthropic" || event.model !== "claude-opus-4-8") process.exit(1); }' \
+	"${TMP_DIR}/tia-stream-provider.jsonl" "${TMP_DIR}/tia-stream-model.jsonl"
 
 printf '[8/10] verify exact write reliability\n'
 bun "${ROOT_DIR}/bench/write-reliability.ts" 5 > "${TMP_DIR}/write-reliability.json"

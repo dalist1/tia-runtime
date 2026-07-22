@@ -37,8 +37,6 @@ cat > "${RESULT_DIR}/benchmark-info.json" <<EOF
 }
 EOF
 
-# No prompt is sent: this isolates local JSON streaming startup/runner overhead,
-# not provider first-token latency. A dummy key keeps model resolution deterministic.
 hyperfine \
 	--shell=none \
 	--warmup "${WARMUP}" \

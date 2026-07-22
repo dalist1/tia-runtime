@@ -6,8 +6,8 @@ ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 export PATH="${HOME}/.local/bin:${PATH}"
 mkdir -p "${ROOT_DIR}/bin"
 
-zig_names=(fastread-window fastedit)
-zigcc_names=(fastwrite fastdrain fastcopy)
+zig_names=(fastedit)
+zigcc_names=(fastread-window fastwrite fastdrain fastcopy)
 helper_names=("${zig_names[@]}" "${zigcc_names[@]}")
 
 c_source_for() {
@@ -69,7 +69,7 @@ if command -v gcc >/dev/null 2>&1; then
 	for name in "${helper_names[@]}"; do
 		build_gcc "${name}" "${name}-gcc"
 	done
-	printf 'Built active native helpers with pure Zig read/edit, zig cc C helpers, and gcc comparison binaries in %s/bin\n' "${ROOT_DIR}"
+	printf 'Built active native helpers with a C read path, pure Zig edit, zig cc C helpers, and gcc comparison binaries in %s/bin\n' "${ROOT_DIR}"
 else
-	printf 'Built active native helpers with pure Zig read/edit and zig cc C helpers in %s/bin (gcc not found; skipped gcc comparison binaries)\n' "${ROOT_DIR}"
+	printf 'Built active native helpers with a C read path, pure Zig edit, and zig cc C helpers in %s/bin (gcc not found; skipped gcc comparison binaries)\n' "${ROOT_DIR}"
 fi

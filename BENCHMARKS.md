@@ -2,7 +2,43 @@
 
 These are the latest benchmark highlights from the tia research harness.
 
-## Optimization version `2026-07-low-level-v3` (current)
+## Optimization version `2026-07-low-level-v4` (current)
+
+The runtime is pinned to `@earendil-works/pi-coding-agent` **0.81.1**. The slim runner now reads a provider-specific model catalog instead of initializing every provider model, exact full-line edits render bounded diffs without indexing complete files, and the stream writer keeps its common two-index state out of a `Map`.
+
+Current same-source head-to-head results (`hyperfine`, sequential runs, no network):
+
+| Workload | Baseline | `tia pi` optimized | Speedup |
+|---|---:|---:|---:|
+| Process startup (`--version`) | stock: 304.8 ± 25.3 ms | 229.1 ± 4.5 ms | **1.33x** |
+| RPC startup (`get_state`) | stock: 324.1 ± 9.6 ms | 261.8 ± 4.4 ms | **1.24x** |
+| JSON startup (`--mode json --no-session`) | full tia: 262.8 ± 13.0 ms | slim tia: 24.2 ± 3.2 ms | **10.87x** |
+
+Alternating or paired before/after measurements for this optimization version:
+
+| Path | Workload | Before | After | Speedup |
+|---|---|---:|---:|---:|
+| slim startup | provider-selective no-prompt startup | 20.074 ms | 17.869 ms | **1.12x** |
+| slim startup | unqualified model lookup | 20.485 ms | 19.756 ms | **1.04x** |
+| extension `edit` | 100KB verified replacement + diff | 0.507 ms/op | 0.362 ms/op | **1.40x** |
+| slim stream writer | 2M interleaved deltas | 39.966 ns/delta | 34.858 ns/delta | **1.15x** |
+| native read | 50KB window | 0.853 ms/op | 0.753 ms/op | **1.13x** |
+| native edit | exact replacement | 13.770 ms/op | 7.704 ms/op | **1.79x** |
+| native verified write | 1MB atomic write | 16.731 ms/op | 16.239 ms/op | **1.03x** |
+| native bash | 5MB drain/copy/remove chain | 11.587 ms/op | 3.635 ms/op | **3.19x** |
+
+Low-level changes:
+- provider catalogs are emitted as independent minified JSON files; an allocation-light text index resolves unqualified model IDs
+- aligned full-line edit diffs scan only changed lines and four context lines while retaining generic formatting for other edits
+- the stream writer uses two inline delta slots and lazily allocates a map only for additional content indexes
+- the native read helper uses `memchr`, bounded output buffering, and C built with `zig cc`; the slower duplicate Zig read implementation was removed
+- native copy uses larger `copy_file_range` requests and no longer adds an `fsync` that normal `cp` does not provide
+- native verified writes compare through the existing read/write descriptor without allocating and reopening full files
+- benchmark and RPC paths no longer contain machine-specific package paths; formatting, linting, and TypeScript checks cover every TypeScript source
+
+The complete machine-readable record is `bench/history/2026-07-low-level-v4.json`.
+
+## Optimization version `2026-07-low-level-v3`
 
 The slim streaming path now keeps only its small control plane in the compiled executable. Provider implementations are installed as minified split ESM assets and loaded on demand, while settings, auth, model overrides, and model selection are resolved directly without initializing the full coding-agent registry stack.
 
@@ -20,7 +56,7 @@ The launcher routes slim calls before FFF setup and shell-agent symlink refresh.
 
 The runtime and development baseline are pinned to `@earendil-works/pi-coding-agent` **0.80.6**, verified as the latest npm release on 2026-07-12. `tia status` prints the optimization version so installed runtimes can be tied back to benchmark records. The machine-readable record is committed at `bench/history/2026-07-low-level-v2.json`.
 
-Current no-network startup comparison, run sequentially on the same pi 0.80.6 source:
+Recorded no-network startup comparison, run sequentially on the same pi 0.80.6 source:
 
 | Workload | Baseline | Optimized | Speedup |
 |---|---:|---:|---:|
@@ -200,7 +236,7 @@ bash bench/hyperfine-pi-tools-fast-burst.sh
 ```
 
 This now compares retained candidates only:
-- `fast (compiled + native helpers)` where read/edit are pure Zig and the remaining native helpers are active zig cc builds
+- `fast (compiled + native helpers)` where read/write/copy/drain are C built with zig cc and edit is pure Zig
 - `fast (compiled + gcc comparison helpers)` when GCC comparison helpers are available
 - `fast (warm daemon + native helpers)`
 
@@ -210,7 +246,7 @@ bash bench/hyperfine-pi-tools-fast-stream.sh
 ```
 
 This now compares retained candidates only:
-- `fast (compiled + native helpers)` where read streaming is a pure Zig native helper
+- `fast (compiled + native helpers)` where read streaming uses the C helper built with zig cc
 - `fast (compiled + gcc comparison read helper)` when the GCC comparison helper is available
 
 ### tia fast tools persistent warm runner

@@ -38,12 +38,12 @@ if [[ -z "${TIA_FFF_SOURCE:-}" && -f "${TIA_FFF_SOURCE_FILE}" ]]; then
 	TIA_FFF_SOURCE="$(tr -d '[:space:]' < "${TIA_FFF_SOURCE_FILE}")"
 fi
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
-TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.80.6}"
+TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.81.1}"
 TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-}"
 if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" ]]; then
 	TIA_OPTIMIZATION_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")"
 fi
-TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-07-low-level-v3}"
+TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-07-low-level-v4}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 
 usage() {
@@ -148,7 +148,7 @@ ensure_pi_package_version() {
 	local package_dir="$1"
 
 	[[ "${TIA_SKIP_PI_PACKAGE_INSTALL:-0}" != "1" ]] || return 0
-	[[ -z "${PI_PACKAGE_DIR:-}" ]] || return 0
+	[[ -z "${PI_PACKAGE_DIR:-}" || "${PI_PACKAGE_DIR}" == "${TIA_ROOT}/bin" ]] || return 0
 
 	if [[ "${TIA_PI_PACKAGE_VERSION}" != "latest" ]] && is_pi_package_dir "${package_dir}"; then
 		local installed_version
@@ -166,15 +166,9 @@ install_fast_tool_helpers() {
 	rm -rf "${TIA_FAST_TOOLS_DIR}"
 	mkdir -p "${TIA_FAST_TOOLS_DIR}"
 
-	# read/write/edit now run fully in-process inside the fast-tools extension;
-	# only the bash fast path still spawns native helpers.
 	local helper_names="fastdrain fastcopy"
 	local built_any=0
 	local helper
-
-	for helper in fastread-window fastedit fastwrite; do
-		rm -f "${TIA_FAST_TOOLS_DIR}/${helper}"
-	done
 
 	if [[ -d "${ROOT_DIR}/native" ]] && command -v zig >/dev/null 2>&1; then
 		for helper in ${helper_names}; do
@@ -342,9 +336,6 @@ install_pi_sandbox() {
 		base_agent_dir="${HOME}/.pi/agent"
 	fi
 
-	# Resolve symlinks in pi_package_dir — when PI_PACKAGE_DIR is inherited from
-	# a running tia shell it may point at the sandbox bin dir instead of the real
-	# pi package. resolve dist/cli.js up two levels to find the actual package root.
 	if [[ -L "${pi_package_dir}/dist" ]]; then
 		local real_cli
 		real_cli="$(realpath_bun "${pi_package_dir}/dist/cli.js" 2>/dev/null)" || true
@@ -369,6 +360,9 @@ install_pi_sandbox() {
 	local pi_ai_dir
 	pi_ai_dir="$(dirname -- "${pi_package_dir}")/pi-ai"
 	[[ -f "${pi_ai_dir}/dist/api/anthropic-messages.js" ]] || die "Could not locate pi-ai stream implementations"
+	bun -e 'const fs=require("node:fs"); const path=require("node:path"); const {pathToFileURL}=require("node:url"); const [source,target]=process.argv.slice(1); const catalog=(await import(pathToFileURL(source).href)).MODELS; fs.writeFileSync(target, JSON.stringify(catalog)); const root=path.dirname(target); const dir=path.join(root,"models"); const index={}; fs.mkdirSync(dir); for (const [provider,models] of Object.entries(catalog)) { fs.writeFileSync(path.join(dir,`${provider}.json`),JSON.stringify(models)); for (const model of Object.values(models)) { const key=model.id.toLowerCase(); index[key]=index[key] === undefined || index[key] === provider ? provider : null; } } const lines=Object.entries(index).filter(([,provider])=>provider!==null).sort(([a],[b])=>a.localeCompare(b)).map(([model,provider])=>`${model}\t${provider}`); fs.writeFileSync(path.join(root,"model-index.txt"),`\n${lines.join("\n")}\n`);' \
+		"${pi_ai_dir}/dist/models.generated.js" \
+		"${TIA_PI_STREAM_RUNTIME_DIR}/models.json"
 	bun build --target=bun --format=esm --minify --splitting \
 		--entry-naming='[name].mjs' \
 		--chunk-naming='chunks/[name]-[hash].mjs' \
@@ -384,8 +378,6 @@ install_pi_sandbox() {
 		"${pi_ai_dir}/dist/api/openai-responses.js" \
 		"${pi_ai_dir}/dist/oauth.js" >/dev/null
 	bun -e 'const fs=require("node:fs"); const [path, packageDir, runtimeDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir).replaceAll("__STREAM_RUNTIME_DIR__", runtimeDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}" "${TIA_PI_STREAM_RUNTIME_DIR}"
-	# Bytecode compilation cuts slim stream startup significantly; fall back to a
-	# plain minified compile when the bun/bundle combination cannot emit bytecode.
 	if ! bun build --compile --minify --bytecode "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}" >/dev/null 2>&1; then
 		bun build --compile --minify "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}"
 	fi
@@ -475,7 +467,7 @@ should_use_fast_stream() {
         ;;
       --no-extensions|--no-skills|--no-prompt-templates|--no-themes|--no-tools|--no-context-files|--print|-p)
         ;;
-      --*)
+      -*)
         return 1
         ;;
       @*)
@@ -593,21 +585,21 @@ case "\${subcommand}" in
     exec "\${TIA_PI_BIN}" "\$@"
     ;;
   status)
-    echo "tia root:            \t\${TIA_ROOT}"
+    printf '%-22s%s\n' 'tia root:' "\${TIA_ROOT}"
     if [[ -x "\${TIA_PI_BIN}" ]]; then
-      echo "tia pi available:    \tyes"
+      printf '%-22s%s\n' 'tia pi available:' 'yes'
     else
-      echo "tia pi available:    \tno"
+      printf '%-22s%s\n' 'tia pi available:' 'no'
     fi
-    echo "tia pi bin:          \t\${TIA_PI_BIN}"
-    echo "tia stream:          \t\${TIA_PI_STREAM_BIN}"
-    echo "tia pi agent:        \t\${TIA_PI_AGENT_DIR}"
-    echo "optimization:        \t\${TIA_OPTIMIZATION_VERSION}"
-    echo "pi version:          \t\${TIA_PI_VERSION}"
-    echo "shell pi agent:      \t\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
-    echo "history mode:        \tunchanged by tia pi startup"
-    echo "cliproxy auto-start:\tenabled for tia pi when systemd user services are available"
-    echo "fast stream:         \tenabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)"
+    printf '%-22s%s\n' 'tia pi bin:' "\${TIA_PI_BIN}"
+    printf '%-22s%s\n' 'tia stream:' "\${TIA_PI_STREAM_BIN}"
+    printf '%-22s%s\n' 'tia pi agent:' "\${TIA_PI_AGENT_DIR}"
+    printf '%-22s%s\n' 'optimization:' "\${TIA_OPTIMIZATION_VERSION}"
+    printf '%-22s%s\n' 'pi version:' "\${TIA_PI_VERSION}"
+    printf '%-22s%s\n' 'shell pi agent:' "\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
+    printf '%-22s%s\n' 'history mode:' 'unchanged by tia pi startup'
+    printf '%-22s%s\n' 'cliproxy auto-start:' 'enabled for tia pi when systemd user services are available'
+    printf '%-22s%s\n' 'fast stream:' 'enabled by default for --mode json --no-session (set TIA_DISABLE_FAST_STREAM=1 to opt out)'
     if [[ -f "\${TIA_PI_AGENT_DIR}/extensions/fff/index.ts" ]]; then
       fff_source="vanilla"
       if grep -q '@edxeth/pi-fff' "\${TIA_PI_AGENT_DIR}/extensions/fff/package.json" 2>/dev/null; then
@@ -615,15 +607,15 @@ case "\${subcommand}" in
       elif [[ -f "\${TIA_FFF_SOURCE_FILE}" ]]; then
         fff_source="\$(cat "\${TIA_FFF_SOURCE_FILE}")"
       fi
-      echo "fff extension:       \tenabled (source: \${fff_source}, mode: \${PI_FFF_MODE:-override})"
+      printf '%-22s%s\n' 'fff extension:' "enabled (source: \${fff_source}, mode: \${PI_FFF_MODE:-override})"
     else
-      echo "fff extension:       \tnot installed"
+      printf '%-22s%s\n' 'fff extension:' 'not installed'
     fi
-    echo "fff state:           \t\${TIA_FFF_STATE_DIR}"
-    echo "pi package:          \t${TIA_ROOT}/bin"
+    printf '%-22s%s\n' 'fff state:' "\${TIA_FFF_STATE_DIR}"
+    printf '%-22s%s\n' 'pi package:' '${TIA_ROOT}/bin'
     ;;
   *)
-    echo "Unknown subcommand: \t\${subcommand}" >&2
+    printf 'Unknown subcommand: %s\n' "\${subcommand}" >&2
     exit 1
     ;;
 esac

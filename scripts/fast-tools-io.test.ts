@@ -150,6 +150,7 @@ test('fastRead truncates a first line that exceeds DEFAULT_MAX_BYTES (50KB)', as
 test('fastRead throws on an offset beyond EOF (parity with the TS fallback)', async () => {
  const target = filePath('read-eof.txt')
  writeFileSync(target, 'a\nb\nc\n')
+ await expect(ext.fastRead(work, target, 4)).rejects.toThrow(/beyond end of file \(3 lines total\)/)
  await expect(ext.fastRead(work, target, 99)).rejects.toThrow(/beyond end of file/)
 })
 
@@ -163,8 +164,6 @@ test('fastRead matches a naive reference on a unicode window crossing the 256KB 
  expect(Buffer.byteLength(content, 'utf8')).toBeGreaterThan(600 * 1024)
  writeFileSync(target, content)
 
- // ~90-byte lines put the 256KB scan boundary near line 2900; the wide
- // windows below force lines to span two scan chunks.
  for (const [offset, limit] of [
   [2800, 200],
   [2905, 3],
@@ -221,7 +220,6 @@ test('fastRead agent-skill path returns a full file whose single long line spans
  const skillDir = join(agentDir, 'skills', 'boundary')
  mkdirSync(skillDir, {recursive: true})
  const target = join(skillDir, 'SKILL.md')
- // 3-byte euro signs guarantee a codepoint straddles the 256KB chunk boundary.
  const content = `${'€'.repeat(120000)}\ntail line\n`
  writeFileSync(target, content)
  expect(resultText(await ext.fastRead(work, target))).toBe(content)

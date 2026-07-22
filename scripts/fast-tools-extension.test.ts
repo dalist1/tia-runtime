@@ -52,6 +52,30 @@ test('edit render diff avoids redundant unified file headers', () => {
  expect(multi).not.toContain('+++ src/app.ts')
 })
 
+test('bounded full-line diff matches the generic formatter', () => {
+ for (let iteration = 0; iteration < 500; iteration += 1) {
+  const lineCount = 12 + (iteration % 37)
+  const lines = Array.from({length: lineCount}, (_, index) => `line-${index}-${iteration % 11}${index % 5 === 0 ? '-é😄' : ''}`)
+  const startLine = iteration % (lineCount - 1)
+  const removedLines = 1 + ((iteration * 7) % Math.min(6, lineCount - startLine))
+  const replacementLines = Array.from({length: iteration % 6}, (_, index) => `replacement-${iteration}-${index}`)
+  const before = `${lines.join('\n')}\n`
+  const beforeStart = startLine === 0 ? 0 : lines.slice(0, startLine).reduce((bytes, line) => bytes + line.length + 1, 0)
+  const beforeEnd = lines.slice(startLine, startLine + removedLines).reduce((bytes, line) => bytes + line.length + 1, beforeStart)
+  const replacement = replacementLines.length === 0 ? '' : `${replacementLines.join('\n')}\n`
+  const after = `${before.slice(0, beforeStart)}${replacement}${before.slice(beforeEnd)}`
+  const plan = {path: 'sample.txt', absolutePath: '/sample.txt', before, after, editCount: 1}
+  const generic = combinedEditDiff([plan])
+  const bounded = combinedEditDiff([{...plan, diffHint: {beforeStart, beforeEnd, afterStart: beforeStart, afterEnd: beforeStart + replacement.length}}])
+  expect(bounded).toBe(generic)
+ }
+
+ const before = 'alpha beta gamma\nkeep\n'
+ const after = 'alpha BETA gamma\nkeep\n'
+ const plan = {path: 'sample.txt', absolutePath: '/sample.txt', before, after, editCount: 1}
+ expect(combinedEditDiff([{...plan, diffHint: {beforeStart: 6, beforeEnd: 10, afterStart: 6, afterEnd: 10}}])).toBe(combinedEditDiff([plan]))
+})
+
 test('classic multi-file edits preflight all files before producing planned writes', async () => {
  const cwd = mkdtempSync(join(tmpdir(), 'tia-classic-edit-test-'))
  try {
@@ -498,16 +522,15 @@ test('bash fast path defers to stock bash when semantics could diverge', () => {
   writeFileSync(src, 'payload\n')
   mkdirSync(subdir)
 
-  // missing source: real cat/cp fail with an exit code the model should see
   expect(planOptimizedBash(dir, `cat ${join(dir, 'missing.txt')} > /dev/null`)).toBeNull()
   expect(planOptimizedBash(dir, `cp ${join(dir, 'missing.txt')} ${join(dir, 'out.txt')}`)).toBeNull()
-  // directory targets: real cp copies into the directory, real rm refuses
   expect(planOptimizedBash(dir, `cp ${src} ${subdir}`)).toBeNull()
   expect(planOptimizedBash(dir, `rm ${subdir}`)).toBeNull()
-  // missing rm target: real rm exits non-zero
   expect(planOptimizedBash(dir, `rm ${join(dir, 'missing.txt')}`)).toBeNull()
-  // unknown commands never fast-path
   expect(planOptimizedBash(dir, `ls ${dir}`)).toBeNull()
+  expect(planOptimizedBash(dir, 'cat $(printf exploit) > /dev/null')).toBeNull()
+  expect(planOptimizedBash(dir, `cp ${src} ${join(dir, '*.txt')}`)).toBeNull()
+  expect(planOptimizedBash(dir, 'rm -f')).toBeNull()
  } finally {
   rmSync(dir, {recursive: true, force: true})
  }

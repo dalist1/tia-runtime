@@ -1,5 +1,16 @@
 # Release notes
 
+## v0.3.0
+
+Low-level v4 runtime and benchmark cleanup.
+
+### Highlights
+- update the pinned pi runtime to `0.81.1`
+- load provider-specific model catalogs on the slim stream path
+- speed up bounded edit diffs, stream framing, native read/edit/write, and bash copy/drain helpers
+- make benchmark and RPC harnesses portable across machines
+- enforce formatting, linting, and TypeScript checks across every TypeScript source
+
 ## v0.2.0
 
 Tia runtime release.

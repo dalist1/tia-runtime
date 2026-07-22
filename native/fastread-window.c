@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -26,6 +27,10 @@ static void ensure_capacity(buffer_t *buffer, size_t needed) {
 	if (needed <= buffer->cap) return;
 	size_t next = buffer->cap == 0 ? BUFFER_SIZE : buffer->cap;
 	while (next < needed) {
+		if (next > SIZE_MAX / 2) {
+			errno = EOVERFLOW;
+			fail("buffer too large");
+		}
 		next *= 2;
 	}
 	char *data = realloc(buffer->data, next);
@@ -35,6 +40,10 @@ static void ensure_capacity(buffer_t *buffer, size_t needed) {
 }
 
 static void append_bytes(buffer_t *buffer, const char *src, size_t count) {
+	if (buffer->len == SIZE_MAX || count > SIZE_MAX - buffer->len - 1) {
+		errno = EOVERFLOW;
+		fail("buffer too large");
+	}
 	ensure_capacity(buffer, buffer->len + count + 1);
 	memcpy(buffer->data + buffer->len, src, count);
 	buffer->len += count;
@@ -47,6 +56,10 @@ static void write_all(int fd, const char *buffer, size_t size) {
 		ssize_t bytes_written = write(fd, buffer + written, size - written);
 		if (bytes_written < 0) {
 			if (errno == EINTR) continue;
+			fail("write");
+		}
+		if (bytes_written == 0) {
+			errno = EIO;
 			fail("write");
 		}
 		written += (size_t)bytes_written;
@@ -67,35 +80,41 @@ static size_t format_size(size_t bytes, char *out, size_t out_size) {
 	return (size_t)snprintf(out, out_size, "%.1f %s", value, units[unit]);
 }
 
+static bool parse_positive(const char *text, size_t *value) {
+	char *end = NULL;
+	errno = 0;
+	uintmax_t parsed = strtoumax(text, &end, 10);
+	if (errno != 0 || end == text || *end != '\0' || parsed == 0 || parsed > SIZE_MAX) return false;
+	*value = (size_t)parsed;
+	return true;
+}
+
 int main(int argc, char **argv) {
-	if (argc != 4) {
-		fprintf(stderr, "usage: %s <file> <offset> <limit>\n", argv[0]);
+	if (argc != 4 && argc != 5) {
+		fprintf(stderr, "usage: %s <file> <offset> <limit> [max-bytes]\n", argv[0]);
 		return 1;
 	}
 
 	const char *path = argv[1];
-	long offset_long = strtol(argv[2], NULL, 10);
-	long limit_long = strtol(argv[3], NULL, 10);
-	if (offset_long < 1 || limit_long < 1) {
+	size_t start_line;
+	size_t max_lines;
+	size_t max_bytes = 50 * 1024;
+	if (!parse_positive(argv[2], &start_line) || !parse_positive(argv[3], &max_lines) || (argc == 5 && !parse_positive(argv[4], &max_bytes))) {
 		fprintf(stderr, "offset and limit must be >= 1\n");
 		return 1;
 	}
-
-	size_t start_line = (size_t)offset_long;
-	size_t max_lines = (size_t)limit_long;
-	const size_t max_bytes = 256000;
 
 	int fd = open(path, O_RDONLY | O_CLOEXEC);
 	if (fd < 0) fail("open");
 
 	char chunk[BUFFER_SIZE];
 	buffer_t carry = {0};
+	buffer_t output = {0};
 	size_t current_line = 1;
 	size_t output_lines = 0;
 	size_t output_bytes = 0;
 	bool hit_line_limit = false;
 	bool hit_byte_limit = false;
-	bool wrote_output = false;
 	size_t first_line_excess = 0;
 
 	for (;;) {
@@ -109,8 +128,10 @@ int main(int argc, char **argv) {
 		append_bytes(&carry, chunk, (size_t)bytes_read);
 		size_t line_start = 0;
 
-		for (size_t i = 0; i < carry.len; i += 1) {
-			if (carry.data[i] != '\n') continue;
+		for (;;) {
+			char *found = memchr(carry.data + line_start, '\n', carry.len - line_start);
+			if (!found) break;
+			size_t i = (size_t)(found - carry.data);
 			size_t line_len = i - line_start + 1;
 			if (current_line >= start_line) {
 				if (output_lines >= max_lines) {
@@ -122,8 +143,7 @@ int main(int argc, char **argv) {
 					if (output_lines == 0) first_line_excess = line_len;
 					goto done;
 				}
-				write_all(STDOUT_FILENO, carry.data + line_start, line_len);
-				wrote_output = true;
+				append_bytes(&output, carry.data + line_start, line_len);
 				output_lines += 1;
 				output_bytes += line_len;
 			}
@@ -149,14 +169,14 @@ int main(int argc, char **argv) {
 			if (output_lines == 0) first_line_excess = carry.len;
 			goto done;
 		}
-		write_all(STDOUT_FILENO, carry.data, carry.len);
-		wrote_output = true;
+		append_bytes(&output, carry.data, carry.len);
 		output_lines += 1;
 		output_bytes += carry.len;
 	}
 
 done:
-	close(fd);
+	if (close(fd) != 0) fail("close");
+	if (output.len > 0) write_all(STDOUT_FILENO, output.data, output.len);
 
 	if (hit_line_limit) {
 		char message[256];
@@ -205,7 +225,7 @@ done:
 		}
 	}
 
-	(void)wrote_output;
 	free(carry.data);
+	free(output.data);
 	return 0;
 }

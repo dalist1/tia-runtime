@@ -20,7 +20,7 @@ cat > "${RESULT_DIR}/benchmark-info.json" <<EOF
   "iterations": {
     "read": ${READ_ITERATIONS}
   },
-  "activeHelpers": "pure Zig read/edit, zig cc C write/copy/drain",
+  "activeHelpers": "zig cc C read/write/copy/drain, pure Zig edit",
   "comparisonHelpers": "gcc"
 }
 EOF
@@ -29,7 +29,7 @@ cat > "${RESULT_DIR}/README.md" <<EOF
 
 Date (UTC): ${RUN_DATE_UTC}
 
-Active read helper: pure Zig. GCC read helper is comparison-only.
+Active read helper: C built with zig cc. The GCC build is comparison-only.
 EOF
 
 cleanup() {

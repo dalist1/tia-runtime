@@ -7,6 +7,7 @@ import {join} from 'node:path'
 async function run(command: string[], cwd: string, input?: string) {
  const proc = Bun.spawn(command, {cwd, stdin: input === undefined ? 'ignore' : 'pipe', stdout: 'pipe', stderr: 'pipe'})
  if (input !== undefined) {
+  if (!proc.stdin) throw new Error('stdin pipe unavailable')
   await proc.stdin.write(input)
   proc.stdin.end()
  }
@@ -14,21 +15,19 @@ async function run(command: string[], cwd: string, input?: string) {
  return {stdout, stderr, exitCode}
 }
 
-test('active Zig fastread and fastedit helpers build and run without Linux-only syscalls', async () => {
+test('active C fastread and Zig fastedit helpers build and run', async () => {
  const repo = process.cwd()
  const cwd = mkdtempSync(join(tmpdir(), 'tia-native-fast-tools-test-'))
  try {
-  const fastreadSource = await readFile(join(repo, 'native/fastread-window.zig'), 'utf8')
   const fasteditSource = await readFile(join(repo, 'native/fastedit.zig'), 'utf8')
-  expect(fastreadSource).not.toContain('std.os.linux')
   expect(fasteditSource).not.toContain('std.os.linux')
 
   const outDir = join(cwd, 'bin')
   mkdirSync(outDir)
-  for (const helper of ['fastread-window', 'fastedit']) {
-   const result = await run(['zig', 'build-exe', '-O', 'ReleaseFast', '-fstrip', '--cache-dir', join(cwd, 'zig-cache'), '--global-cache-dir', join(homedir(), '.cache', 'zig'), join(repo, `native/${helper}.zig`), '-femit-bin=' + join(outDir, helper)], repo)
-   expect(result.exitCode, result.stderr).toBe(0)
-  }
+  const readBuild = await run(['zig', 'cc', '-O3', '-pipe', '-s', '-o', join(outDir, 'fastread-window'), join(repo, 'native/fastread-window.c')], repo)
+  expect(readBuild.exitCode, readBuild.stderr).toBe(0)
+  const editBuild = await run(['zig', 'build-exe', '-O', 'ReleaseFast', '-fstrip', '--cache-dir', join(cwd, 'zig-cache'), '--global-cache-dir', join(homedir(), '.cache', 'zig'), join(repo, 'native/fastedit.zig'), '-femit-bin=' + join(outDir, 'fastedit')], repo)
+  expect(editBuild.exitCode, editBuild.stderr).toBe(0)
 
   await writeFile(join(cwd, 'read.txt'), 'alpha\nbeta\ngamma\n')
   const readResult = await run([join(outDir, 'fastread-window'), 'read.txt', '2', '2'], cwd)

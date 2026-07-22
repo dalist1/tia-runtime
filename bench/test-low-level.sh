@@ -12,7 +12,7 @@ trap cleanup EXIT
 assert_file_contains() {
 	local path="$1"
 	local pattern="$2"
-	rg -n --fixed-strings "${pattern}" "${path}" >/dev/null || {
+	grep -Fn -- "${pattern}" "${path}" >/dev/null || {
 		printf 'Expected %s to contain: %s\n' "${path}" "${pattern}" >&2
 		exit 1
 	}
@@ -68,7 +68,7 @@ fi
 
 printf '[low-level candidates] benchmark active native helpers against gcc comparison binaries\n'
 read_candidate_commands=(
-	--command-name 'pure Zig read helper'
+	--command-name 'zig cc C read helper'
 	"${ROOT_DIR}/bin/fastread-window ${ROOT_DIR}/payloads/jsonl-5m.txt 1 12000 > /dev/null"
 )
 write_candidate_commands=(

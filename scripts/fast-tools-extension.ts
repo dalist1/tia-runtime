@@ -11,8 +11,6 @@ const FASTCOPY_BIN = () => join(fastToolsDir(), 'fastcopy')
 const READ_SCAN_CHUNK = 256 * 1024
 const READ_FIRST_CHUNK = 64 * 1024
 
-// Reused scan buffer: scanReadWindow is fully synchronous, so a single
-// module-level scratch buffer can never be observed mid-use.
 let readScratch: Buffer | null = null
 let verifyScratch: Buffer | null = null
 let temporaryFileNonce = Date.now()
@@ -27,7 +25,8 @@ type OptimizedBashStep = {description: string; run: () => Promise<void>}
 type ReplacementEdit = {oldText: string; newText: string}
 type MultiReplacementEdit = ReplacementEdit & {path?: string}
 type ClassicEdit = {path: string; oldText: string; newText: string}
-type PlannedFileEdit = {path: string; absolutePath: string; before: string; after: string; editCount: number}
+type DiffHint = {beforeStart: number; beforeEnd: number; afterStart: number; afterEnd: number}
+type PlannedFileEdit = {path: string; absolutePath: string; before: string; after: string; editCount: number; diffHint?: DiffHint}
 type PatchOperation = {kind: 'add'; path: string; contents: string} | {kind: 'delete'; path: string} | {kind: 'update'; path: string; chunks: PatchChunk[]}
 type PatchChunk = {oldLines: string[]; newLines: string[]; isEndOfFile: boolean}
 type PlannedPatchFile = {path: string; absolutePath: string; before: string | null; after: string | null}
@@ -142,9 +141,94 @@ function lineText(text: string, starts: number[], index: number) {
  return text.slice(starts[index], lineEnd(text, starts, index))
 }
 
-function lineDiff(before: string | null, after: string | null) {
+function countNewlines(text: string, start = 0, end = text.length) {
+ let count = 0
+ let newline = text.indexOf('\n', start)
+ while (newline !== -1 && newline < end) {
+  count += 1
+  newline = text.indexOf('\n', newline + 1)
+ }
+ return count
+}
+
+function textLineCount(text: string) {
+ if (text.length === 0) return 1
+ const lines = countNewlines(text)
+ return text.charCodeAt(text.length - 1) === 10 ? lines : lines + 1
+}
+
+function isLineBoundary(text: string, index: number) {
+ return index >= 0 && index <= text.length && (index === 0 || text.charCodeAt(index - 1) === 10)
+}
+
+function rangeLineEqual(left: string, leftStart: number, leftEnd: number, right: string, rightStart: number, rightEnd: number) {
+ const leftLength = leftEnd - leftStart
+ if (leftLength !== rightEnd - rightStart) return false
+ for (let i = 0; i < leftLength; i += 1) {
+  if (left.charCodeAt(leftStart + i) !== right.charCodeAt(rightStart + i)) return false
+ }
+ return true
+}
+
+function appendDiffRange(lines: string[], text: string, start: number, end: number, firstLine: number, marker: string, width: number) {
+ let position = start
+ let line = firstLine
+ while (position < end) {
+  const newline = text.indexOf('\n', position)
+  const lineEnd = newline === -1 || newline >= end ? end : newline
+  lines.push(`${marker}${String(line).padStart(width)} ${text.slice(position, lineEnd)}`)
+  line += 1
+  position = newline === -1 || newline >= end ? end : newline + 1
+ }
+}
+
+function alignedLineDiff(before: string, after: string, hint: DiffHint) {
+ if (hint.beforeStart !== hint.afterStart || !isLineBoundary(before, hint.beforeStart) || !isLineBoundary(before, hint.beforeEnd) || !isLineBoundary(after, hint.afterStart) || !isLineBoundary(after, hint.afterEnd)) return undefined
+ const prefix = countNewlines(before, 0, hint.beforeStart)
+ const beforeChanged = countNewlines(before, hint.beforeStart, hint.beforeEnd)
+ const afterChanged = countNewlines(after, hint.afterStart, hint.afterEnd)
+ const beforeLines = textLineCount(before)
+ const afterLines = textLineCount(after)
+ const beforeSuffix = beforeLines - prefix - beforeChanged
+ const afterSuffix = afterLines - prefix - afterChanged
+ if (beforeSuffix !== afterSuffix) return undefined
+ if (beforeChanged > 0 && afterChanged > 0) {
+  const beforeFirstEnd = before.indexOf('\n', hint.beforeStart)
+  const afterFirstEnd = after.indexOf('\n', hint.afterStart)
+  if (rangeLineEqual(before, hint.beforeStart, beforeFirstEnd, after, hint.afterStart, afterFirstEnd)) return undefined
+  const beforeLastStart = before.lastIndexOf('\n', hint.beforeEnd - 2) + 1
+  const afterLastStart = after.lastIndexOf('\n', hint.afterEnd - 2) + 1
+  if (rangeLineEqual(before, beforeLastStart, hint.beforeEnd - 1, after, afterLastStart, hint.afterEnd - 1)) return undefined
+ }
+
+ const context = 4
+ const contextBefore = Math.min(context, prefix)
+ let contextStart = hint.beforeStart
+ for (let i = 0; i < contextBefore; i += 1) contextStart = before.lastIndexOf('\n', contextStart - 2) + 1
+ let contextEnd = hint.afterEnd
+ let contextAfter = 0
+ while (contextAfter < context && contextEnd < after.length) {
+  const newline = after.indexOf('\n', contextEnd)
+  contextEnd = newline === -1 ? after.length : newline + 1
+  contextAfter += 1
+ }
+
+ const width = String(Math.max(beforeLines, afterLines, 1)).length
+ const lines: string[] = []
+ if (prefix > context) lines.push(` ${''.padStart(width)} ...`)
+ appendDiffRange(lines, before, contextStart, hint.beforeStart, prefix - contextBefore + 1, ' ', width)
+ appendDiffRange(lines, before, hint.beforeStart, hint.beforeEnd, prefix + 1, '-', width)
+ appendDiffRange(lines, after, hint.afterStart, hint.afterEnd, prefix + 1, '+', width)
+ appendDiffRange(lines, after, hint.afterEnd, contextEnd, prefix + afterChanged + 1, ' ', width)
+ if (beforeSuffix > contextAfter) lines.push(` ${''.padStart(width)} ...`)
+ return lines.join('\n')
+}
+
+function lineDiff(before: string | null, after: string | null, hint?: DiffHint) {
  const beforeText = before ?? ''
  const afterText = after ?? ''
+ const aligned = hint && before !== null && after !== null ? alignedLineDiff(beforeText, afterText, hint) : undefined
+ if (aligned !== undefined) return aligned
  const beforeLines = lineStarts(beforeText)
  const afterLines = lineStarts(afterText)
 
@@ -178,8 +262,8 @@ function editDiffSectionTitle(plan: PlannedFileEdit | PlannedPatchFile) {
 }
 
 export function combinedEditDiff(plans: Array<PlannedFileEdit | PlannedPatchFile>) {
- if (plans.length === 1) return lineDiff(plans[0].before, plans[0].after)
- return plans.map(plan => `${editDiffSectionTitle(plan)}\n${lineDiff(plan.before, plan.after)}`).join('\n\n')
+ if (plans.length === 1) return lineDiff(plans[0].before, plans[0].after, 'diffHint' in plans[0] ? plans[0].diffHint : undefined)
+ return plans.map(plan => `${editDiffSectionTitle(plan)}\n${lineDiff(plan.before, plan.after, 'diffHint' in plan ? plan.diffHint : undefined)}`).join('\n\n')
 }
 
 function renderDiffText(diffText: string, theme: any) {
@@ -703,20 +787,19 @@ function ensureNotAborted(signal?: AbortSignal) {
 const fileMutationQueues = new Map<string, Promise<void>>()
 
 async function withFileMutationQueue<T>(path: string, task: () => Promise<T>): Promise<T> {
- const previous = fileMutationQueues.get(path) ?? Promise.resolve()
+ const previous = fileMutationQueues.get(path)
  let release = () => {}
  const current = new Promise<void>(resolve => {
   release = resolve
  })
- const queued = previous.catch(() => undefined).then(() => current)
- fileMutationQueues.set(path, queued)
+ fileMutationQueues.set(path, current)
 
- await previous.catch(() => undefined)
+ if (previous) await previous
  try {
   return await task()
  } finally {
   release()
-  if (fileMutationQueues.get(path) === queued) {
+  if (fileMutationQueues.get(path) === current) {
    fileMutationQueues.delete(path)
   }
  }
@@ -782,9 +865,7 @@ function fsyncDirOf(absolutePath: string) {
   } finally {
    closeSync(fd)
   }
- } catch {
-  // best effort: some filesystems refuse directory fsync
- }
+ } catch {}
 }
 
 function writeAllSync(fd: number, data: Buffer) {
@@ -794,19 +875,13 @@ function writeAllSync(fd: number, data: Buffer) {
  }
 }
 
-// Atomic verified write: temp file in the target directory, byte-for-byte
-// read-back verification, then rename over the target.
-// Symlink targets are written in place so the link is preserved. fsync is
-// opt-in via TIA_FASTWRITE_FSYNC=1; content verification never depends on it.
 function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Buffer, signal?: AbortSignal) {
  let mode = 0o644
  let hadExisting = false
  let targetStat: ReturnType<typeof lstatSync> | undefined
  try {
   targetStat = lstatSync(absolutePath)
- } catch {
-  // new file: default mode
- }
+ } catch {}
  if (targetStat?.isSymbolicLink()) {
   writeFileSync(absolutePath, data)
   ensureNotAborted(signal)
@@ -814,18 +889,18 @@ function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Bu
   return
  }
  if (targetStat) {
-  mode = targetStat.mode & 0o777
+  mode = Number(targetStat.mode) & 0o777
   hadExisting = true
  }
 
  temporaryFileNonce += 1
  const tmpPath = `${absolutePath}.tmp.${process.pid}.${temporaryFileNonce}`
+ const durable = writeDurability()
  try {
   const fd = openSync(tmpPath, 'wx+', mode)
   try {
    if (hadExisting) fchmodSync(fd, mode)
    writeAllSync(fd, data)
-   const durable = writeDurability()
    if (durable) fsyncSync(fd)
    ensureNotAborted(signal)
    if (!openFdMatches(fd, data)) {
@@ -834,10 +909,8 @@ function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Bu
   } finally {
    closeSync(fd)
   }
-  // Verify the temp file before it replaces the target; rename() moves the
-  // same inode, so the verified bytes are exactly what lands at the target.
   renameSync(tmpPath, absolutePath)
-  if (writeDurability()) fsyncDirOf(absolutePath)
+  if (durable) fsyncDirOf(absolutePath)
   ensureNotAborted(signal)
  } catch (error) {
   rmSync(tmpPath, {force: true})
@@ -861,11 +934,6 @@ function isAgentSkill(absolutePath: string, _cwd: string): boolean {
 
 type ReadWindow = {output: string; outputLines: number; outputBytes: number; hitLineLimit: boolean; hitByteLimit: boolean; firstLineExcess: number; totalLines: number}
 
-// Single-pass in-process windowed read: scans raw bytes with memchr-backed
-// Buffer.indexOf and decodes accepted lines straight from the scan buffer,
-// one decode per contiguous run. Decode boundaries always sit on '\n' bytes;
-// lines that span scan chunks are joined at byte level first, so multi-byte
-// UTF-8 sequences can never be split by a decode.
 function scanReadWindow(absolutePath: string, startLine: number, maxLines: number, maxBytes: number, unlimited: boolean, signal?: AbortSignal): ReadWindow {
  const fd = openSync(absolutePath, 'r')
  const chunk = readScratch ?? (readScratch = Buffer.allocUnsafe(READ_SCAN_CHUNK))
@@ -880,15 +948,15 @@ function scanReadWindow(absolutePath: string, startLine: number, maxLines: numbe
   let hitByteLimit = false
   let firstLineExcess = 0
   let firstRead = true
+  let lastByteWasNewline = false
 
   while (true) {
    ensureNotAborted(signal)
-   // The common case (offset 1, 50KB byte cap) never needs more than the
-   // first 64KB; long lines and deeper windows continue with full chunks.
    const want = firstRead && startLine === 1 && !unlimited ? READ_FIRST_CHUNK : READ_SCAN_CHUNK
    firstRead = false
    const bytesRead = readSync(fd, chunk, 0, want, null)
    if (bytesRead <= 0) break
+   lastByteWasNewline = chunk[bytesRead - 1] === 10
    let pos = 0
    let flushFrom = -1
    let flushTo = 0
@@ -946,7 +1014,7 @@ function scanReadWindow(absolutePath: string, startLine: number, maxLines: numbe
    }
   }
 
-  return {output, outputLines, outputBytes, hitLineLimit, hitByteLimit, firstLineExcess, totalLines: currentLine}
+  return {output, outputLines, outputBytes, hitLineLimit, hitByteLimit, firstLineExcess, totalLines: Math.max(1, currentLine - (lastByteWasNewline ? 1 : 0))}
  } finally {
   closeSync(fd)
  }
@@ -1046,9 +1114,11 @@ export function normalizeEditParams(params: any): MultiReplacementEdit[] {
 }
 
 async function withFileMutationQueues<T>(paths: string[], task: () => Promise<T>): Promise<T> {
- if (paths.length === 0) return task()
- const [head, ...rest] = paths
- return withFileMutationQueue(head, () => withFileMutationQueues(rest, task))
+ async function acquire(index: number): Promise<T> {
+  if (index === paths.length) return task()
+  return withFileMutationQueue(paths[index], () => acquire(index + 1))
+ }
+ return acquire(0)
 }
 
 async function restorePlan(plan: PlannedFileEdit | PlannedPatchFile) {
@@ -1058,9 +1128,7 @@ async function restorePlan(plan: PlannedFileEdit | PlannedPatchFile) {
   } else {
    await Bun.write(plan.absolutePath, plan.before)
   }
- } catch {
-  // best-effort rollback; surface the original failure instead
- }
+ } catch {}
 }
 
 async function applyPlannedEdits(plans: Array<PlannedFileEdit | PlannedPatchFile>, signal?: AbortSignal) {
@@ -1074,9 +1142,9 @@ async function applyPlannedEdits(plans: Array<PlannedFileEdit | PlannedPatchFile
     if (plan.after === null) {
      rmSync(plan.absolutePath, {force: true})
     } else {
-     // In-place write keeps the target's inode, mode, and symlink identity.
-     writeFileSync(plan.absolutePath, plan.after)
-     verifyWrittenBytes(plan.absolutePath, plan.path, Buffer.from(plan.after, 'utf8'), 'edit write')
+     const data = Buffer.from(plan.after, 'utf8')
+     writeFileSync(plan.absolutePath, data)
+     verifyWrittenBytes(plan.absolutePath, plan.path, data, 'edit write')
     }
     applied.push(plan)
     ensureNotAborted(signal)
@@ -1115,8 +1183,6 @@ export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signa
   return withFileMutationQueue(absolutePath, async () => {
    ensureNotAborted(signal)
    const before = readFileSync(absolutePath)
-   // Byte-level search over UTF-8: an exact byte match of a valid UTF-8
-   // needle always lands on character boundaries.
    const oldBytes = Buffer.from(edit.oldText, 'utf8')
    const firstIndex = before.indexOf(oldBytes)
    if (firstIndex === -1) {
@@ -1130,19 +1196,21 @@ export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signa
    before.copy(after, 0, 0, firstIndex)
    newBytes.copy(after, firstIndex)
    before.copy(after, firstIndex + newBytes.length, firstIndex + oldBytes.length)
-   // In-place write keeps the target's inode, mode, and symlink identity.
    writeFileSync(absolutePath, after)
    if (!writtenBytesMatch(absolutePath, after)) {
     const actual = readFileSync(absolutePath)
     try {
      writeFileSync(absolutePath, before)
-    } catch {
-     // best-effort rollback; surface the verification failure instead
-    }
+    } catch {}
     throw writeVerificationError(pathArg, 'edit write', after.toString('utf8'), actual.toString('utf8'))
    }
    ensureNotAborted(signal)
-   return textResult(`Successfully replaced 1 block(s) in ${pathArg}.`, {diff: combinedEditDiff([{path: pathArg, absolutePath, before: before.toString('utf8'), after: after.toString('utf8'), editCount: 1}])})
+   const beforeText = before.toString('utf8')
+   const afterText = after.toString('utf8')
+   const beforeStart = beforeText.indexOf(edit.oldText)
+   return textResult(`Successfully replaced 1 block(s) in ${pathArg}.`, {
+    diff: combinedEditDiff([{path: pathArg, absolutePath, before: beforeText, after: afterText, editCount: 1, diffHint: {beforeStart, beforeEnd: beforeStart + edit.oldText.length, afterStart: beforeStart, afterEnd: beforeStart + edit.newText.length}}])
+   })
   })
  }
 
@@ -1181,6 +1249,10 @@ function statKind(path: string): 'file' | 'dir' | 'other' | 'missing' {
  }
 }
 
+function safeShellPathToken(token: string) {
+ return token.length > 0 && token.charCodeAt(0) !== 45 && !/[\\'"`$*?[\]{}();<>|&!]/.test(token)
+}
+
 export function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | null {
  const parts = command
   .split('&&')
@@ -1197,9 +1269,8 @@ export function planOptimizedBash(cwd: string, command: string): OptimizedBashSt
  for (const part of parts) {
   const catMatch = part.match(/^cat\s+(\S+)\s*>\s*\/dev\/null$/)
   if (catMatch) {
+   if (!safeShellPathToken(catMatch[1])) return null
    const file = resolvePath(cwd, catMatch[1])
-   // Defer to stock bash unless the source is a plain readable file, so error
-   // output and exit codes match real bash for missing/special paths.
    if (statKind(file) !== 'file' && !created.has(file)) return null
    steps.push({
     description: `drain ${catMatch[1]}`,
@@ -1216,10 +1287,9 @@ export function planOptimizedBash(cwd: string, command: string): OptimizedBashSt
 
   const cpMatch = part.match(/^cp\s+(\S+)\s+(\S+)$/)
   if (cpMatch) {
+   if (!safeShellPathToken(cpMatch[1]) || !safeShellPathToken(cpMatch[2])) return null
    const src = resolvePath(cwd, cpMatch[1])
    const dst = resolvePath(cwd, cpMatch[2])
-   // Real cp copies into an existing directory target; the fast path only
-   // handles plain file-to-file copies.
    if (statKind(src) !== 'file' && !created.has(src)) return null
    if (statKind(dst) === 'dir') return null
    created.add(dst)
@@ -1239,9 +1309,8 @@ export function planOptimizedBash(cwd: string, command: string): OptimizedBashSt
 
   const rmMatch = part.match(/^rm\s+(\S+)$/)
   if (rmMatch) {
+   if (!safeShellPathToken(rmMatch[1])) return null
    const target = resolvePath(cwd, rmMatch[1])
-   // Real rm fails on missing paths and directories; only fast-path the
-   // plain-file case (or files created earlier in this same command).
    const kind = statKind(target)
    if (kind === 'dir' || (kind === 'missing' && !created.has(target))) return null
    created.delete(target)
