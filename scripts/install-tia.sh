@@ -22,6 +22,7 @@ XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_BIN_HOME="${XDG_BIN_HOME:-${HOME}/.local/bin}"
 TIA_ROOT="${TIA_ROOT:-${XDG_DATA_HOME}/tia}"
 TIA_BIN_DIR="${XDG_BIN_HOME}"
+ORIGINAL_PATH="${PATH}"
 export PATH="${TIA_BIN_DIR}:${PATH}"
 TIA_CMD_PATH="${TIA_BIN_DIR}/tia"
 TIA_PI_BIN="${TIA_ROOT}/bin/pi"
@@ -71,6 +72,15 @@ die() {
 
 need_cmd() {
 	command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+ensure_directory() {
+	local path="$1"
+	if [[ -L "${path}" && ! -d "${path}" ]]; then
+		rm -f "${path}"
+	fi
+	mkdir -p "${path}"
+	[[ -d "${path}" ]] || die "Could not create directory: ${path}"
 }
 
 copy_or_fetch_script_asset() {
@@ -302,6 +312,7 @@ install_fff_extension_install() {
 install_pi_sandbox() {
 	need_cmd bun
 	mkdir -p "$(dirname -- "${TIA_PI_BIN}")" "$(dirname -- "${TIA_EXTENSION_PATH}")"
+	ensure_directory "${TIA_FFF_STATE_DIR}"
 
 	local pi_path pi_resolved pi_package_dir pi_bin_dir base_agent_dir bun_global_pi_dir prefer_bun_global
 	bun_global_pi_dir="$(bun_global_pi_package_dir)"
@@ -357,12 +368,17 @@ install_pi_sandbox() {
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
 	rm -rf "${TIA_PI_STREAM_RUNTIME_DIR}"
 	mkdir -p "${TIA_PI_STREAM_RUNTIME_DIR}"
-	local pi_ai_dir
+	local pi_ai_dir catalog_builder
 	pi_ai_dir="$(dirname -- "${pi_package_dir}")/pi-ai"
 	[[ -f "${pi_ai_dir}/dist/api/anthropic-messages.js" ]] || die "Could not locate pi-ai stream implementations"
-	bun -e 'const fs=require("node:fs"); const path=require("node:path"); const {pathToFileURL}=require("node:url"); const [source,target]=process.argv.slice(1); const catalog=(await import(pathToFileURL(source).href)).MODELS; fs.writeFileSync(target, JSON.stringify(catalog)); const root=path.dirname(target); const dir=path.join(root,"models"); const index={}; fs.mkdirSync(dir); for (const [provider,models] of Object.entries(catalog)) { fs.writeFileSync(path.join(dir,`${provider}.json`),JSON.stringify(models)); for (const model of Object.values(models)) { const key=model.id.toLowerCase(); index[key]=index[key] === undefined || index[key] === provider ? provider : null; } } const lines=Object.entries(index).filter(([,provider])=>provider!==null).sort(([a],[b])=>a.localeCompare(b)).map(([model,provider])=>`${model}\t${provider}`); fs.writeFileSync(path.join(root,"model-index.txt"),`\n${lines.join("\n")}\n`);' \
+	[[ -f "${pi_package_dir}/dist/core/model-resolver.js" ]] || die "Could not locate pi default model definitions"
+	catalog_builder="${TIA_ROOT}/build-stream-catalog.ts"
+	copy_or_fetch_script_asset "build-stream-catalog.ts" "${catalog_builder}"
+	bun "${catalog_builder}" \
 		"${pi_ai_dir}/dist/models.generated.js" \
-		"${TIA_PI_STREAM_RUNTIME_DIR}/models.json"
+		"${pi_package_dir}/dist/core/model-resolver.js" \
+		"${TIA_PI_STREAM_RUNTIME_DIR}"
+	rm -f "${catalog_builder}"
 	bun build --target=bun --format=esm --minify --splitting \
 		--entry-naming='[name].mjs' \
 		--chunk-naming='chunks/[name]-[hash].mjs' \
@@ -377,7 +393,11 @@ install_pi_sandbox() {
 		"${pi_ai_dir}/dist/api/openai-completions.js" \
 		"${pi_ai_dir}/dist/api/openai-responses.js" \
 		"${pi_ai_dir}/dist/oauth.js" >/dev/null
-	bun -e 'const fs=require("node:fs"); const [path, packageDir, runtimeDir]=process.argv.slice(1); fs.writeFileSync(path, fs.readFileSync(path, "utf8").replaceAll("__PI_PACKAGE_DIR__", packageDir).replaceAll("__STREAM_RUNTIME_DIR__", runtimeDir));' "${TIA_ROOT}/pi-stream-fast.ts" "${pi_package_dir}" "${TIA_PI_STREAM_RUNTIME_DIR}"
+	bun -e 'const fs=require("node:fs"); const [path, packageDir, runtimeDir, defaultsPath]=process.argv.slice(1); const marker="{} /* __TIA_DEFAULT_MODELS__ */"; const input=fs.readFileSync(path, "utf8"); if (!input.includes(marker)) throw new Error("default model marker not found"); const output=input.replaceAll("__PI_PACKAGE_DIR__", packageDir).replaceAll("__STREAM_RUNTIME_DIR__", runtimeDir).replace(marker, fs.readFileSync(defaultsPath, "utf8")); fs.writeFileSync(path, output);' \
+		"${TIA_ROOT}/pi-stream-fast.ts" \
+		"${pi_package_dir}" \
+		"${TIA_PI_STREAM_RUNTIME_DIR}" \
+		"${TIA_PI_STREAM_RUNTIME_DIR}/default-models.json"
 	if ! bun build --compile --minify --bytecode "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}" >/dev/null 2>&1; then
 		bun build --compile --minify "${TIA_ROOT}/pi-stream-fast.ts" --outfile "${TIA_PI_STREAM_BIN}"
 	fi
@@ -526,7 +546,10 @@ refresh_shell_agent_links() {
 }
 
 configure_fff_env() {
-  [[ -d "\${TIA_FFF_STATE_DIR}" ]] || mkdir -p "\${TIA_FFF_STATE_DIR}"
+  if [[ -L "\${TIA_FFF_STATE_DIR}" && ! -d "\${TIA_FFF_STATE_DIR}" ]]; then
+    rm -f "\${TIA_FFF_STATE_DIR}"
+  fi
+  mkdir -p "\${TIA_FFF_STATE_DIR}"
   local arg prev="" cli_mode=""
   for arg in "\$@"; do
     if [[ "\${prev}" == "--fff-mode" ]]; then
@@ -628,9 +651,11 @@ install_all() {
 	install_pi_sandbox
 	write_tia_wrapper
 	printf 'Installed %s command at %s\n' "${RUNTIME_NAME}" "${TIA_CMD_PATH}"
-	printf 'Run: tia pi\n'
-	if [[ ":${PATH}:" != *":${TIA_BIN_DIR}:"* ]]; then
-		printf 'Note: %s is not on PATH in this shell.\n' "${TIA_BIN_DIR}" >&2
+	if [[ ":${ORIGINAL_PATH}:" != *":${TIA_BIN_DIR}:"* ]]; then
+		printf 'Note: %s is not on PATH in this shell. Add it to PATH, then run: tia pi\n' "${TIA_BIN_DIR}" >&2
+		printf 'Run now: %s pi\n' "${TIA_CMD_PATH}"
+	else
+		printf 'Run: tia pi\n'
 	fi
 }
 

@@ -6,13 +6,14 @@ These are the latest benchmark highlights from the tia research harness.
 
 The runtime is pinned to `@earendil-works/pi-coding-agent` **0.81.1**. The slim runner now reads a provider-specific model catalog instead of initializing every provider model, exact full-line edits render bounded diffs without indexing complete files, and the stream writer keeps its common two-index state out of a `Map`.
 
-Current same-source head-to-head results (`hyperfine`, sequential runs, no network):
+Current same-source head-to-head results (`hyperfine`, sequential runs; startup/RPC are network-free and end-to-end streaming uses local HTTP/SSE):
 
 | Workload | Baseline | `tia pi` optimized | Speedup |
 |---|---:|---:|---:|
 | Process startup (`--version`) | stock: 304.8 ± 25.3 ms | 229.1 ± 4.5 ms | **1.33x** |
 | RPC startup (`get_state`) | stock: 324.1 ± 9.6 ms | 261.8 ± 4.4 ms | **1.24x** |
 | JSON startup (`--mode json --no-session`) | full tia: 262.8 ± 13.0 ms | slim tia: 24.2 ± 3.2 ms | **10.87x** |
+| Anthropic end-to-end loopback stream | full tia: 360.6 ± 6.7 ms | slim tia: 32.6 ± 2.7 ms | **11.07x** |
 
 Alternating or paired before/after measurements for this optimization version:
 
@@ -28,13 +29,17 @@ Alternating or paired before/after measurements for this optimization version:
 | native bash | 5MB drain/copy/remove chain | 11.587 ms/op | 3.635 ms/op | **3.19x** |
 
 Low-level changes:
-- provider catalogs are emitted as independent minified JSON files; an allocation-light text index resolves unqualified model IDs
+- provider catalogs are emitted as independent minified JSON files; an allocation-light text index resolves unqualified model IDs, while provider defaults are generated from stock pi and validated against the installed pi-ai catalog
 - aligned full-line edit diffs scan only changed lines and four context lines while retaining generic formatting for other edits
 - the stream writer uses two inline delta slots and lazily allocates a map only for additional content indexes
 - the native read helper uses `memchr`, bounded output buffering, and C built with `zig cc`; the slower duplicate Zig read implementation was removed
 - native copy uses larger `copy_file_range` requests and no longer adds an `fsync` that normal `cp` does not provide
 - native verified writes compare through the existing read/write descriptor without allocating and reopening full files
+- multi-file edits plan under sorted per-file mutation queues and revalidate preflight snapshots before writing, preventing concurrent or external changes from being silently overwritten; rollback failures are surfaced explicitly
+- Linux fault injection covers partial writes, `copy_file_range` and `sendfile` failures after partial progress, verification corruption, and interrupted atomic renames
 - benchmark and RPC paths no longer contain machine-specific package paths; formatting, linting, and TypeScript checks cover every TypeScript source
+
+Follow-up CPU profiles confirmed that the cached read path is primarily UTF-8 decoding plus newline indexing, while verified writes are dominated by the required kernel write/read-back work. Alternating 64KB and 1MB verification-buffer trials produced no repeatable improvement over 256KB, so the existing buffer remains and no additional read/write speedup is claimed.
 
 The complete machine-readable record is `bench/history/2026-07-low-level-v4.json`.
 
@@ -212,7 +217,7 @@ For a heavier confirmation pass:
 TIER=full ROUNDS=5 bash bench/feedback-loop.sh
 ```
 
-Recent loops found the retained set alternating between compiled/native, compiled/Zig-built, and warm-daemon winners depending on workload. Verified writes now perform exact post-write content checks; any mismatch fails the run.
+The archived v4 full-tier run (`bench/history/2026-07-low-level-v4-feedback/`) completed five rounds with 100% successful runs. GCC comparison helpers led the variance-adjusted ranking in all five retained suites; GCC had the lower mean for stream/bash/read, while native retained a slightly lower mean for edit/write but with higher variance. Raw timings are archived for each round. Verified writes perform exact post-write content checks, so any mismatch fails the run.
 
 ## How to reproduce
 
@@ -229,6 +234,13 @@ bash bench/hyperfine-tia-json-stream.sh
 ```
 
 This benchmark isolates local JSON streaming startup/runner overhead by sending no prompt. It does not measure provider first-token or token-throughput latency, which is network/model dependent.
+
+### tia Anthropic HTTP/SSE loopback
+```bash
+bash bench/hyperfine-tia-loopback.sh
+```
+
+This starts a local Anthropic-compatible SSE endpoint and compares full and slim `tia pi` using the same model, prompt, endpoint, and installed pi source. It includes process launch, configuration/model/auth resolution, provider loading, one HTTP request/stream, JSON framing, and shutdown without internet or model latency.
 
 ### tia fast tools burst
 ```bash

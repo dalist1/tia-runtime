@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TMP_DIR="$(mktemp -d)"
 TIMEOUT_BIN=""
+LOOPBACK_PID=""
 if command -v timeout >/dev/null 2>&1; then
 	TIMEOUT_BIN="timeout"
 elif command -v gtimeout >/dev/null 2>&1; then
@@ -42,6 +43,10 @@ assert_clean_toolkit() {
 	done < <(find "${agent_dir}/fast-tools" -mindepth 1 -maxdepth 1 -type f)
 }
 cleanup() {
+	if [[ -n "${LOOPBACK_PID}" ]]; then
+		kill "${LOOPBACK_PID}" >/dev/null 2>&1 || true
+		wait "${LOOPBACK_PID}" 2>/dev/null || true
+	fi
 	rm -rf "${TMP_DIR}"
 }
 trap cleanup EXIT
@@ -60,6 +65,7 @@ HOST_PI_PACKAGE_DIR="${PI_PACKAGE_DIR}"
 [[ "$(bun -e 'console.log(require(process.argv[1]).version)' "${PI_PACKAGE_DIR}/package.json")" == "0.81.1" ]]
 [[ -x "${HOME}/.local/share/tia/bin/pi-stream-fast" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/models.json" ]]
+[[ -f "${HOME}/.local/share/tia/stream-runtime/default-models.json" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/model-index.txt" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/models/anthropic.json" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/anthropic-messages.mjs" ]]
@@ -126,6 +132,32 @@ env -i HOME="${HOME}" PATH="${PATH}" ANTHROPIC_API_KEY=dummy PI_NO_PROXY_AUTO_ST
 	tia pi --mode json --no-session --model claude-opus-4-8 > "${TMP_DIR}/tia-stream-model.jsonl"
 bun -e 'for (const path of process.argv.slice(1)) { const event=JSON.parse(require("node:fs").readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== "anthropic" || event.model !== "claude-opus-4-8") process.exit(1); }' \
 	"${TMP_DIR}/tia-stream-provider.jsonl" "${TMP_DIR}/tia-stream-model.jsonl"
+env -i HOME="${HOME}" PATH="${PATH}" XAI_API_KEY=dummy PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
+	tia pi --mode json --no-session --provider xai > "${TMP_DIR}/tia-stream-xai.jsonl"
+env -i HOME="${HOME}" PATH="${PATH}" ANTHROPIC_API_KEY=dummy XAI_API_KEY=dummy PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
+	tia pi --mode json --no-session > "${TMP_DIR}/tia-stream-auth-fallback.jsonl"
+printf '%s\n' '{"providers":{"local-fast":{"baseUrl":"http://127.0.0.1:11434/v1","api":"openai-completions","apiKey":"local","models":[{"id":"local-model"}]}}}' > "${STREAM_AGENT_DIR}/models.json"
+env -i HOME="${HOME}" PATH="${PATH}" PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
+	tia pi --mode json --no-session --provider local-fast > "${TMP_DIR}/tia-stream-custom.jsonl"
+bun -e 'const fs=require("node:fs"); const checks=[[process.argv[1],"xai","grok-4.5"],[process.argv[2],"anthropic","claude-opus-4-8"],[process.argv[3],"local-fast","local-model"]]; for (const [path,provider,model] of checks) { const event=JSON.parse(fs.readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== provider || event.model !== model) process.exit(1); }' \
+	"${TMP_DIR}/tia-stream-xai.jsonl" "${TMP_DIR}/tia-stream-auth-fallback.jsonl" "${TMP_DIR}/tia-stream-custom.jsonl"
+LOOPBACK_READY="${TMP_DIR}/loopback.port"
+bun "${ROOT_DIR}/bench/anthropic-loopback-server.ts" "${LOOPBACK_READY}" >"${TMP_DIR}/loopback-server.log" 2>&1 &
+LOOPBACK_PID="$!"
+for _ in $(seq 1 100); do
+	[[ -s "${LOOPBACK_READY}" ]] && break
+	kill -0 "${LOOPBACK_PID}" 2>/dev/null || break
+	sleep 0.02
+done
+[[ -s "${LOOPBACK_READY}" ]]
+LOOPBACK_PORT="$(tr -d '[:space:]' < "${LOOPBACK_READY}")"
+printf '%s\n' "{\"providers\":{\"anthropic\":{\"baseUrl\":\"http://127.0.0.1:${LOOPBACK_PORT}\",\"apiKey\":\"dummy\"}}}" > "${STREAM_AGENT_DIR}/models.json"
+run_with_optional_timeout env -i HOME="${HOME}" PATH="${PATH}" PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
+	tia pi --mode json --no-session --provider anthropic --model claude-opus-4-8 loopback > "${TMP_DIR}/tia-stream-loopback.jsonl"
+kill "${LOOPBACK_PID}" >/dev/null 2>&1 || true
+wait "${LOOPBACK_PID}" 2>/dev/null || true
+LOOPBACK_PID=""
+bun -e 'const lines=require("node:fs").readFileSync(process.argv[1],"utf8").trim().split(/\n+/).map(JSON.parse); if (!lines.some(event=>event.t==="d"&&event.s==="loopback ok") || !lines.some(event=>event.t==="done"&&!event.error)) process.exit(1)' "${TMP_DIR}/tia-stream-loopback.jsonl"
 
 printf '[8/10] verify exact write reliability\n'
 bun "${ROOT_DIR}/bench/write-reliability.ts" 5 > "${TMP_DIR}/write-reliability.json"
@@ -138,7 +170,8 @@ printf '[10/10] verify installer bootstrap path\n'
 BOOTSTRAP_HOME="${TMP_DIR}/bootstrap-home"
 BOOTSTRAP_BIN_HOME="${BOOTSTRAP_HOME}/bin"
 BOOTSTRAP_DATA_HOME="${BOOTSTRAP_HOME}/share"
-mkdir -p "${TMP_DIR}/bootstrap-cwd"
+mkdir -p "${TMP_DIR}/bootstrap-cwd" "${BOOTSTRAP_DATA_HOME}/tia/pi-agent"
+ln -s "${TMP_DIR}/missing-fff-state" "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff"
 (
 	cd "${TMP_DIR}/bootstrap-cwd"
 	curl -fsSL "$(bun -e 'const { pathToFileURL } = require("node:url"); console.log(pathToFileURL(process.argv[1]).href)' "${ROOT_DIR}/install.sh")" | \
@@ -148,13 +181,19 @@ mkdir -p "${TMP_DIR}/bootstrap-cwd"
 	INSTALL_BASE_URL="$(bun -e 'const { pathToFileURL } = require("node:url"); console.log(pathToFileURL(process.argv[1]).href)' "${ROOT_DIR}/scripts")" \
 	PI_PACKAGE_DIR="${HOST_PI_PACKAGE_DIR}" \
 	TIA_ENABLE_FFF=0 \
-	bash -s -- tia install > "${TMP_DIR}/bootstrap-install.txt"
+	bash -s -- tia install > "${TMP_DIR}/bootstrap-install.txt" 2>&1
 )
 HOME="${BOOTSTRAP_HOME}" \
 XDG_BIN_HOME="${BOOTSTRAP_BIN_HOME}" \
 XDG_DATA_HOME="${BOOTSTRAP_DATA_HOME}" \
 "${BOOTSTRAP_BIN_HOME}/tia" status > "${TMP_DIR}/bootstrap-status.txt"
 grep -En "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
+grep -F "${BOOTSTRAP_BIN_HOME} is not on PATH" "${TMP_DIR}/bootstrap-install.txt" >/dev/null
+[[ -d "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff" && ! -L "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff" ]]
+rm -rf "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff"
+ln -s "${TMP_DIR}/missing-fff-state" "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff"
+HOME="${BOOTSTRAP_HOME}" PI_NO_PROXY_AUTO_START=1 "${BOOTSTRAP_BIN_HOME}/tia" pi --version >/dev/null
+[[ -d "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff" && ! -L "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff" ]]
 assert_clean_toolkit "${BOOTSTRAP_DATA_HOME}/tia/pi-agent"
 [[ ! -e "${BOOTSTRAP_BIN_HOME}/max" ]]
 

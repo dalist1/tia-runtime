@@ -13,9 +13,10 @@ function pstdev(values: number[]) {
  return Math.sqrt(mean(values.map(value => (value - m) ** 2)))
 }
 
-function strategyFor(command: string) {
+export function strategyFor(command: string) {
  const lower = command.toLowerCase()
  if (lower.includes('zigcc') || lower.includes('zig')) return 'zig-built native helpers'
+ if (lower.includes('gcc')) return 'gcc comparison helpers'
  if (lower.includes('warm-daemon') || lower.includes('warm daemon')) return 'warm daemon + native helpers'
  if (lower.includes('compiled') && lower.includes('native')) return 'compiled runner + native helpers'
  if (lower.includes('tia pi rpc')) return 'tia compiled launcher'
@@ -140,18 +141,24 @@ function writeMarkdown(resultDir: string, config: AnyObj, summary: AnyObj) {
  lines.push('', '## Top strategies', '', '| Rank | Strategy | Wins | Avg speedup | Avg CV | Suites |', '|---:|---|---:|---:|---:|---|')
  summary.top_strategies.forEach((row: any, index: number) => lines.push(`| ${index + 1} | ${row.strategy} | ${row.wins} | ${fmtSpeedup(row.avg_speedup_vs_baseline)} | ${(row.avg_cv * 100).toFixed(1)}% | ${row.suites.map((s: string) => `\`${s}\``).join(', ')} |`))
  lines.push('')
- writeFileSync(join(resultDir, 'summary.md'), `${lines.join('\n')}\n`)
+ writeFileSync(join(resultDir, 'summary.md'), lines.join('\n'))
 }
 
-const resultDir = process.argv[2]
-if (!resultDir) {
- console.error('usage: summarize-feedback-loop.ts <result-dir>')
- process.exit(2)
+export function summarizeFeedbackLoop(resultDir: string) {
+ const configPath = join(resultDir, 'config.json')
+ const config = existsSync(configPath) ? loadJson(configPath) : {}
+ const collected = collect(resultDir)
+ const summary = finalize(collected.suites, collected.baselines)
+ writeFileSync(join(resultDir, 'summary.json'), `${JSON.stringify({config, ...summary}, null, 2)}\n`)
+ writeMarkdown(resultDir, config, summary)
+ return join(resultDir, 'summary.md')
 }
-const configPath = join(resultDir, 'config.json')
-const config = existsSync(configPath) ? loadJson(configPath) : {}
-const collected = collect(resultDir)
-const summary = finalize(collected.suites, collected.baselines)
-writeFileSync(join(resultDir, 'summary.json'), `${JSON.stringify({config, ...summary}, null, 2)}\n`)
-writeMarkdown(resultDir, config, summary)
-console.log(join(resultDir, 'summary.md'))
+
+if (import.meta.main) {
+ const resultDir = process.argv[2]
+ if (!resultDir) {
+  console.error('usage: summarize-feedback-loop.ts <result-dir>')
+  process.exit(2)
+ }
+ console.log(summarizeFeedbackLoop(resultDir))
+}

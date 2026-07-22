@@ -1,5 +1,8 @@
 import {expect, test} from 'bun:test'
-import {SlimStreamWriter} from './pi-stream-fast.ts'
+import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {resolve} from 'node:path'
+import {createModelMap, resolveOAuth, selectModel, SlimStreamWriter} from './pi-stream-fast.ts'
 
 type Frame = {t: string; i: number; s?: string}
 
@@ -198,4 +201,68 @@ test('interleaved deltas beyond the two-slot fast path preserve every index', as
   if (frame.t === 'd') actual.set(frame.i, `${actual.get(frame.i) ?? ''}${frame.s}`)
  }
  expect(actual).toEqual(expected)
+})
+
+function selectableModel(provider: string, id: string) {
+ return {id, name: id, provider, api: 'openai-completions', baseUrl: `https://${provider}.example.test`, reasoning: false, input: ['text'], cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}, contextWindow: 128000, maxTokens: 16384}
+}
+
+test('duplicate unqualified model ids prefer a configured provider deterministically', () => {
+ const catalog = {alpha: {shared: selectableModel('alpha', 'shared')}, beta: {shared: selectableModel('beta', 'shared')}}
+ const defaults = {alpha: 'shared', beta: 'shared'}
+ const {providers, requestConfig} = createModelMap(catalog, {})
+ const beta = selectModel({modelId: 'shared', messages: []}, {}, providers, {beta: {type: 'api_key', key: 'dummy'}}, requestConfig, defaults)
+ expect(beta.model.provider).toBe('beta')
+ const first = selectModel({modelId: 'shared', messages: []}, {}, providers, {alpha: {}, beta: {}}, requestConfig, defaults)
+ expect(first.model.provider).toBe('alpha')
+})
+
+test('every installed provider default drives normal and unknown-id fallback selection', async () => {
+ const packageRoot = resolve(import.meta.dir, '..', 'node_modules', '@earendil-works')
+ const [catalogModule, resolverModule] = await Promise.all([import(resolve(packageRoot, 'pi-ai', 'dist', 'models.generated.js')), import(resolve(packageRoot, 'pi-coding-agent', 'dist', 'core', 'model-resolver.js'))])
+ const catalog = catalogModule.MODELS
+ const defaults = resolverModule.defaultModelPerProvider
+ const {providers, requestConfig} = createModelMap(catalog, {})
+ let checked = 0
+ for (const [provider, defaultId] of Object.entries(defaults)) {
+  if (typeof defaultId !== 'string') throw new Error(`Invalid default for ${provider}`)
+  const candidates = providers.get(provider)
+  if (!candidates) continue
+  const expected = candidates.find(model => model.id === defaultId)
+  if (!expected) throw new Error(`Missing installed default ${provider}/${defaultId}`)
+  const selected = selectModel({provider, messages: []}, {}, providers, {}, requestConfig, defaults)
+  expect(selected.model.id).toBe(defaultId)
+  const fallback = selectModel({provider, modelId: 'tia-unknown-model', messages: []}, {}, providers, {}, requestConfig, defaults)
+  expect(fallback.model.id).toBe('tia-unknown-model')
+  expect(fallback.model.api).toBe(expected?.api)
+  expect(fallback.model.baseUrl).toBe(expected?.baseUrl)
+  checked += 1
+ }
+ expect(checked).toBeGreaterThan(30)
+})
+
+test('concurrent OAuth refreshes share the persisted result through the auth lock', async () => {
+ const dir = mkdtempSync(resolve(tmpdir(), 'tia-oauth-test-'))
+ const authPath = resolve(dir, 'auth.json')
+ const credential = {type: 'oauth', refresh: 'refresh-token', access: 'expired', expires: 0}
+ const auth = {test: credential}
+ writeFileSync(authPath, JSON.stringify(auth))
+ let refreshes = 0
+ const loadProvider = async () => ({
+  refreshToken: async () => {
+   refreshes += 1
+   await Bun.sleep(30)
+   return {refresh: 'refresh-token', access: 'fresh', expires: Date.now() + 60_000}
+  }
+ })
+ try {
+  const [left, right] = await Promise.all([resolveOAuth('test', credential, auth, authPath, loadProvider), resolveOAuth('test', credential, auth, authPath, loadProvider)])
+  expect(left.apiKey).toBe('fresh')
+  expect(right.apiKey).toBe('fresh')
+  expect(refreshes).toBe(1)
+  expect(JSON.parse(readFileSync(authPath, 'utf8')).test.access).toBe('fresh')
+  expect(existsSync(`${authPath}.lock`)).toBe(false)
+ } finally {
+  rmSync(dir, {recursive: true, force: true})
+ }
 })

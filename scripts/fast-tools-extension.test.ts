@@ -3,7 +3,7 @@ import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {readFile, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {combinedEditDiff, duplicateEditError, editToolDescription, editToolPromptSnippet, missingEditError, planClassicEdits, planOptimizedBash, planPatch} from './fast-tools-extension'
+import {applyPlannedEdits, combinedEditDiff, duplicateEditError, editToolDescription, editToolPromptSnippet, fastEdit, missingEditError, planClassicEdits, planOptimizedBash, planPatch} from './fast-tools-extension'
 
 test('edit diagnostics explain indentation-only exact-match failures', () => {
  const content = 'function render() {\n\tfields.push({label:"skills",value:"—"});\n\tfields.push({label:"spawning",value:"false"});\n}\n'
@@ -97,6 +97,72 @@ test('classic multi-file edits preflight all files before producing planned writ
   ])
   expect(await readFile(join(cwd, 'one.txt'), 'utf8')).toBe('alpha\nbeta\n')
   expect(await readFile(join(cwd, 'two.txt'), 'utf8')).toBe('gamma\ndelta\n')
+ } finally {
+  rmSync(cwd, {recursive: true, force: true})
+ }
+})
+
+test('planned multi-file edits abort without writes when an external mutation makes preflight stale', async () => {
+ const cwd = mkdtempSync(join(tmpdir(), 'tia-stale-edit-test-'))
+ try {
+  const one = join(cwd, 'one.txt')
+  const two = join(cwd, 'two.txt')
+  await writeFile(one, 'alpha\nbeta\n')
+  await writeFile(two, 'gamma\ndelta\n')
+  const plans = await planClassicEdits(
+   cwd,
+   [
+    {path: 'one.txt', oldText: 'alpha', newText: 'ALPHA'},
+    {path: 'two.txt', oldText: 'delta', newText: 'DELTA'}
+   ],
+   path => readFile(path, 'utf8')
+  )
+  await writeFile(one, 'external change\n')
+
+  await expect(applyPlannedEdits(plans)).rejects.toThrow('file changed after preflight')
+  expect(await readFile(one, 'utf8')).toBe('external change\n')
+  expect(await readFile(two, 'utf8')).toBe('gamma\ndelta\n')
+ } finally {
+  rmSync(cwd, {recursive: true, force: true})
+ }
+})
+
+test('rollback failures are surfaced without masking the original edit failure', async () => {
+ const cwd = mkdtempSync(join(tmpdir(), 'tia-rollback-failure-test-'))
+ try {
+  const target = join(cwd, 'shared.txt')
+  await writeFile(target, 'original\n')
+  const plans = [
+   {path: 'shared.txt', absolutePath: target, before: 'original\n', after: 'first write\n', editCount: 1},
+   {path: 'shared.txt', absolutePath: target, before: 'original\n', after: 'second write\n', editCount: 1}
+  ]
+  await expect(
+   applyPlannedEdits(plans, undefined, async () => {
+    throw new Error('injected restore failure')
+   })
+  ).rejects.toThrow('rollback operation(s) also failed')
+  expect(await readFile(target, 'utf8')).toBe('first write\n')
+ } finally {
+  rmSync(cwd, {recursive: true, force: true})
+ }
+})
+
+test('concurrent multi-edit calls plan inside shared mutation queues', async () => {
+ const cwd = mkdtempSync(join(tmpdir(), 'tia-concurrent-multi-edit-test-'))
+ try {
+  const target = join(cwd, 'shared.txt')
+  await writeFile(target, 'alpha beta one two\n')
+  await Promise.all([
+   fastEdit(cwd, [
+    {path: target, oldText: 'alpha', newText: 'ALPHA'},
+    {path: target, oldText: 'one', newText: 'ONE'}
+   ]),
+   fastEdit(cwd, [
+    {path: target, oldText: 'beta', newText: 'BETA'},
+    {path: target, oldText: 'two', newText: 'TWO'}
+   ])
+  ])
+  expect(await readFile(target, 'utf8')).toBe('ALPHA BETA ONE TWO\n')
  } finally {
   rmSync(cwd, {recursive: true, force: true})
  }

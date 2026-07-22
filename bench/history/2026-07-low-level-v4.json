@@ -7,6 +7,7 @@
   "versionStartup": {"runs": 20, "warmup": 5, "stockMeanMs": 304.831, "stockStddevMs": 25.304, "tiaMeanMs": 229.078, "tiaStddevMs": 4.501, "speedup": 1.331},
   "rpcStartup": {"runs": 12, "warmup": 3, "stockMeanMs": 324.072, "stockStddevMs": 9.583, "tiaMeanMs": 261.8, "tiaStddevMs": 4.35, "speedup": 1.238},
   "slimJsonVsFull": {"runs": 20, "warmup": 5, "fullMeanMs": 262.77, "fullStddevMs": 13.019, "slimMeanMs": 24.184, "slimStddevMs": 3.226, "speedup": 10.866},
+  "loopbackAnthropicEndToEnd": {"dateUtc": "2026-07-22T16:59:32Z", "runs": 15, "warmup": 3, "fullMeanMs": 360.585, "fullStddevMs": 6.682, "slimMeanMs": 32.565, "slimStddevMs": 2.689, "speedup": 11.073},
   "providerSelectiveStartup": {"pairedRuns": 200, "baselineMeanMs": 20.074, "optimizedMeanMs": 17.869, "speedup": 1.123},
   "unqualifiedModelStartup": {"pairedRuns": 200, "baselineMeanMs": 20.485, "optimizedMeanMs": 19.756, "speedup": 1.037},
   "extensionEdit100KiB": {"alternatingRounds": 15, "iterationsPerRound": 500, "baselineMeanMsPerOperation": 0.507013, "optimizedMeanMsPerOperation": 0.362402, "meanSpeedup": 1.399, "medianSpeedup": 1.45},
@@ -14,13 +15,25 @@
   "nativeRead": {"alternatingRounds": 12, "baselineMsPerOperation": 0.853487, "optimizedMsPerOperation": 0.753403, "speedup": 1.133},
   "nativeEdit": {"alternatingRounds": 12, "baselineMsPerOperation": 13.770255, "optimizedMsPerOperation": 7.703716, "speedup": 1.787},
   "nativeVerifiedWrite": {"alternatingRounds": 12, "baselineMsPerOperation": 16.731161, "optimizedMsPerOperation": 16.238736, "speedup": 1.03},
-  "nativeBashDrainCopy": {"alternatingRounds": 12, "baselineMsPerOperation": 11.586692, "optimizedMsPerOperation": 3.635105, "speedup": 3.187}
+  "nativeBashDrainCopy": {"alternatingRounds": 12, "baselineMsPerOperation": 11.586692, "optimizedMsPerOperation": 3.635105, "speedup": 3.187},
+  "fullTierFeedbackLoop": {"dateUtc": "2026-07-22T18:24:32Z", "rounds": 5, "runsPerCandidate": 6, "successRate": 1, "gccComparisonWins": ["stream-read", "tool-bash", "tool-edit", "tool-read", "tool-write"]}
  },
- "commands": ["bash bench/hyperfine-tia-pi.sh", "bash bench/hyperfine-tia-json-stream.sh", "bun bench/fast-tools-extension-burst.ts <read|write|edit> <iterations>", "bun bench/slim-stream-writer-burst.ts 200 10000", "bash bench/test-low-level.sh"],
+ "commands": [
+  "bash bench/hyperfine-tia-pi.sh",
+  "bash bench/hyperfine-tia-json-stream.sh",
+  "bash bench/hyperfine-tia-loopback.sh",
+  "TIER=full ROUNDS=5 bash bench/feedback-loop.sh",
+  "bun bench/fast-tools-extension-burst.ts <read|write|edit> <iterations>",
+  "bun bench/slim-stream-writer-burst.ts 200 10000",
+  "bash bench/test-low-level.sh"
+ ],
  "notes": [
   "Before/after microbenchmarks alternated baseline and optimized runs on the same machine.",
   "Provider-selective startup used paired, CPU-pinned, no-network runs against the same pi 0.81.1 source.",
   "The documented head-to-head hyperfine suites ran sequentially; parallel exploratory output was discarded.",
-  "Read and write extension paths were neutral and are not claimed as speedups in this version."
+  "Read and write extension paths were neutral and are not claimed as speedups in this version.",
+  "The Anthropic end-to-end benchmark uses a local HTTP/SSE fixture and includes process launch, configuration, provider loading, request/response streaming, framing, and shutdown.",
+  "Follow-up CPU profiles found no repeatable read/write improvement from changing the 256KB verification buffer; neutral 64KB and slower 1MB trials were discarded.",
+  "The archived five-round full-tier feedback loop had 100% successful runs; GCC comparison helpers led the variance-adjusted ranking in all five retained suites, while native retained slightly lower raw means for edit and write. Raw output is under bench/history/2026-07-low-level-v4-feedback/."
  ]
 }

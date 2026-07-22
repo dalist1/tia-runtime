@@ -8,17 +8,20 @@ import {join} from 'node:path'
 import type {AssistantMessage, AssistantMessageEventStream, Context, SimpleStreamOptions} from '@earendil-works/pi-ai'
 
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
-type ParsedArgs = {provider?: string; modelId?: string; thinkingLevel?: ThinkingLevel; messages: string[]}
+export type ParsedArgs = {provider?: string; modelId?: string; thinkingLevel?: ThinkingLevel; messages: string[]}
 type StreamSink = (chunk: string, callback: () => void) => boolean
 type JsonObject = Record<string, any>
 type Model = {id: string; name?: string; api: string; provider: string; baseUrl: string; reasoning?: boolean; thinkingLevelMap?: JsonObject; input: string[]; cost: JsonObject; contextWindow: number; maxTokens: number; headers?: Record<string, string>; compat?: JsonObject}
 
 type RuntimeConfig = {model: Model; thinkingLevel?: ThinkingLevel; streamOptions: SimpleStreamOptions; loadApi: () => Promise<{streamSimple: (model: Model, context: Context, options: SimpleStreamOptions) => AssistantMessageEventStream}>}
 type RuntimeFiles = {settings: JsonObject; authPath: string; auth: JsonObject; modelsConfig: JsonObject}
+type DefaultModels = Record<string, string>
+type OAuthProviderLoader = (providerId: string) => Promise<{refreshToken: (credential: JsonObject) => Promise<JsonObject>} | undefined>
 
 const STREAM_RUNTIME_DIR = '__STREAM_RUNTIME_DIR__'
 const DEFAULT_THINKING_LEVEL: ThinkingLevel = 'medium'
 const EMPTY_COST = {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}
+const DEFAULT_MODELS: DefaultModels = {} /* __TIA_DEFAULT_MODELS__ */
 const API_KEY_ENV: Record<string, string[]> = {
  'ant-ling': ['ANT_LING_API_KEY'],
  anthropic: ['ANTHROPIC_OAUTH_TOKEN', 'ANTHROPIC_API_KEY'],
@@ -51,42 +54,6 @@ const API_KEY_ENV: Record<string, string[]> = {
  'xiaomi-token-plan-cn': ['XIAOMI_TOKEN_PLAN_CN_API_KEY'],
  'xiaomi-token-plan-ams': ['XIAOMI_TOKEN_PLAN_AMS_API_KEY'],
  'xiaomi-token-plan-sgp': ['XIAOMI_TOKEN_PLAN_SGP_API_KEY']
-}
-
-const DEFAULT_MODEL: Record<string, string> = {
- 'amazon-bedrock': 'us.anthropic.claude-opus-4-6-v1',
- 'ant-ling': 'Ring-2.6-1T',
- anthropic: 'claude-opus-4-8',
- openai: 'gpt-5.5',
- 'azure-openai-responses': 'gpt-5.4',
- 'openai-codex': 'gpt-5.5',
- nvidia: 'nvidia/nemotron-3-super-120b-a12b',
- deepseek: 'deepseek-v4-pro',
- google: 'gemini-3.1-pro-preview',
- 'google-vertex': 'gemini-3.1-pro-preview',
- 'github-copilot': 'gpt-5.4',
- openrouter: 'moonshotai/kimi-k2.6',
- 'vercel-ai-gateway': 'zai/glm-5.1',
- xai: 'grok-4.20-0309-reasoning',
- groq: 'openai/gpt-oss-120b',
- cerebras: 'zai-glm-4.7',
- zai: 'glm-5.1',
- 'zai-coding-cn': 'glm-5.1',
- mistral: 'devstral-medium-latest',
- minimax: 'MiniMax-M2.7',
- 'minimax-cn': 'MiniMax-M2.7',
- moonshotai: 'kimi-k2.6',
- 'moonshotai-cn': 'kimi-k2.6',
- huggingface: 'moonshotai/Kimi-K2.6',
- fireworks: 'accounts/fireworks/models/kimi-k2p6',
- together: 'moonshotai/Kimi-K2.6',
- 'kimi-coding': 'kimi-for-coding',
- 'cloudflare-workers-ai': '@cf/moonshotai/kimi-k2.6',
- 'cloudflare-ai-gateway': 'workers-ai/@cf/moonshotai/kimi-k2.6',
- xiaomi: 'mimo-v2.5-pro',
- 'xiaomi-token-plan-cn': 'mimo-v2.5-pro',
- 'xiaomi-token-plan-ams': 'mimo-v2.5-pro',
- 'xiaomi-token-plan-sgp': 'mimo-v2.5-pro'
 }
 
 function isThinkingLevel(value: string): value is ThinkingLevel {
@@ -375,7 +342,7 @@ function applyOverride(model: Model, override: JsonObject): Model {
  }
 }
 
-function createModelMap(catalog: JsonObject, config: JsonObject) {
+export function createModelMap(catalog: JsonObject, config: JsonObject) {
  const providers = new Map<string, Model[]>()
  const requestConfig = new Map<string, JsonObject>()
  const modelHeaders = new Map<string, Record<string, string>>()
@@ -485,7 +452,7 @@ function configuredAuth(provider: string, auth: JsonObject, modelsConfig: JsonOb
  return typeof value === 'string' && templateConfigured(value)
 }
 
-function preferredCatalogProvider(parsed: ParsedArgs, files: RuntimeFiles) {
+function preferredCatalogProvider(parsed: ParsedArgs, files: RuntimeFiles, defaultModels: DefaultModels) {
  if (parsed.provider) return parsed.provider
  if (parsed.modelId?.includes('/')) return parsed.modelId.slice(0, parsed.modelId.indexOf('/'))
  if (parsed.modelId) {
@@ -504,7 +471,7 @@ function preferredCatalogProvider(parsed: ParsedArgs, files: RuntimeFiles) {
  const defaultProvider = typeof files.settings.defaultProvider === 'string' ? files.settings.defaultProvider : undefined
  const defaultModel = typeof files.settings.defaultModel === 'string' ? files.settings.defaultModel : undefined
  if (defaultProvider && defaultModel && configuredAuth(defaultProvider, files.auth, files.modelsConfig)) return defaultProvider
- for (const provider in DEFAULT_MODEL) {
+ for (const provider in defaultModels) {
   if (configuredAuth(provider, files.auth, files.modelsConfig)) return provider
  }
  return undefined
@@ -534,7 +501,7 @@ function findModel(models: Model[], pattern: string) {
  return (aliases.length > 0 ? aliases : matches).sort((a, b) => b.id.localeCompare(a.id))[0]
 }
 
-function selectModel(parsed: ParsedArgs, settings: JsonObject, providers: Map<string, Model[]>, auth: JsonObject, requestConfig: Map<string, JsonObject>) {
+export function selectModel(parsed: ParsedArgs, settings: JsonObject, providers: Map<string, Model[]>, auth: JsonObject, requestConfig: Map<string, JsonObject>, defaultModels: DefaultModels) {
  let thinkingLevel: ThinkingLevel | undefined
  let provider = parsed.provider
  let pattern = parsed.modelId
@@ -554,15 +521,21 @@ function selectModel(parsed: ParsedArgs, settings: JsonObject, providers: Map<st
    const candidates = providers.get(provider) ?? []
    const found = findModel(candidates, pattern)
    if (found) return {model: found, thinkingLevel}
-   if (candidates[0]) return {model: {...candidates[0], id: pattern, name: pattern}, thinkingLevel}
+   const fallback = candidates.find(model => model.id === defaultModels[provider!]) ?? candidates[0]
+   if (fallback) return {model: {...fallback, id: pattern, name: pattern}, thinkingLevel}
   } else {
    const matches = [...providers.values()].flatMap(models => models.filter(model => model.id.toLowerCase() === pattern!.toLowerCase()))
    if (matches.length === 1) return {model: matches[0], thinkingLevel}
+   if (matches.length > 1) {
+    const authenticated = matches.filter(model => hasAuth(model.provider, auth, requestConfig))
+    if (authenticated[0]) return {model: authenticated[0], thinkingLevel}
+    return {model: matches[0], thinkingLevel}
+   }
   }
  }
  if (provider) {
   const candidates = providers.get(provider) ?? []
-  const preferred = candidates.find(model => model.id === DEFAULT_MODEL[provider!]) ?? candidates[0]
+  const preferred = candidates.find(model => model.id === defaultModels[provider!]) ?? candidates[0]
   if (preferred) return {model: preferred, thinkingLevel}
  }
  const defaultProvider = typeof settings.defaultProvider === 'string' ? settings.defaultProvider : undefined
@@ -571,9 +544,9 @@ function selectModel(parsed: ParsedArgs, settings: JsonObject, providers: Map<st
   const found = providers.get(defaultProvider)?.find(model => model.id === defaultModel)
   if (found) return {model: found, thinkingLevel: typeof settings.defaultThinkingLevel === 'string' && isThinkingLevel(settings.defaultThinkingLevel) ? settings.defaultThinkingLevel : undefined}
  }
- for (const candidateProvider in DEFAULT_MODEL) {
+ for (const candidateProvider in defaultModels) {
   if (!hasAuth(candidateProvider, auth, requestConfig)) continue
-  const found = providers.get(candidateProvider)?.find(model => model.id === DEFAULT_MODEL[candidateProvider])
+  const found = providers.get(candidateProvider)?.find(model => model.id === defaultModels[candidateProvider])
   if (found) return {model: found, thinkingLevel}
  }
  for (const [candidateProvider, models] of providers) {
@@ -593,7 +566,12 @@ function githubCopilotBaseUrl(token: string, enterpriseUrl?: string) {
  return 'https://api.individual.githubcopilot.com'
 }
 
-async function resolveOAuth(providerId: string, credential: JsonObject, auth: JsonObject, authPath: string) {
+async function loadOAuthProvider(providerId: string) {
+ const oauth = await import(join(STREAM_RUNTIME_DIR, 'oauth.mjs'))
+ return oauth.getOAuthProvider(providerId)
+}
+
+export async function resolveOAuth(providerId: string, credential: JsonObject, auth: JsonObject, authPath: string, loadProvider: OAuthProviderLoader = loadOAuthProvider) {
  let current = credential
  if (Date.now() >= Number(current.expires ?? 0)) {
   const targetPath = existsSync(authPath) ? realpathSync(authPath) : authPath
@@ -615,9 +593,7 @@ async function resolveOAuth(providerId: string, credential: JsonObject, auth: Js
    if (latest?.type === 'oauth' && Date.now() < Number(latest.expires ?? 0)) {
     current = latest
    } else {
-    const oauthPath = join(STREAM_RUNTIME_DIR, 'oauth.mjs')
-    const oauth = await import(oauthPath)
-    const provider = oauth.getOAuthProvider(providerId)
+    const provider = await loadProvider(providerId)
     if (!provider) throw new Error(`Unknown OAuth provider: ${providerId}`)
     current = await provider.refreshToken(current)
     const next = {...auth, ...latestAuth, [providerId]: {type: 'oauth', ...current}}
@@ -645,10 +621,10 @@ function readRuntimeFiles(): RuntimeFiles {
  return {settings, authPath, auth, modelsConfig}
 }
 
-async function prepareRuntime(parsed: ParsedArgs, catalog: JsonObject, files: RuntimeFiles): Promise<RuntimeConfig> {
+async function prepareRuntime(parsed: ParsedArgs, catalog: JsonObject, files: RuntimeFiles, defaultModels: DefaultModels): Promise<RuntimeConfig> {
  const {settings, authPath, auth, modelsConfig} = files
  const {providers, requestConfig, modelHeaders} = createModelMap(catalog, modelsConfig)
- const selected = selectModel(parsed, settings, providers, auth, requestConfig)
+ const selected = selectModel(parsed, settings, providers, auth, requestConfig, defaultModels)
  let model = selected.model
  const providerConfig = requestConfig.get(model.provider)
  const credential = auth[model.provider]
@@ -719,10 +695,10 @@ async function main() {
  const parsed = parseArgs(process.argv.slice(2))
  const inputPromise = parsed.messages.length === 0 && !process.stdin.isTTY ? readStdin() : undefined
  const files = readRuntimeFiles()
- const catalog = loadCatalog(preferredCatalogProvider(parsed, files))
+ const catalog = loadCatalog(preferredCatalogProvider(parsed, files, DEFAULT_MODELS))
  const piped = await inputPromise
  if (piped) parsed.messages.push(piped)
- const runtime = await prepareRuntime(parsed, catalog, files)
+ const runtime = await prepareRuntime(parsed, catalog, files, DEFAULT_MODELS)
  const apiPromise = parsed.messages.length > 0 ? runtime.loadApi() : undefined
  const writer = new SlimStreamWriter()
  writer.enqueue({t: 'session', model: runtime.model.id, provider: runtime.model.provider})

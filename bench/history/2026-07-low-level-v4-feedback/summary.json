@@ -1,0 +1,349 @@
+{
+  "config": {
+    "root_dir": "<repo>",
+    "run_id": "20260722T182432Z",
+    "date_utc": "2026-07-22T18:24:32.793Z",
+    "rounds": 5,
+    "runs": 6,
+    "warmup": 1,
+    "tier": "full",
+    "run_startup": false,
+    "zig": "available:zig (0.17.0-dev.1441+d5181a9c9)",
+    "iterations": {
+      "read": 60,
+      "write": 25,
+      "edit": 30,
+      "bash": 20,
+      "stream": 60
+    },
+    "active_helpers": "zig cc C read/write/copy/drain, pure Zig edit",
+    "comparison_helpers": "gcc",
+    "top_ideas": [
+      {
+        "name": "compiled runner + native helpers",
+        "hypothesis": "Compiled Bun runner plus zig cc-built C helpers and pure Zig edit is the default retained fast path."
+      },
+      {
+        "name": "warm daemon transport",
+        "hypothesis": "A persistent worker amortizes cold starts across repeated tool calls, especially verified-write loops."
+      },
+      {
+        "name": "gcc comparison helpers",
+        "hypothesis": "GCC-built helpers remain as low-level comparison binaries, not the active runtime path."
+      }
+    ],
+    "removed_approaches": [
+      "stock Bun tool baseline",
+      "Bun source-runner fast path"
+    ]
+  },
+  "suites": {
+    "stream-read": {
+      "baseline": null,
+      "winner": {
+        "command": "fast stream compiled/gcc read comparison",
+        "strategy": "gcc comparison helpers",
+        "is_baseline": false,
+        "mean_s": 0.30290984969999996,
+        "mean_ms": 302.90984969999994,
+        "stddev_s": 0.010175173670159444,
+        "cv": 0.03359142556848803,
+        "success_rate": 1,
+        "attempts": 30,
+        "rounds_seen": 5,
+        "speedup_vs_baseline": null,
+        "score": 0.31308502337015937
+      },
+      "ranked": [
+        {
+          "command": "fast stream compiled/gcc read comparison",
+          "strategy": "gcc comparison helpers",
+          "is_baseline": false,
+          "mean_s": 0.30290984969999996,
+          "mean_ms": 302.90984969999994,
+          "stddev_s": 0.010175173670159444,
+          "cv": 0.03359142556848803,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.31308502337015937
+        },
+        {
+          "command": "fast stream compiled/native",
+          "strategy": "compiled runner + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.30803589273333337,
+          "mean_ms": 308.03589273333336,
+          "stddev_s": 0.015017755280708665,
+          "cv": 0.04875326426232262,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.323053648014042
+        }
+      ]
+    },
+    "tool-bash": {
+      "baseline": null,
+      "winner": {
+        "command": "fast compiled/gcc comparison",
+        "strategy": "gcc comparison helpers",
+        "is_baseline": false,
+        "mean_s": 0.3221645935333333,
+        "mean_ms": 322.16459353333335,
+        "stddev_s": 0.017414086122604113,
+        "cv": 0.054053382873690416,
+        "success_rate": 1,
+        "attempts": 30,
+        "rounds_seen": 5,
+        "speedup_vs_baseline": null,
+        "score": 0.33957867965593747
+      },
+      "ranked": [
+        {
+          "command": "fast compiled/gcc comparison",
+          "strategy": "gcc comparison helpers",
+          "is_baseline": false,
+          "mean_s": 0.3221645935333333,
+          "mean_ms": 322.16459353333335,
+          "stddev_s": 0.017414086122604113,
+          "cv": 0.054053382873690416,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.33957867965593747
+        },
+        {
+          "command": "fast compiled/native",
+          "strategy": "compiled runner + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.3367933724333333,
+          "mean_ms": 336.7933724333333,
+          "stddev_s": 0.019182879257588673,
+          "cv": 0.056957413143234686,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.35597625169092195
+        },
+        {
+          "command": "fast warm-daemon/native",
+          "strategy": "warm daemon + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.3571150820333333,
+          "mean_ms": 357.1150820333333,
+          "stddev_s": 0.02781267284297507,
+          "cv": 0.07788154083164435,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.3849277548763084
+        }
+      ]
+    },
+    "tool-edit": {
+      "baseline": null,
+      "winner": {
+        "command": "fast compiled/gcc comparison",
+        "strategy": "gcc comparison helpers",
+        "is_baseline": false,
+        "mean_s": 0.4986601082333334,
+        "mean_ms": 498.6601082333334,
+        "stddev_s": 0.011200575424795044,
+        "cv": 0.022461342385050105,
+        "success_rate": 1,
+        "attempts": 30,
+        "rounds_seen": 5,
+        "speedup_vs_baseline": null,
+        "score": 0.5098606836581284
+      },
+      "ranked": [
+        {
+          "command": "fast compiled/gcc comparison",
+          "strategy": "gcc comparison helpers",
+          "is_baseline": false,
+          "mean_s": 0.4986601082333334,
+          "mean_ms": 498.6601082333334,
+          "stddev_s": 0.011200575424795044,
+          "cv": 0.022461342385050105,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.5098606836581284
+        },
+        {
+          "command": "fast compiled/native",
+          "strategy": "compiled runner + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.49704430633333346,
+          "mean_ms": 497.04430633333345,
+          "stddev_s": 0.014503699077795846,
+          "cv": 0.029179891798356526,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.5115480054111293
+        },
+        {
+          "command": "fast warm-daemon/native",
+          "strategy": "warm daemon + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.5301659032000002,
+          "mean_ms": 530.1659032000002,
+          "stddev_s": 0.014887412584506887,
+          "cv": 0.028080667758240852,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.5450533157845071
+        }
+      ]
+    },
+    "tool-read": {
+      "baseline": null,
+      "winner": {
+        "command": "fast compiled/gcc comparison",
+        "strategy": "gcc comparison helpers",
+        "is_baseline": false,
+        "mean_s": 0.3055923910666667,
+        "mean_ms": 305.59239106666666,
+        "stddev_s": 0.016426511408312593,
+        "cv": 0.05375301181739521,
+        "success_rate": 1,
+        "attempts": 30,
+        "rounds_seen": 5,
+        "speedup_vs_baseline": null,
+        "score": 0.3220189024749793
+      },
+      "ranked": [
+        {
+          "command": "fast compiled/gcc comparison",
+          "strategy": "gcc comparison helpers",
+          "is_baseline": false,
+          "mean_s": 0.3055923910666667,
+          "mean_ms": 305.59239106666666,
+          "stddev_s": 0.016426511408312593,
+          "cv": 0.05375301181739521,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.3220189024749793
+        },
+        {
+          "command": "fast compiled/native",
+          "strategy": "compiled runner + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.3112603810000001,
+          "mean_ms": 311.2603810000001,
+          "stddev_s": 0.012584038319323513,
+          "cv": 0.040429296780059874,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.3238444193193236
+        },
+        {
+          "command": "fast warm-daemon/native",
+          "strategy": "warm daemon + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.33380501133333335,
+          "mean_ms": 333.80501133333337,
+          "stddev_s": 0.015911790652679877,
+          "cv": 0.0476679202302046,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.34971680198601324
+        }
+      ]
+    },
+    "tool-write": {
+      "baseline": null,
+      "winner": {
+        "command": "fast compiled/gcc comparison",
+        "strategy": "gcc comparison helpers",
+        "is_baseline": false,
+        "mean_s": 0.6672432692666668,
+        "mean_ms": 667.2432692666667,
+        "stddev_s": 0.016465083968162837,
+        "cv": 0.024676283338547236,
+        "success_rate": 1,
+        "attempts": 30,
+        "rounds_seen": 5,
+        "speedup_vs_baseline": null,
+        "score": 0.6837083532348296
+      },
+      "ranked": [
+        {
+          "command": "fast compiled/gcc comparison",
+          "strategy": "gcc comparison helpers",
+          "is_baseline": false,
+          "mean_s": 0.6672432692666668,
+          "mean_ms": 667.2432692666667,
+          "stddev_s": 0.016465083968162837,
+          "cv": 0.024676283338547236,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.6837083532348296
+        },
+        {
+          "command": "fast compiled/native",
+          "strategy": "compiled runner + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.6655932906666668,
+          "mean_ms": 665.5932906666668,
+          "stddev_s": 0.021707996046376632,
+          "cv": 0.032614505510765626,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.6873012867130435
+        },
+        {
+          "command": "fast warm-daemon/native",
+          "strategy": "warm daemon + native helpers",
+          "is_baseline": false,
+          "mean_s": 0.7027028530333332,
+          "mean_ms": 702.7028530333332,
+          "stddev_s": 0.020957080749440936,
+          "cv": 0.029823531609379735,
+          "success_rate": 1,
+          "attempts": 30,
+          "rounds_seen": 5,
+          "speedup_vs_baseline": null,
+          "score": 0.7236599337827742
+        }
+      ]
+    }
+  },
+  "top_strategies": [
+    {
+      "strategy": "gcc comparison helpers",
+      "wins": 5,
+      "suites": [
+        "stream-read",
+        "tool-bash",
+        "tool-edit",
+        "tool-read",
+        "tool-write"
+      ],
+      "avg_relative_score_vs_baseline": null,
+      "avg_speedup_vs_baseline": null,
+      "avg_cv": 0.037707089196634194
+    }
+  ]
+}

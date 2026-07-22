@@ -38,12 +38,13 @@ bash install.sh tia uninstall
 
 ## Curl / bootstrap usage
 
-The top-level installer bootstraps sibling scripts when `INSTALL_BASE_URL` points at a host serving the `scripts/` directory.
+Install globally for your user directly from GitHub:
 
 ```bash
-curl -fsSL https://your.host/install.sh | \
-  INSTALL_BASE_URL=https://your.host/scripts bash -s -- tia install
+curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/install.sh | bash -s -- tia install
 ```
+
+This installs `tia` to `~/.local/bin`. If that directory is not on `PATH`, the installer prints the exact path you can run immediately. The top-level installer bootstraps its sibling scripts automatically; set `INSTALL_BASE_URL` only when serving the repository from another host.
 
 This path is smoke-tested from outside the repo checkout.
 
@@ -73,13 +74,15 @@ Current benchmark marker: **`2026-07-low-level-v4`**. Toolchain: pi `0.81.1`, bu
 | Process startup (`--version`) | stock: 304.8 ± 25.3 ms | 229.1 ± 4.5 ms | **1.33x** |
 | RPC startup (`get_state`) | stock: 324.1 ± 9.6 ms | 261.8 ± 4.4 ms | **1.24x** |
 | JSON stream startup (`--mode json --no-session`, no prompt) | full tia: 262.8 ± 13.0 ms | 24.2 ± 3.2 ms | **10.87x** |
+| Anthropic end-to-end loopback stream | full tia: 360.6 ± 6.7 ms | 32.6 ± 2.7 ms | **11.07x** |
 
-The slim stream path is where `tia pi` pulls furthest ahead: it bypasses the full CLI/AgentSession/tools/extensions and loads only the selected provider implementation and provider model catalog. In paired direct-runner measurements, provider-selective startup improved from 20.07 ms to 17.87 ms (**1.12x**); unqualified model lookup improved from 20.49 ms to 19.76 ms (**1.04x**) through a compact text index. Text deltas remain microtask-coalesced instead of waiting for the 4 ms batching timer.
+The slim stream path is where `tia pi` pulls furthest ahead: it bypasses the full CLI/AgentSession/tools/extensions and loads only the selected provider implementation and provider model catalog. Provider defaults are generated from the installed pi package and validated against its pi-ai catalog during installation, preventing the slim path from drifting from stock pi model selection. In paired direct-runner measurements, provider-selective startup improved from 20.07 ms to 17.87 ms (**1.12x**); unqualified model lookup improved from 20.49 ms to 19.76 ms (**1.04x**) through a compact text index. Text deltas remain microtask-coalesced instead of waiting for the 4 ms batching timer.
 
 Reproduce startup/stream:
 
 ```bash
 bash bench/hyperfine-tia-json-stream.sh   # slim vs full JSON stream startup
+bash bench/hyperfine-tia-loopback.sh      # slim vs full local HTTP/SSE stream
 bash bench/hyperfine-tia-pi.sh            # tia pi vs stock pi RPC startup
 ```
 
@@ -169,9 +172,10 @@ Writes are now optimized for correctness first:
 - writes verify exact bytes through the open temporary file descriptor before atomic rename; rename moves that verified inode into place
 - symlink writes preserve the symlink and verify the target content
 - per-file mutation queues serialize concurrent writes/edits to the same path
+- multi-file edits plan inside sorted mutation queues and revalidate every preflight snapshot before writing; external changes abort the edit rather than being overwritten
 - mismatch errors include expected/got character counts, byte counts, and first mismatch location
 
-Reliability tests cover empty content, large content, CRLF, Unicode/emoji, markdown/code fences, JSON escaping, overwrite shrinking, nested paths, concurrent writes, and symlink-preserving writes.
+Reliability tests cover empty content, large content, CRLF, Unicode/emoji, markdown/code fences, JSON escaping, overwrite shrinking, nested paths, concurrent writes and multi-file edits, stale external mutations, symlink-preserving writes, partial native writes/copies, verification corruption, rollback failure reporting, and interrupted atomic renames.
 
 ## Testing
 
@@ -198,6 +202,8 @@ For a heavier confirmation pass:
 ```bash
 TIER=full ROUNDS=5 bash bench/feedback-loop.sh
 ```
+
+The completed five-round v4 full-tier output is archived under `bench/history/2026-07-low-level-v4-feedback/`; all measured runs passed.
 
 The feedback loop auto-installs the pinned Zig nightly (`0.17.0-dev.1441+d5181a9c9`) locally for measured Zig-built helper candidates. You can also install it explicitly:
 

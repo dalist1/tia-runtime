@@ -51,13 +51,16 @@ fn unlinkPath(path: []const u8) void {
 fn renamePath(old_path: []const u8, new_path: []const u8) void {
     const old_z = toPosixPath(old_path);
     const new_z = toPosixPath(new_path);
-    const rc = system.renameat(posix.AT.FDCWD, &old_z, posix.AT.FDCWD, &new_z);
-    switch (posix.errno(rc)) {
-        .SUCCESS => {},
-        else => |err| {
-            unlinkPath(old_path);
-            fatalErrno("rename output", err);
-        },
+    while (true) {
+        const rc = system.renameat(posix.AT.FDCWD, &old_z, posix.AT.FDCWD, &new_z);
+        switch (posix.errno(rc)) {
+            .SUCCESS => return,
+            .INTR => continue,
+            else => |err| {
+                unlinkPath(old_path);
+                fatalErrno("rename output", err);
+            },
+        }
     }
 }
 

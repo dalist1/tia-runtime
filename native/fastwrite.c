@@ -15,13 +15,22 @@
 #define VERIFY_CHUNK_SIZE (1 << 18)
 
 static char verify_buffer[VERIFY_CHUNK_SIZE];
+static const char *cleanup_path;
+
+static void cleanup_temporary(void) {
+	if (cleanup_path) (void)unlink(cleanup_path);
+}
 
 static void fail(const char *message) {
+	int code = errno ? errno : 1;
+	cleanup_temporary();
+	errno = code;
 	perror(message);
-	exit(errno ? errno : 1);
+	exit(code);
 }
 
 static void fail_message(const char *message) {
+	cleanup_temporary();
 	fprintf(stderr, "%s\n", message);
 	exit(1);
 }
@@ -71,6 +80,7 @@ static void verify_fd_exact(int fd, const char *expected, size_t expected_size, 
 	struct stat st;
 	if (fstat(fd, &st) != 0) fail("fstat verify");
 	if (st.st_size < 0 || (uintmax_t)st.st_size != (uintmax_t)expected_size) {
+		cleanup_temporary();
 		fprintf(stderr, "write verification failed after %s: expected %zu bytes, got %jd bytes\n", stage, expected_size, (intmax_t)st.st_size);
 		exit(1);
 	}
@@ -83,6 +93,7 @@ static void verify_fd_exact(int fd, const char *expected, size_t expected_size, 
 			fail("pread verify");
 		}
 		if (bytes_read == 0 || memcmp(verify_buffer, expected + offset, (size_t)bytes_read) != 0) {
+			cleanup_temporary();
 			fprintf(stderr, "write verification failed after %s at byte %zu\n", stage, offset);
 			exit(1);
 		}
@@ -157,11 +168,14 @@ int main(int argc, char **argv) {
 	int tmp_len = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp.%ld", target_path, (long)getpid());
 	if (tmp_len <= 0 || (size_t)tmp_len >= sizeof(tmp_path)) fail_message("temporary path too long");
 
+	cleanup_path = tmp_path;
 	write_verified_path(tmp_path, content, content_size, mode);
-	if (rename(tmp_path, target_path) != 0) {
-		unlink(tmp_path);
-		fail("rename output");
-	}
+	int rename_result;
+	do {
+		rename_result = rename(tmp_path, target_path);
+	} while (rename_result != 0 && errno == EINTR);
+	if (rename_result != 0) fail("rename output");
+	cleanup_path = NULL;
 	fsync_parent_dir(target_path);
 
 	printf("{\"ok\":true,\"bytes\":%zu,\"mode\":\"atomic\"}\n", content_size);

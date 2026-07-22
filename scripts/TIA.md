@@ -25,17 +25,16 @@ Direct script form:
 bash scripts/install-tia.sh install
 ```
 
-Hosted direct-script one-liner:
+Global user install from GitHub:
 
 ```bash
-curl -fsSL https://your.host/scripts/install-tia.sh | bash -s -- install
+curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/install.sh | bash -s -- tia install
 ```
 
-Top-level bootstrap one-liner:
+Direct installer script:
 
 ```bash
-curl -fsSL https://your.host/install.sh | \
-  INSTALL_BASE_URL=https://your.host/scripts bash -s -- tia install
+curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/scripts/install-tia.sh | bash -s -- install
 ```
 
 ## Status
@@ -62,7 +61,7 @@ bash scripts/install-tia.sh uninstall
 - reuses your current shell agent auth/settings/models via symlinks refreshed at launch time
 - avoids self-linking the tia sandbox if `PI_CODING_AGENT_DIR` already points there, preserving shell pi / cliproxy linkage
 - preserves the current shell environment for provider/model login env vars
-- uses a low-level slim stream runtime by default for `--mode json --no-session`, with provider code loaded on demand
+- uses a low-level slim stream runtime by default for `--mode json --no-session`, with provider code loaded on demand and stock pi provider defaults validated against the installed pi-ai catalog
 - keeps FFF frecency/history state in the tia sandbox under `~/.local/share/tia/pi-agent/fff`
 - covers both startup and tool-runtime optimization in one launcher path
 
@@ -72,6 +71,7 @@ bash scripts/install-tia.sh uninstall
 - `--version` startup: **1.33x** faster than stock pi
 - RPC startup: **1.24x** faster than stock pi
 - slim JSON startup: **10.87x** faster than full tia JSON startup
+- local Anthropic HTTP/SSE end-to-end stream: **11.07x** faster than full tia
 - bounded verified edit path: **1.40x** faster than the previous formatter
 - slim stream framing: **1.15x** faster
 - native bash drain/copy chain: **3.19x** faster

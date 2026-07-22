@@ -1,0 +1,38 @@
+{
+  "root_dir": "<repo>",
+  "run_id": "20260722T182432Z",
+  "date_utc": "2026-07-22T18:24:32.793Z",
+  "rounds": 5,
+  "runs": 6,
+  "warmup": 1,
+  "tier": "full",
+  "run_startup": false,
+  "zig": "available:zig (0.17.0-dev.1441+d5181a9c9)",
+  "iterations": {
+    "read": 60,
+    "write": 25,
+    "edit": 30,
+    "bash": 20,
+    "stream": 60
+  },
+  "active_helpers": "zig cc C read/write/copy/drain, pure Zig edit",
+  "comparison_helpers": "gcc",
+  "top_ideas": [
+    {
+      "name": "compiled runner + native helpers",
+      "hypothesis": "Compiled Bun runner plus zig cc-built C helpers and pure Zig edit is the default retained fast path."
+    },
+    {
+      "name": "warm daemon transport",
+      "hypothesis": "A persistent worker amortizes cold starts across repeated tool calls, especially verified-write loops."
+    },
+    {
+      "name": "gcc comparison helpers",
+      "hypothesis": "GCC-built helpers remain as low-level comparison binaries, not the active runtime path."
+    }
+  ],
+  "removed_approaches": [
+    "stock Bun tool baseline",
+    "Bun source-runner fast path"
+  ]
+}

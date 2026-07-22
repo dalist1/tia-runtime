@@ -6,8 +6,11 @@ Low-level v4 runtime and benchmark cleanup.
 
 ### Highlights
 - update the pinned pi runtime to `0.81.1`
-- load provider-specific model catalogs on the slim stream path
+- load provider-specific model catalogs on the slim stream path and validate stock pi provider defaults during installation
 - speed up bounded edit diffs, stream framing, native read/edit/write, and bash copy/drain helpers
+- add a reproducible local Anthropic HTTP/SSE benchmark covering the complete slim streaming path
+- prevent stale multi-file edit plans from overwriting concurrent or external file changes, and add native I/O/rollback fault injection coverage
+- archive a five-round full-tier feedback run with 100% successful measurements
 - make benchmark and RPC harnesses portable across machines
 - enforce formatting, linting, and TypeScript checks across every TypeScript source
 
@@ -30,11 +33,10 @@ Local clone:
 bash install.sh tia install
 ```
 
-Bootstrap / hosted scripts:
+Global user install from GitHub:
 
 ```bash
-curl -fsSL https://your.host/install.sh | \
-  INSTALL_BASE_URL=https://your.host/scripts bash -s -- tia install
+curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/install.sh | bash -s -- tia install
 ```
 
 ### Notes

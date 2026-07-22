@@ -751,8 +751,7 @@ function applyUpdate(path: string, content: string, chunks: PatchChunk[]) {
  return `${lines.join('\n')}\n`
 }
 
-export async function planPatch(cwd: string, patchText: string, readText: (absolutePath: string) => Promise<string>, exists: (absolutePath: string) => Promise<boolean>) {
- const operations = parsePatch(patchText)
+async function planPatchOperations(cwd: string, operations: PatchOperation[], readText: (absolutePath: string) => Promise<string>, exists: (absolutePath: string) => Promise<boolean>) {
  const plans: PlannedPatchFile[] = []
  for (const op of operations) {
   const absolutePath = resolvePatchPath(cwd, op.path)
@@ -768,6 +767,10 @@ export async function planPatch(cwd: string, patchText: string, readText: (absol
   }
  }
  return plans
+}
+
+export async function planPatch(cwd: string, patchText: string, readText: (absolutePath: string) => Promise<string>, exists: (absolutePath: string) => Promise<boolean>) {
+ return planPatchOperations(cwd, parsePatch(patchText), readText, exists)
 }
 
 function textResult(text: string, details: any = undefined) {
@@ -1121,52 +1124,82 @@ async function withFileMutationQueues<T>(paths: string[], task: () => Promise<T>
  return acquire(0)
 }
 
-async function restorePlan(plan: PlannedFileEdit | PlannedPatchFile) {
+function planMatchesCurrent(plan: PlannedFileEdit | PlannedPatchFile) {
+ if (plan.before === null) return !existsSync(plan.absolutePath)
  try {
-  if (plan.before === null) {
-   rmSync(plan.absolutePath, {force: true})
-  } else {
-   await Bun.write(plan.absolutePath, plan.before)
-  }
- } catch {}
+  return readFileSync(plan.absolutePath, 'utf8') === plan.before
+ } catch {
+  return false
+ }
 }
 
-async function applyPlannedEdits(plans: Array<PlannedFileEdit | PlannedPatchFile>, signal?: AbortSignal) {
+function assertPlanCurrent(plan: PlannedFileEdit | PlannedPatchFile) {
+ if (!planMatchesCurrent(plan)) throw new Error(`Edit aborted for ${plan.path}: file changed after preflight. Reread it and retry.`)
+}
+
+async function restorePlan(plan: PlannedFileEdit | PlannedPatchFile) {
+ if (plan.after === null) {
+  if (!existsSync(plan.absolutePath) && plan.before !== null) await Bun.write(plan.absolutePath, plan.before)
+  return
+ }
+ if (!existsSync(plan.absolutePath) || readFileSync(plan.absolutePath, 'utf8') !== plan.after) return
+ if (plan.before === null) rmSync(plan.absolutePath, {force: true})
+ else await Bun.write(plan.absolutePath, plan.before)
+}
+
+async function applyPlannedEditsUnlocked(plans: Array<PlannedFileEdit | PlannedPatchFile>, signal?: AbortSignal, restore: (plan: PlannedFileEdit | PlannedPatchFile) => Promise<void> = restorePlan) {
+ if (plans.length === 0) throw new Error('No edit operations were planned.')
+ ensureNotAborted(signal)
+ for (const plan of plans) assertPlanCurrent(plan)
+ const applied: Array<PlannedFileEdit | PlannedPatchFile> = []
+ try {
+  for (const plan of plans) {
+   assertPlanCurrent(plan)
+   if (plan.after === null) {
+    rmSync(plan.absolutePath, {force: true})
+   } else {
+    const data = Buffer.from(plan.after, 'utf8')
+    writeFileSync(plan.absolutePath, data)
+    verifyWrittenBytes(plan.absolutePath, plan.path, data, 'edit write')
+   }
+   applied.push(plan)
+   ensureNotAborted(signal)
+  }
+ } catch (error) {
+  const rollbackErrors: Error[] = []
+  for (let i = applied.length - 1; i >= 0; i -= 1) {
+   try {
+    await restore(applied[i])
+   } catch (rollbackError) {
+    rollbackErrors.push(new Error(`Rollback failed for ${applied[i].path}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`, {cause: rollbackError}))
+   }
+  }
+  if (rollbackErrors.length > 0) {
+   throw new AggregateError([error, ...rollbackErrors], `Edit failed and ${rollbackErrors.length} rollback operation(s) also failed: ${rollbackErrors.map(item => item.message).join('; ')}`)
+  }
+  throw error
+ }
+ return textResult(`Successfully applied ${plans.length} file edit(s).`, {verified: true, files: plans.length, diff: combinedEditDiff(plans)})
+}
+
+export async function applyPlannedEdits(plans: Array<PlannedFileEdit | PlannedPatchFile>, signal?: AbortSignal, restore: (plan: PlannedFileEdit | PlannedPatchFile) => Promise<void> = restorePlan) {
  if (plans.length === 0) throw new Error('No edit operations were planned.')
  const uniquePaths = [...new Set(plans.map(plan => plan.absolutePath))].sort()
- return withFileMutationQueues(uniquePaths, async () => {
-  ensureNotAborted(signal)
-  const applied: Array<PlannedFileEdit | PlannedPatchFile> = []
-  try {
-   for (const plan of plans) {
-    if (plan.after === null) {
-     rmSync(plan.absolutePath, {force: true})
-    } else {
-     const data = Buffer.from(plan.after, 'utf8')
-     writeFileSync(plan.absolutePath, data)
-     verifyWrittenBytes(plan.absolutePath, plan.path, data, 'edit write')
-    }
-    applied.push(plan)
-    ensureNotAborted(signal)
-   }
-  } catch (error) {
-   for (let i = applied.length - 1; i >= 0; i -= 1) {
-    await restorePlan(applied[i])
-   }
-   throw error
-  }
-  return textResult(`Successfully applied ${plans.length} file edit(s).`, {verified: true, files: plans.length, diff: combinedEditDiff(plans)})
- })
+ return withFileMutationQueues(uniquePaths, () => applyPlannedEditsUnlocked(plans, signal, restore))
 }
 
 export async function fastPatch(cwd: string, patch: string, signal?: AbortSignal) {
- const plans = await planPatch(
-  cwd,
-  patch,
-  path => Bun.file(path).text(),
-  path => Bun.file(path).exists()
- )
- return applyPlannedEdits(plans, signal)
+ const operations = parsePatch(patch)
+ const uniquePaths = [...new Set(operations.map(operation => resolvePatchPath(cwd, operation.path)))].sort()
+ return withFileMutationQueues(uniquePaths, async () => {
+  const plans = await planPatchOperations(
+   cwd,
+   operations,
+   path => Bun.file(path).text(),
+   path => Bun.file(path).exists()
+  )
+  return applyPlannedEditsUnlocked(plans, signal)
+ })
 }
 
 export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signal?: AbortSignal) {
@@ -1214,12 +1247,12 @@ export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signa
   })
  }
 
- const plans = await planClassicEdits(
-  cwd,
-  edits.map(edit => ({path: edit.path!, oldText: edit.oldText, newText: edit.newText})),
-  path => Bun.file(path).text()
- )
- return applyPlannedEdits(plans, signal)
+ const classicEdits = edits.map(edit => ({path: edit.path!, oldText: edit.oldText, newText: edit.newText}))
+ const uniquePaths = [...new Set(classicEdits.map(edit => resolveEditPath(cwd, edit.path)))].sort()
+ return withFileMutationQueues(uniquePaths, async () => {
+  const plans = await planClassicEdits(cwd, classicEdits, path => Bun.file(path).text())
+  return applyPlannedEditsUnlocked(plans, signal)
+ })
 }
 
 async function runBinary(cmd: string, args: string[], signal?: AbortSignal) {
