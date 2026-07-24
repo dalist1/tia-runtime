@@ -39,7 +39,7 @@ if [[ -z "${TIA_FFF_SOURCE:-}" && -f "${TIA_FFF_SOURCE_FILE}" ]]; then
 	TIA_FFF_SOURCE="$(tr -d '[:space:]' < "${TIA_FFF_SOURCE_FILE}")"
 fi
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
-TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-0.81.1}"
+TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-latest}"
 TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-}"
 if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" ]]; then
 	TIA_OPTIMIZATION_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")"
@@ -160,10 +160,19 @@ ensure_pi_package_version() {
 	[[ "${TIA_SKIP_PI_PACKAGE_INSTALL:-0}" != "1" ]] || return 0
 	[[ -z "${PI_PACKAGE_DIR:-}" || "${PI_PACKAGE_DIR}" == "${TIA_ROOT}/bin" ]] || return 0
 
-	if [[ "${TIA_PI_PACKAGE_VERSION}" != "latest" ]] && is_pi_package_dir "${package_dir}"; then
+	if is_pi_package_dir "${package_dir}"; then
 		local installed_version
 		installed_version="$(pi_package_version "${package_dir}")"
-		if [[ "${installed_version}" == "${TIA_PI_PACKAGE_VERSION}" ]]; then
+		if [[ "${TIA_PI_PACKAGE_VERSION}" == "latest" ]]; then
+			# Do not rebuild the runtime when the globally installed pi already matches
+			# npm's current latest dist-tag. This keeps normal tia installs fast while
+			# still upgrading immediately when upstream publishes a release.
+			local latest_version
+			latest_version="$(npm view "${PACKAGE_NAME_PI}" version --fetch-timeout=10000 --fetch-retries=0 2>/dev/null || true)"
+			if [[ -n "${latest_version}" && "${installed_version}" == "${latest_version}" ]]; then
+				return 0
+			fi
+		elif [[ "${installed_version}" == "${TIA_PI_PACKAGE_VERSION}" ]]; then
 			return 0
 		fi
 	fi

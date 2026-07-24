@@ -10,8 +10,8 @@ const FASTDRAIN_BIN = () => join(fastToolsDir(), 'fastdrain')
 const FASTCOPY_BIN = () => join(fastToolsDir(), 'fastcopy')
 const READ_SCAN_CHUNK = 256 * 1024
 const READ_FIRST_CHUNK = 64 * 1024
-const selectorFilterMarker = Symbol.for('tia.model-selector-filter')
-const privateSelectorProviders = new Set(['openai', 'openai-codex'])
+const selectorFilterMarker = Symbol.for('tia.gpt-model-selector-filter')
+const gptSelectorProviders = new Set(['openai', 'openai-codex'])
 
 let readScratch: Buffer | null = null
 let verifyScratch: Buffer | null = null
@@ -49,18 +49,18 @@ type EditToolError = Error & {details: EditFailureDetails}
 
 type EditResultDetails = {verified?: boolean; files?: number; diff?: string}
 
-function installSelectorFilter() {
+function installGptSelectorFilter() {
  const prototype = ModelRuntime.prototype
  if (Reflect.get(prototype, selectorFilterMarker)) return
 
  const getAvailable = prototype.getAvailable
  const getAvailableSnapshot = prototype.getAvailableSnapshot
  prototype.getAvailable = async function (providerId?: string) {
-  if (providerId && privateSelectorProviders.has(providerId)) return []
-  return (await getAvailable.call(this, providerId)).filter(model => !privateSelectorProviders.has(model.provider))
+  if (providerId && !gptSelectorProviders.has(providerId)) return []
+  return (await getAvailable.call(this, providerId)).filter(model => gptSelectorProviders.has(model.provider))
  }
  prototype.getAvailableSnapshot = function () {
-  return getAvailableSnapshot.call(this).filter(model => !privateSelectorProviders.has(model.provider))
+  return getAvailableSnapshot.call(this).filter(model => gptSelectorProviders.has(model.provider))
  }
  Reflect.defineProperty(prototype, selectorFilterMarker, {value: true})
 }
@@ -1398,7 +1398,7 @@ async function tryOptimizedBash(cwd: string, command: string, signal?: AbortSign
 }
 
 export default function (pi: ExtensionAPI) {
- installSelectorFilter()
+ installGptSelectorFilter()
 
  const stockRead = createReadToolDefinition(process.cwd())
  const stockWrite = createWriteToolDefinition(process.cwd())

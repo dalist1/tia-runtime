@@ -5,7 +5,7 @@
 Low-level v4 runtime and benchmark cleanup.
 
 ### Highlights
-- update the pinned pi runtime to `0.81.1`
+- install the latest pi runtime on every tia installation
 - load provider-specific model catalogs on the slim stream path and validate stock pi provider defaults during installation
 - speed up bounded edit diffs, stream framing, native read/edit/write, and bash copy/drain helpers
 - add a reproducible local Anthropic HTTP/SSE benchmark covering the complete slim streaming path
