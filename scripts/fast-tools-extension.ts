@@ -1,7 +1,7 @@
 import {closeSync, existsSync, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs'
 import {homedir} from 'node:os'
 import {basename, dirname, isAbsolute, join, resolve} from 'node:path'
-import {createBashTool, createBashToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@earendil-works/pi-coding-agent'
+import {createBashTool, createBashToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir, ModelRuntime} from '@earendil-works/pi-coding-agent'
 import {Container, Spacer, Text} from '@earendil-works/pi-tui'
 import {Type} from '@sinclair/typebox'
 
@@ -10,6 +10,8 @@ const FASTDRAIN_BIN = () => join(fastToolsDir(), 'fastdrain')
 const FASTCOPY_BIN = () => join(fastToolsDir(), 'fastcopy')
 const READ_SCAN_CHUNK = 256 * 1024
 const READ_FIRST_CHUNK = 64 * 1024
+const selectorFilterMarker = Symbol.for('tia.model-selector-filter')
+const privateSelectorProviders = new Set(['openai', 'openai-codex'])
 
 let readScratch: Buffer | null = null
 let verifyScratch: Buffer | null = null
@@ -46,6 +48,22 @@ type EditFailureDetails = {
 type EditToolError = Error & {details: EditFailureDetails}
 
 type EditResultDetails = {verified?: boolean; files?: number; diff?: string}
+
+function installSelectorFilter() {
+ const prototype = ModelRuntime.prototype
+ if (Reflect.get(prototype, selectorFilterMarker)) return
+
+ const getAvailable = prototype.getAvailable
+ const getAvailableSnapshot = prototype.getAvailableSnapshot
+ prototype.getAvailable = async function (providerId?: string) {
+  if (providerId && privateSelectorProviders.has(providerId)) return []
+  return (await getAvailable.call(this, providerId)).filter(model => !privateSelectorProviders.has(model.provider))
+ }
+ prototype.getAvailableSnapshot = function () {
+  return getAvailableSnapshot.call(this).filter(model => !privateSelectorProviders.has(model.provider))
+ }
+ Reflect.defineProperty(prototype, selectorFilterMarker, {value: true})
+}
 
 export function previewWhitespace(text: string) {
  return text.replace(/\t/g, '\\t').replace(/ /g, '·')
@@ -1380,9 +1398,26 @@ async function tryOptimizedBash(cwd: string, command: string, signal?: AbortSign
 }
 
 export default function (pi: ExtensionAPI) {
+ installSelectorFilter()
+
  const stockRead = createReadToolDefinition(process.cwd())
  const stockWrite = createWriteToolDefinition(process.cwd())
  const stockBash = createBashToolDefinition(process.cwd())
+ let remappingSelectorModel = false
+
+ pi.on('model_select', async (event, ctx) => {
+  if (remappingSelectorModel || event.model.provider !== 'github-copilot' || event.model.id !== 'gpt-5.6-sol') return
+
+  const target = ctx.modelRegistry.find('openai-codex', 'gpt-5.6-sol')
+  if (!target) return
+
+  remappingSelectorModel = true
+  try {
+   await pi.setModel(target)
+  } finally {
+   remappingSelectorModel = false
+  }
+ })
 
  pi.registerTool({
   name: 'read',

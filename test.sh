@@ -51,10 +51,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-printf '[1/10] install tia runtime\n'
+printf '[1/12] install tia runtime\n'
 TIA_REQUIRE_FFF=1 bash "${ROOT_DIR}/install.sh" tia install >/dev/null
 
-printf '[2/10] check tia status\n'
+printf '[2/12] check tia status\n'
 tia status > "${TMP_DIR}/tia-status.txt"
 grep -En "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
 grep -En "optimization:.*$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")" "${TMP_DIR}/tia-status.txt" >/dev/null
@@ -71,7 +71,7 @@ HOST_PI_PACKAGE_DIR="${PI_PACKAGE_DIR}"
 [[ -f "${HOME}/.local/share/tia/stream-runtime/anthropic-messages.mjs" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/openai-responses.mjs" ]]
 
-printf '[3/10] verify tia refreshes shell pi agent links at launch\n'
+printf '[3/12] verify tia refreshes shell pi agent links at launch\n'
 CUSTOM_AGENT_DIR="${TMP_DIR}/custom-agent"
 mkdir -p "${CUSTOM_AGENT_DIR}"
 printf '%s\n' '{"source":"custom"}' > "${CUSTOM_AGENT_DIR}/auth.json"
@@ -88,7 +88,7 @@ if [[ -f "${HOME}/.pi/agent/auth.json" && -f "${HOME}/.pi/agent/models.json" && 
 	[[ "$(readlink "${HOME}/.local/share/tia/pi-agent/settings.json")" == "${HOME}/.pi/agent/settings.json" ]]
 fi
 
-printf '[4/10] verify concurrent tia pi launches refresh shell pi agent links safely\n'
+printf '[4/12] verify concurrent tia pi launches refresh shell pi agent links safely\n'
 concurrent_pids=""
 for i in 1 2 3 4 5; do
 	PI_CODING_AGENT_DIR="${CUSTOM_AGENT_DIR}" tia pi --version >"${TMP_DIR}/tia-concurrent-${i}.out" 2>"${TMP_DIR}/tia-concurrent-${i}.err" &
@@ -103,7 +103,27 @@ done
 grep -q 'export TIA_ACTIVE=1' "${HOME}/.local/bin/tia"
 grep -q 'export TIA_COMMAND="tia pi"' "${HOME}/.local/bin/tia"
 
-printf '[5/10] verify tia pi does not touch sandbox history on startup\n'
+printf '[5/12] verify OAuth flows are bundled into tia pi\n'
+OAUTH_AGENT_DIR="${TMP_DIR}/oauth-agent"
+mkdir -p "${OAUTH_AGENT_DIR}"
+bun -e 'const fs=require("node:fs"); const payload=Buffer.from(JSON.stringify({"https://api.openai.com/auth":{chatgpt_account_id:"test-account"}})).toString("base64url"); fs.writeFileSync(process.argv[1], JSON.stringify({"openai-codex":{type:"oauth",access:`e30.${payload}.sig`,refresh:"fake",expires:Date.now()+3600000,accountId:"test-account"}}));' "${OAUTH_AGENT_DIR}/auth.json"
+printf '%s\n' '{"providers":{"openai-codex":{"baseUrl":"http://127.0.0.1:1"}}}' > "${OAUTH_AGENT_DIR}/models.json"
+printf '%s\n' '{"retry":{"provider":{"maxRetries":0,"timeoutMs":1000}}}' > "${OAUTH_AGENT_DIR}/settings.json"
+run_with_optional_timeout env -i HOME="${HOME}" PATH="${PATH}" PI_NO_PROXY_AUTO_START=1 TIA_DISABLE_FAST_STREAM=1 PI_CODING_AGENT_DIR="${OAUTH_AGENT_DIR}" \
+	tia pi --mode json --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --no-context-files --provider openai-codex -p oauth-check \
+	> "${TMP_DIR}/tia-oauth-bundle.jsonl"
+bun -e 'const events=require("node:fs").readFileSync(process.argv[1],"utf8").trim().split(/\n+/).map(JSON.parse); const message=events.map(event=>event.message).find(message=>message?.role==="assistant"); if (!message || message.errorMessage?.includes("OAuth auth derivation failed") || !message.diagnostics?.some(item=>item.type==="provider_transport_failure")) process.exit(1);' "${TMP_DIR}/tia-oauth-bundle.jsonl"
+
+printf '[6/12] verify private providers stay out of model selectors\n'
+SELECTOR_AGENT_DIR="${TMP_DIR}/selector-agent"
+mkdir -p "${SELECTOR_AGENT_DIR}"
+printf '%s\n' '{"providers":{"openai":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"private-openai","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]},"openai-codex":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"private-codex","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]},"selector-test":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"visible-model","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]}}}' > "${SELECTOR_AGENT_DIR}/models.json"
+printf '%s\n' '{}' > "${SELECTOR_AGENT_DIR}/settings.json"
+PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${SELECTOR_AGENT_DIR}" tia pi --list-models > "${TMP_DIR}/selector-models.txt"
+grep -q 'selector-test.*visible-model' "${TMP_DIR}/selector-models.txt"
+! grep -Eq 'openai|private-codex' "${TMP_DIR}/selector-models.txt"
+
+printf '[7/12] verify tia pi does not touch sandbox history on startup\n'
 TIA_AGENT_DIR="${HOME}/.local/share/tia/pi-agent"
 mkdir -p "${TIA_AGENT_DIR}/sessions"
 printf '{}' > "${TIA_AGENT_DIR}/sessions/stale.jsonl"
@@ -111,13 +131,13 @@ tia pi --version >/dev/null
 [[ -e "${TIA_AGENT_DIR}/sessions/stale.jsonl" ]]
 rm -f "${TIA_AGENT_DIR}/sessions/stale.jsonl"
 
-printf '[6/10] verify deprecated top-level modes are rejected\n'
+printf '[8/12] verify deprecated top-level modes are rejected\n'
 ! bash "${ROOT_DIR}/install.sh" fast-pi status >"${TMP_DIR}/fast-pi.out" 2>"${TMP_DIR}/fast-pi.err"
 ! bash "${ROOT_DIR}/install.sh" fast-pi-max status >"${TMP_DIR}/fast-pi-max.out" 2>"${TMP_DIR}/fast-pi-max.err"
 ! bash "${ROOT_DIR}/install.sh" max status >"${TMP_DIR}/max.out" 2>"${TMP_DIR}/max.err"
 grep -En "no longer supported" "${TMP_DIR}/fast-pi.err" "${TMP_DIR}/fast-pi-max.err" "${TMP_DIR}/max.err" >/dev/null
 
-printf '[7/10] verify tia pi rpc\n'
+printf '[9/12] verify tia pi rpc\n'
 bash "${ROOT_DIR}/bench/build-pi-rpc-payloads.sh" >/dev/null
 ANTHROPIC_API_KEY=dummy \
 	run_with_optional_timeout tia pi --mode rpc --no-session --no-skills --no-prompt-templates --no-themes \
@@ -159,14 +179,14 @@ wait "${LOOPBACK_PID}" 2>/dev/null || true
 LOOPBACK_PID=""
 bun -e 'const lines=require("node:fs").readFileSync(process.argv[1],"utf8").trim().split(/\n+/).map(JSON.parse); if (!lines.some(event=>event.t==="d"&&event.s==="loopback ok") || !lines.some(event=>event.t==="done"&&!event.error)) process.exit(1)' "${TMP_DIR}/tia-stream-loopback.jsonl"
 
-printf '[8/10] verify exact write reliability\n'
+printf '[10/12] verify exact write reliability\n'
 bun "${ROOT_DIR}/bench/write-reliability.ts" 5 > "${TMP_DIR}/write-reliability.json"
 bun -e 'const obj=require(process.argv[1]); if (obj.ok !== true || obj.writes <= 0) process.exit(1);' "${TMP_DIR}/write-reliability.json"
 
-printf '[9/10] verify installed toolkit is clean\n'
+printf '[11/12] verify installed toolkit is clean\n'
 assert_clean_toolkit "${HOME}/.local/share/tia/pi-agent"
 
-printf '[10/10] verify installer bootstrap path\n'
+printf '[12/12] verify installer bootstrap path\n'
 BOOTSTRAP_HOME="${TMP_DIR}/bootstrap-home"
 BOOTSTRAP_BIN_HOME="${BOOTSTRAP_HOME}/bin"
 BOOTSTRAP_DATA_HOME="${BOOTSTRAP_HOME}/share"

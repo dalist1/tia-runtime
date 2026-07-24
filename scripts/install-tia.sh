@@ -355,7 +355,16 @@ install_pi_sandbox() {
 		fi
 	fi
 
-	bun build --compile --minify "${pi_package_dir}/dist/cli.js" --outfile "${TIA_PI_BIN}"
+	local -a pi_compile_entries
+	if [[ -f "${pi_package_dir}/dist/bun/cli.js" ]]; then
+		pi_compile_entries=("${pi_package_dir}/dist/bun/cli.js")
+		if [[ -f "${pi_package_dir}/dist/utils/image-resize-worker.js" ]]; then
+			pi_compile_entries+=("${pi_package_dir}/dist/utils/image-resize-worker.js")
+		fi
+	else
+		pi_compile_entries=("${pi_package_dir}/dist/cli.js")
+	fi
+	bun build --compile --minify "${pi_compile_entries[@]}" --outfile "${TIA_PI_BIN}"
 	rm -rf "${TIA_PI_AGENT_DIR}/extensions"
 	mkdir -p "$(dirname -- "${TIA_EXTENSION_PATH}")"
 	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
