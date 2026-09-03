@@ -160,7 +160,7 @@ env -i HOME="${HOME}" PATH="${PATH}" ANTHROPIC_API_KEY=dummy XAI_API_KEY=dummy P
 printf '%s\n' '{"providers":{"local-fast":{"baseUrl":"http://127.0.0.1:11434/v1","api":"openai-completions","apiKey":"local","models":[{"id":"local-model"}]}}}' > "${STREAM_AGENT_DIR}/models.json"
 env -i HOME="${HOME}" PATH="${PATH}" PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
 	tia pi --mode json --no-session --provider local-fast > "${TMP_DIR}/tia-stream-custom.jsonl"
-bun -e 'const fs=require("node:fs"); const checks=[[process.argv[1],"xai","grok-4.5"],[process.argv[2],"anthropic","claude-opus-4-8"],[process.argv[3],"local-fast","local-model"]]; for (const [path,provider,model] of checks) { const event=JSON.parse(fs.readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== provider || event.model !== model) process.exit(1); }' \
+bun -e 'const fs=require("node:fs"); const checks=[[process.argv[1],"xai","grok-4.6"],[process.argv[2],"anthropic","claude-opus-4-8"],[process.argv[3],"local-fast","local-model"]]; for (const [path,provider,model] of checks) { const event=JSON.parse(fs.readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== provider || event.model !== model) process.exit(1); }' \
 	"${TMP_DIR}/tia-stream-xai.jsonl" "${TMP_DIR}/tia-stream-auth-fallback.jsonl" "${TMP_DIR}/tia-stream-custom.jsonl"
 LOOPBACK_READY="${TMP_DIR}/loopback.port"
 bun "${ROOT_DIR}/bench/anthropic-loopback-server.ts" "${LOOPBACK_READY}" >"${TMP_DIR}/loopback-server.log" 2>&1 &

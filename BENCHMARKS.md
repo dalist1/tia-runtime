@@ -4,7 +4,7 @@ These are the latest benchmark highlights from the tia research harness.
 
 ## Optimization version `2026-07-low-level-v4` (current)
 
-The runtime is pinned to `@earendil-works/pi-coding-agent` **0.81.1**. The slim runner now reads a provider-specific model catalog instead of initializing every provider model, exact full-line edits render bounded diffs without indexing complete files, and the stream writer keeps its common two-index state out of a `Map`.
+This benchmark was recorded with `@earendil-works/pi-coding-agent` **0.81.1**. The slim runner now reads a provider-specific model catalog instead of initializing every provider model, exact full-line edits render bounded diffs without indexing complete files, and the stream writer keeps its common two-index state out of a `Map`.
 
 Current same-source head-to-head results (`hyperfine`, sequential runs; startup/RPC are network-free and end-to-end streaming uses local HTTP/SSE):
 

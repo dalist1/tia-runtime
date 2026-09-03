@@ -38,6 +38,14 @@ TIA_FFF_PACKAGE_VERSION="${TIA_FFF_PACKAGE_VERSION:-nightly}"
 if [[ -z "${TIA_FFF_SOURCE:-}" && -f "${TIA_FFF_SOURCE_FILE}" ]]; then
 	TIA_FFF_SOURCE="$(tr -d '[:space:]' < "${TIA_FFF_SOURCE_FILE}")"
 fi
+case "${TIA_FFF_SOURCE:-}" in
+	https://github.com/dmtrKovalenko/fff|https://github.com/dmtrKovalenko/fff.git)
+		TIA_FFF_SOURCE="vanilla"
+		;;
+	https://github.com/edxeth/fff|https://github.com/edxeth/fff.git)
+		TIA_FFF_SOURCE="fork"
+		;;
+esac
 TIA_FFF_SOURCE="${TIA_FFF_SOURCE:-vanilla}"
 TIA_PI_PACKAGE_VERSION="${TIA_PI_PACKAGE_VERSION:-latest}"
 TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-}"
@@ -46,6 +54,7 @@ if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" 
 fi
 TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-07-low-level-v4}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
+PI_RUNTIME_PACKAGE_BASENAMES=(pi-agent-core pi-ai pi-client pi-protocol pi-telemetry pi-tui pi-coding-agent)
 
 usage() {
 	cat <<EOF2
@@ -143,6 +152,18 @@ pi_package_version() {
 	bun -e 'const data=require(process.argv[1]); console.log(data.version ?? "")' "${dir}/package.json"
 }
 
+pi_runtime_packages_match() {
+	local package_dir="$1"
+	local expected_version="$2"
+	local scope_dir package_basename package_path
+	scope_dir="$(dirname -- "${package_dir}")"
+	for package_basename in "${PI_RUNTIME_PACKAGE_BASENAMES[@]}"; do
+		package_path="${scope_dir}/${package_basename}"
+		[[ -f "${package_path}/package.json" ]] || return 1
+		[[ "$(pi_package_version "${package_path}")" == "${expected_version}" ]] || return 1
+	done
+}
+
 bun_global_pi_package_dir() {
 	local global_bin global_root
 	global_bin="$(bun pm bin -g 2>/dev/null || true)"
@@ -164,21 +185,26 @@ ensure_pi_package_version() {
 		local installed_version
 		installed_version="$(pi_package_version "${package_dir}")"
 		if [[ "${TIA_PI_PACKAGE_VERSION}" == "latest" ]]; then
-			# Do not rebuild the runtime when the globally installed pi already matches
-			# npm's current latest dist-tag. This keeps normal tia installs fast while
+			# Do not rebuild the runtime when the globally installed pi package set
+			# already matches npm's current latest dist-tag. This keeps normal installs fast while
 			# still upgrading immediately when upstream publishes a release.
 			local latest_version
 			latest_version="$(npm view "${PACKAGE_NAME_PI}" version --fetch-timeout=10000 --fetch-retries=0 2>/dev/null || true)"
-			if [[ -n "${latest_version}" && "${installed_version}" == "${latest_version}" ]]; then
+			if [[ -n "${latest_version}" && "${installed_version}" == "${latest_version}" ]] && pi_runtime_packages_match "${package_dir}" "${latest_version}"; then
 				return 0
 			fi
-		elif [[ "${installed_version}" == "${TIA_PI_PACKAGE_VERSION}" ]]; then
+		elif [[ "${installed_version}" == "${TIA_PI_PACKAGE_VERSION}" ]] && pi_runtime_packages_match "${package_dir}" "${TIA_PI_PACKAGE_VERSION}"; then
 			return 0
 		fi
 	fi
 
-	printf 'Installing %s@%s\n' "${PACKAGE_NAME_PI}" "${TIA_PI_PACKAGE_VERSION}" >&2
-	bun install -g "${PACKAGE_NAME_PI}@${TIA_PI_PACKAGE_VERSION}" >/dev/null
+	local -a package_specs=()
+	local package_basename
+	for package_basename in "${PI_RUNTIME_PACKAGE_BASENAMES[@]}"; do
+		package_specs+=("@earendil-works/${package_basename}@${TIA_PI_PACKAGE_VERSION}")
+	done
+	printf 'Installing @earendil-works pi package set @%s\n' "${TIA_PI_PACKAGE_VERSION}" >&2
+	bun install -g "${package_specs[@]}" >/dev/null
 }
 
 install_fast_tool_helpers() {

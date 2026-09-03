@@ -155,7 +155,7 @@ TIA_FFF_SOURCE=vanilla bash install.sh tia install
 
 Verify which source is active with `tia status | grep fff`.
 
-The installer ensures `@earendil-works/pi-coding-agent` is installed at the pinned version before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to override the pin, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
+The installer ensures the latest synchronized `@earendil-works/pi-*` runtime package set is installed before compiling the sandboxed `tia pi` binary. Set `TIA_PI_PACKAGE_VERSION=<version|latest>` to select another version, `PI_PACKAGE_DIR=<path>` to use a local package checkout, or `TIA_SKIP_PI_PACKAGE_INSTALL=1` to skip the global package update.
 
 Set `TIA_ENABLE_FFF=0` to skip FFF entirely, `TIA_REQUIRE_FFF=1` to make FFF install failures fatal, or `PI_FFF_MODE=tools-and-ui|tools-only|override` at runtime to change FFF behavior. Extensions from the shell/global pi agent are loaded via the shared `settings.json` packages list.
 

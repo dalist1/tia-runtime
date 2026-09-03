@@ -38,7 +38,7 @@ test('installed pi defaults are validated against pi-ai and include the current 
  withTempDir(async path => {
   const packageRoot = resolve(import.meta.dir, '..', 'node_modules', '@earendil-works')
   const result = await buildStreamCatalogFromModules(resolve(packageRoot, 'pi-ai', 'dist', 'models.generated.js'), resolve(packageRoot, 'pi-coding-agent', 'dist', 'core', 'model-resolver.js'), path)
-  expect(result.defaults.xai).toBe('grok-4.5')
-  expect(result.catalog.xai[result.defaults.xai]?.id).toBe('grok-4.5')
+  expect(result.defaults.xai).toBe('grok-4.6')
+  expect(result.catalog.xai[result.defaults.xai]?.id).toBe('grok-4.6')
   expect(Object.keys(result.catalog).length).toBeGreaterThan(20)
  }))
