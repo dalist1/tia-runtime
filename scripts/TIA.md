@@ -8,35 +8,35 @@ Supported tia runtime subcommands from this project are:
 tia pi
 ```
 
-Release **v0.5.0**, optimization marker **`2026-09-runtime-boundaries-v1`**, combines compiled startup, sandboxed runtime wiring, and fast tool overrides. Validated upstream runtime: **pi 0.84.4**.
+Release **v0.5.0**, optimization marker **`2026-09-runtime-boundaries-v1`**, combines compiled startup, sandboxed runtime wiring, and fast tool overrides. Its benchmark baseline uses pi **0.84.4**; current `main` also passes the full integration gate with pi **0.85.0**.
 
 ## Install
 
 Recommended from a local clone:
 
 ```bash
-TIA_PI_PACKAGE_VERSION=0.84.4 bash install.sh tia install
+bash install.sh tia install
 ```
 
 Direct script form:
 
 ```bash
-TIA_PI_PACKAGE_VERSION=0.84.4 bash scripts/install-tia.sh install
+bash scripts/install-tia.sh install
 ```
 
 Global user install from GitHub:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/install.sh | TIA_PI_PACKAGE_VERSION=0.84.4 bash -s -- tia install
+curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/install.sh | bash -s -- tia install
 ```
 
 Direct installer script:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/scripts/install-tia.sh | TIA_PI_PACKAGE_VERSION=0.84.4 bash -s -- install
+curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/scripts/install-tia.sh | bash -s -- install
 ```
 
-The installer still defaults to upstream `latest` when no override is supplied. At release validation, pi 0.85.0 failed to bundle missing `@earendil-works/pi-server` imports; the commands above use the tested version rather than claiming that upstream failure is fixed.
+The installer defaults to upstream `latest` and explicitly installs pi 0.85.0's published `@earendil-works/pi-server` package to satisfy its undeclared runtime import. Set `TIA_PI_PACKAGE_VERSION=0.84.4` to reproduce the tagged v0.5.0 baseline.
 
 ## Status
 

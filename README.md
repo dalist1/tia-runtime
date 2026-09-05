@@ -66,7 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/v0.5.0/install.
   bash -s -- tia install
 ```
 
-The installer still defaults to upstream `latest`. At release validation, pi **0.85.0** failed to bundle missing `@earendil-works/pi-server` imports; use the explicit tested version above until upstream compatibility is resolved. This release does not claim to fix that upstream failure.
+The tagged v0.5.0 release remains reproducible with pi **0.84.4**. Current `main` also installs pi **0.85.0**'s published `@earendil-works/pi-server` package explicitly, resolving its undeclared runtime import; the unpinned latest-version integration gate passes all 12 stages.
 
 ## Latest full-runtime improvement — v0.5.0
 
@@ -82,7 +82,7 @@ This saves about **47 ms** on the cached full-tool startup workload. It is not a
 
 Validation: **98 tests**, **12 pinned integration stages**, **1,512 checked process runs**, and **3,024 checked registered tool calls** across same-code controls and two comparisons. System-call tracing confirms zero Babel file opens with a warm transform cache and a real Babel load when that cache is disabled. [Runtime anatomy, raw results, rejected candidates, and next steps](bench/history/runtime-boundaries-v1/README.md).
 
-The compiler snapshots Jiti into a byte-verified, content-addressed `full-runtime/` directory and smoke-tests a staged binary before atomic replacement. Old companions remain for already-running processes. `tia status` shows `full pi build: lazy-jiti`; set `TIA_DISABLE_LAZY_JITI=1` **during installation** to retain the stock bundled build. This protects the binary build boundary, not the entire installer transaction or the unresolved upstream 0.85.0 package failure.
+The compiler snapshots Jiti into a byte-verified, content-addressed `full-runtime/` directory and smoke-tests a staged binary before atomic replacement. Old companions remain for already-running processes. `tia status` shows `full pi build: lazy-jiti`; set `TIA_DISABLE_LAZY_JITI=1` **during installation** to retain the stock bundled build. This protects the binary build boundary, not the entire installer transaction.
 
 ## Retained read-tool gains — v0.4.0
 
@@ -235,10 +235,10 @@ Reliability tests cover empty content, large content, CRLF, Unicode/emoji, markd
 Run the smoke/integration checks:
 
 ```bash
-TIA_PI_PACKAGE_VERSION=0.84.4 bash test.sh
+bash test.sh
 ```
 
-Use plain `bash test.sh` to check upstream `latest` instead; the known 0.85.0 bundling failure is tracked in `TODO.md`.
+Set `TIA_PI_PACKAGE_VERSION=0.84.4` to reproduce the tagged v0.5.0 release baseline instead of checking upstream `latest`.
 
 Run the low-level optimization checks only (includes exact write verification for empty, large, CRLF, Unicode, overwrite, nested path, and symlink-preserving cases):
 

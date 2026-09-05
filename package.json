@@ -14,15 +14,16 @@
   "format:write": "oxfmt --write scripts/*.ts bench/*.ts bench/history/*.json package.json .oxlintrc.json tsconfig.json"
  },
  "devDependencies": {
-  "@earendil-works/pi-ai": "0.84.4",
-  "@earendil-works/pi-coding-agent": "0.84.4",
-  "@earendil-works/pi-tui": "0.84.4",
+  "@earendil-works/pi-ai": "0.85.0",
+  "@earendil-works/pi-coding-agent": "0.85.0",
+  "@earendil-works/pi-server": "0.85.0",
+  "@earendil-works/pi-tui": "0.85.0",
   "@sinclair/typebox": "^0.34.52",
   "@types/node": "^26.4.1",
   "bun-types": "canary",
   "oxfmt": "latest",
   "oxlint": "latest",
-  "typescript": "7.0.2"
+  "typescript": "next"
  },
- "packageManager": "bun@1.4.1-canary.1"
+ "packageManager": "bun@1.4.3-canary.1"
 }

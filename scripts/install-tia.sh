@@ -54,7 +54,7 @@ if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" 
 fi
 TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-09-runtime-boundaries-v1}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
-PI_RUNTIME_PACKAGE_BASENAMES=(pi-agent-core pi-ai pi-client pi-protocol pi-telemetry pi-tui pi-coding-agent)
+PI_RUNTIME_PACKAGE_BASENAMES=(pi-agent-core pi-ai pi-client pi-protocol pi-server pi-telemetry pi-tui pi-coding-agent)
 
 usage() {
 	cat <<EOF2
@@ -68,7 +68,7 @@ Installs the tia-runtime launcher command so you can run:
 
 Environment:
   TIA_PI_PACKAGE_VERSION
-                  Select a pi package version (default: latest; validated: 0.84.4).
+                  Select a pi package version (default: latest; validated: 0.85.0).
   TIA_DISABLE_LAZY_JITI
                   Set to 1 to keep the full binary's stock bundled transformer.
   TIA_FFF_SOURCE  FFF source: vanilla (npm @ff-labs/pi-fff) or fork (edxeth/fff GitHub).
