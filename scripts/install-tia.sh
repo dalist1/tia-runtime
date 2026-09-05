@@ -52,7 +52,7 @@ TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-}"
 if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" ]]; then
 	TIA_OPTIMIZATION_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")"
 fi
-TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-07-low-level-v4}"
+TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-09-read-bounds-v1}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 PI_RUNTIME_PACKAGE_BASENAMES=(pi-agent-core pi-ai pi-client pi-protocol pi-telemetry pi-tui pi-coding-agent)
 

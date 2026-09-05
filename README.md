@@ -48,6 +48,30 @@ This installs `tia` to `~/.local/bin`. If that directory is not on `PATH`, the i
 
 This path is smoke-tested from outside the repo checkout.
 
+### v0.4.0 validated upgrade
+
+Release **v0.4.0** uses optimization marker **`2026-09-read-bounds-v1`** and is validated with pi **0.84.4**:
+
+```bash
+TIA_PI_PACKAGE_VERSION=0.84.4 bash install.sh tia install
+tia status
+```
+
+For bootstrap installation, put the version override on the shell side of the pipeline:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/v0.4.0/install.sh | \
+  TIA_PI_PACKAGE_VERSION=0.84.4 \
+  INSTALL_BASE_URL=https://raw.githubusercontent.com/dalist1/tia-runtime/v0.4.0/scripts \
+  bash -s -- tia install
+```
+
+The installer still defaults to upstream `latest`. At release validation, pi **0.85.0** failed to bundle missing `@earendil-works/pi-server` imports; use the explicit tested version above until upstream compatibility is resolved. This release does not claim to fix that upstream failure.
+
+### Latest measured tool gains
+
+The installed read extension measured **274×** faster line-limited reads with a discarded 16 MiB tail, **70×** faster byte-limited reads with that tail, and **2.74×** faster oversized-first-line handling. These are targeted gains, not a 10× improvement across all tools. **187,200 checked operations**, same-code controls, confidence intervals, and raw samples are recorded in the [read-bounds report](bench/history/read-bounds-v1/README.md).
+
 ## What tia-runtime installs
 
 - installs the `tia` launcher at `~/.local/bin/tia`
@@ -67,7 +91,7 @@ This path is smoke-tested from outside the repo checkout.
 
 Both runtimes execute the **same pi source** (`@earendil-works/pi-coding-agent`), so this isolates what `tia-runtime` adds: AOT-compiled + minified startup, a low-level slim stream runner with on-demand provider modules, and the sandbox wiring. Stock `pi` is run straight from `dist/cli.js`; `tia pi` is the installed launcher.
 
-Current benchmark marker: **`2026-07-low-level-v4`**. Toolchain: pi `0.81.1`, bun `1.4.0`, Zig `0.17.0-dev.1441+d5181a9c9`, Linux x86_64 (16 logical cores). The complete machine-readable record is `bench/history/2026-07-low-level-v4.json`.
+Historical startup benchmark marker: **`2026-07-low-level-v4`**. Toolchain: pi `0.81.1`, bun `1.4.0`, Zig `0.17.0-dev.1441+d5181a9c9`, Linux x86_64 (16 logical cores). The complete machine-readable record is `bench/history/2026-07-low-level-v4.json`. These startup timings were not remeasured for v0.4.0.
 
 | Workload | Baseline | `tia pi` optimized | Speedup |
 |---|---:|---:|---:|
@@ -182,8 +206,10 @@ Reliability tests cover empty content, large content, CRLF, Unicode/emoji, markd
 Run the smoke/integration checks:
 
 ```bash
-bash test.sh
+TIA_PI_PACKAGE_VERSION=0.84.4 bash test.sh
 ```
+
+Use plain `bash test.sh` to check upstream `latest` instead; the known 0.85.0 bundling failure is tracked in `TODO.md`.
 
 Run the low-level optimization checks only (includes exact write verification for empty, large, CRLF, Unicode, overwrite, nested path, and symlink-preserving cases):
 

@@ -1,7 +1,9 @@
-import {afterAll, beforeAll, expect, test} from 'bun:test'
+import {afterAll, beforeAll, expect, spyOn, test} from 'bun:test'
+import * as fs from 'node:fs'
 import {chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
+import {referenceRead} from '../bench/tool-read-reference.ts'
 
 const agentDir = mkdtempSync(join(tmpdir(), 'tia-io-agent-'))
 process.env.PI_CODING_AGENT_DIR = agentDir
@@ -223,6 +225,161 @@ test('fastRead agent-skill path returns a full file whose single long line spans
  const content = `${'€'.repeat(120000)}\ntail line\n`
  writeFileSync(target, content)
  expect(resultText(await ext.fastRead(work, target))).toBe(content)
+})
+
+for (const trailingNewline of [false, true]) {
+ for (const limitKind of ['lines', 'bytes'] as const) {
+  test(`fastRead bounds I/O after ${limitKind} truncation, giant tail newline=${trailingNewline}`, async () => {
+   const target = filePath(`read-giant-tail-${limitKind}-${trailingNewline}.txt`)
+   const prefix = limitKind === 'lines' ? 'head\n' : `${'x'.repeat(48 * 1024 - 1)}\n`
+   writeFileSync(target, prefix + 'z'.repeat(4 * 1024 * 1024) + (trailingNewline ? '\n' : ''))
+   const original = fs.readSync
+   let bytes = 0
+   const spy = spyOn(fs, 'readSync').mockImplementation((...args: any[]) => {
+    const count = Reflect.apply(original, fs, args)
+    bytes += count
+    return count
+   })
+   try {
+    const updates: string[] = []
+    const result = await ext.fastRead(work, target, 1, limitKind === 'lines' ? 1 : 2000, undefined, update => updates.push(resultText(update)))
+    expect(result.details?.truncation?.truncatedBy).toBe(limitKind)
+    expect(resultText(result)).toBe(`${prefix}\n\n[Showing lines 1-1${limitKind === 'bytes' ? ' (48.0KB limit)' : ''}. Use offset=2 to continue.]`)
+    expect(updates).toEqual([prefix])
+    expect(bytes).toBeLessThanOrEqual(64 * 1024)
+   } finally {
+    spy.mockRestore()
+   }
+  })
+ }
+}
+
+test('fastRead counts an oversized first line without copying its discarded contents', async () => {
+ const target = filePath('read-giant-first.txt')
+ const length = 4 * 1024 * 1024
+ writeFileSync(target, 'z'.repeat(length))
+ const original = Buffer.from
+ let copied = 0
+ const spy = spyOn(Buffer, 'from').mockImplementation((...args: any[]) => {
+  if (Buffer.isBuffer(args[0])) copied += args[0].length
+  return Reflect.apply(original, Buffer, args)
+ })
+ try {
+  expect(resultText(await ext.fastRead(work, target))).toBe('[Line 1 is 4.0MB, exceeds 50.0KB limit. Use bash for partial reads.]')
+  expect(copied).toBeLessThanOrEqual(50 * 1024)
+ } finally {
+  spy.mockRestore()
+ }
+})
+
+test('fastRead tolerates short reads splitting UTF-8 and CRLF, including exact EOF limits', async () => {
+ const target = filePath('read-short.txt')
+ const content = '😄 café\r\n€\nlast λ'
+ writeFileSync(target, content)
+ const original = fs.readSync
+ const spy = spyOn(fs, 'readSync').mockImplementation((...args: any[]) => {
+  args[3] = Math.min(args[3], 1)
+  return Reflect.apply(original, fs, args)
+ })
+ try {
+  expect(resultText(await ext.fastRead(work, target))).toBe(content)
+  expect(resultText(await ext.fastRead(work, target, 3, 1))).toBe('last λ')
+  expect(resultText(await ext.fastRead(work, target, 2, 1))).toBe('€\n\n\n[Showing lines 2-2. Use offset=3 to continue.]')
+  await expect(ext.fastRead(work, target, 4)).rejects.toThrow('3 lines total')
+ } finally {
+  spy.mockRestore()
+ }
+})
+
+test('fastRead never searches the unused scratch-buffer tail on a short read', async () => {
+ const target = filePath('read-bounded-scan.txt')
+ writeFileSync(target, 'short')
+ const original = Buffer.prototype.indexOf
+ const lengths: number[] = []
+ const spy = spyOn(Buffer.prototype, 'indexOf').mockImplementation(function (this: Buffer, ...args: any[]) {
+  if (args[0] === 10) lengths.push(this.length)
+  return Reflect.apply(original, this, args)
+ })
+ try {
+  expect(resultText(await ext.fastRead(work, target))).toBe('short')
+  expect(lengths).toEqual([5])
+ } finally {
+  spy.mockRestore()
+ }
+})
+
+for (const failure of ['abort', 'io-error']) {
+ test(`fastRead closes its descriptor after a mid-scan ${failure}`, async () => {
+  const target = filePath(`read-${failure}.txt`)
+  writeFileSync(target, 'z'.repeat(1024 * 1024))
+  const controller = new AbortController()
+  const original = fs.readSync
+  let descriptor: number | undefined
+  const spy = spyOn(fs, 'readSync').mockImplementation((...args: any[]) => {
+   descriptor = args[0]
+   if (failure === 'io-error') throw new Error('injected I/O failure')
+   const count = Reflect.apply(original, fs, args)
+   controller.abort()
+   return count
+  })
+  try {
+   await expect(ext.fastRead(work, target, undefined, undefined, controller.signal)).rejects.toThrow(failure === 'abort' ? /abort/i : /injected I\/O failure/)
+   expect(descriptor).toBeDefined()
+   expect(() => fs.fstatSync(descriptor!)).toThrow(/EBADF/)
+  } finally {
+   spy.mockRestore()
+  }
+ })
+}
+
+test('fastRead distinguishes an exact chunk-boundary EOF from a following omitted line', async () => {
+ const target = filePath('read-chunk-eof.txt')
+ const content = `${'x'.repeat(32767)}\n`.repeat(8)
+ writeFileSync(target, content)
+ expect(resultText(await ext.fastRead(work, target, 8, 1))).toBe(`${'x'.repeat(32767)}\n`)
+ writeFileSync(target, content + 'tail')
+ expect((await ext.fastRead(work, target, 8, 1)).details?.truncation?.truncatedBy).toBe('lines')
+})
+
+test('fastRead sees external rewrites and rejects cancelled and missing-file reads', async () => {
+ const target = filePath('read-fresh.txt')
+ writeFileSync(target, 'before\n')
+ expect(resultText(await ext.fastRead(work, target))).toBe('before\n')
+ writeFileSync(target, 'after!\n')
+ expect(resultText(await ext.fastRead(work, target))).toBe('after!\n')
+ await expect(ext.fastRead(work, target, undefined, undefined, AbortSignal.abort())).rejects.toThrow(/abort/i)
+ rmSync(target)
+ await expect(ext.fastRead(work, target)).rejects.toThrow()
+})
+
+test('fastRead matches an independent whole-file reference over 1500 seeded windows', async () => {
+ let seed = 0x5eed1234
+ const random = (max: number) => {
+  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+  return seed % max
+ }
+ const target = filePath('read-random.txt')
+ const tokens = ['x', '😄', 'λ', '\r', '€', '\u0000', '\t', 'café']
+ for (let i = 0; i < 500; i += 1) {
+  const count = random(30)
+  const lines = Array.from({length: count}, () => tokens[random(tokens.length)].repeat(random(80)))
+  if (count && i % 5 === 0) lines[random(count)] = '€'.repeat(20000 + random(100000))
+  const content = lines.join('\n') + (random(2) ? '\n' : '')
+  writeFileSync(target, content)
+  for (let j = 0; j < 3; j += 1) {
+   const offset = 1 + random(count + 3)
+   const limit = 1 + random(20)
+   let expected: ReturnType<typeof referenceRead>
+   try {
+    expected = referenceRead(content, offset, limit)
+   } catch (error) {
+    if (!(error instanceof Error)) throw error
+    await expect(ext.fastRead(work, target, offset, limit)).rejects.toThrow(error.message)
+    continue
+   }
+   expect(await ext.fastRead(work, target, offset, limit)).toEqual(expected)
+  }
+ }
 })
 
 test('fastWrite honors TIA_FASTWRITE_FSYNC=1 (durable path stays verified)', async () => {

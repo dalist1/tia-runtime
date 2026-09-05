@@ -978,14 +978,29 @@ function scanReadWindow(absolutePath: string, startLine: number, maxLines: numbe
    const bytesRead = readSync(fd, chunk, 0, want, null)
    if (bytesRead <= 0) break
    lastByteWasNewline = chunk[bytesRead - 1] === 10
+   const scanned = bytesRead === chunk.length ? chunk : chunk.subarray(0, bytesRead)
    let pos = 0
    let flushFrom = -1
    let flushTo = 0
    while (pos < bytesRead) {
-    const newline = chunk.indexOf(10, pos)
+    const newline = scanned.indexOf(10, pos)
     if (newline === -1 || newline >= bytesRead) {
-     if (currentLine >= startLine) carry.push(Buffer.from(chunk.subarray(pos, bytesRead)))
      carryBytes += bytesRead - pos
+     if (currentLine >= startLine) {
+      if (outputLines >= maxLines) {
+       hitLineLimit = true
+       break
+      }
+      if (!unlimited && outputBytes + carryBytes > maxBytes) {
+       carry = []
+       if (outputLines > 0) {
+        hitByteLimit = true
+        break
+       }
+      } else {
+       carry.push(Buffer.from(chunk.subarray(pos, bytesRead)))
+      }
+     }
      break
     }
     const lineBytes = carryBytes + newline + 1 - pos

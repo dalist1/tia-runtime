@@ -62,7 +62,11 @@ grep -En "pi version:.*[0-9]+\.[0-9]+\.[0-9]+" "${TMP_DIR}/tia-status.txt" >/dev
 grep -En "fff extension:.*enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
 PI_PACKAGE_DIR="$(cat "${HOME}/.local/share/tia/pi-package-dir.txt")"
 HOST_PI_PACKAGE_DIR="${PI_PACKAGE_DIR}"
-[[ "$(bun -e 'console.log(require(process.argv[1]).version)' "${PI_PACKAGE_DIR}/package.json")" == "$(npm view @earendil-works/pi-coding-agent version)" ]]
+EXPECTED_PI_VERSION="${TIA_PI_PACKAGE_VERSION:-latest}"
+if [[ "${EXPECTED_PI_VERSION}" == "latest" ]]; then
+	EXPECTED_PI_VERSION="$(npm view @earendil-works/pi-coding-agent version)"
+fi
+[[ "$(bun -e 'console.log(require(process.argv[1]).version)' "${PI_PACKAGE_DIR}/package.json")" == "${EXPECTED_PI_VERSION}" ]]
 [[ -x "${HOME}/.local/share/tia/bin/pi-stream-fast" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/models.json" ]]
 [[ -f "${HOME}/.local/share/tia/stream-runtime/default-models.json" ]]
@@ -208,6 +212,7 @@ HOME="${BOOTSTRAP_HOME}" \
 XDG_BIN_HOME="${BOOTSTRAP_BIN_HOME}" \
 XDG_DATA_HOME="${BOOTSTRAP_DATA_HOME}" \
 "${BOOTSTRAP_BIN_HOME}/tia" status > "${TMP_DIR}/bootstrap-status.txt"
+grep -En "optimization:.*$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
 grep -En "tia-runtime installed:[[:space:]]+yes|tia stream:[[:space:]]+|pi package:[[:space:]]+|cliproxy auto-start:[[:space:]]+enabled" "${TMP_DIR}/bootstrap-status.txt" >/dev/null
 grep -F "${BOOTSTRAP_BIN_HOME} is not on PATH" "${TMP_DIR}/bootstrap-install.txt" >/dev/null
 [[ -d "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff" && ! -L "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff" ]]

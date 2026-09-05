@@ -2,7 +2,29 @@
 
 These are the latest benchmark highlights from the tia research harness.
 
-## Optimization version `2026-07-low-level-v4` (current)
+## 2026-09 read-bounds pass (pi 0.84.4)
+
+Released as **v0.4.0**, optimization marker **`2026-09-read-bounds-v1`**.
+
+**Confirmed against the installed extension with identical resolved dependencies:**
+
+| Read workload | Paired mean speedup | 95% CI |
+|---|---:|---:|
+| One requested line followed by a discarded 16 MiB line | **274.43×** | 247.62–306.17× |
+| 48 KiB accepted before a discarded 16 MiB line | **70.19×** | 61.42–80.75× |
+| Oversized 16 MiB first line, retaining exact size diagnostics | **2.74×** | 2.65–2.81× |
+
+These are targeted read-path gains, **not a 10× improvement to all tools or end-to-end agent latency**. Ordinary reads, verified writes, and edits had no confirmed material improvement/regression. Small-read median gains reproduced, but their mean-latency gains did not.
+
+The scanner now bounds newline searches to actual input bytes, avoids reading/copying discarded tails after truncation is known, and drops oversized carry buffers without losing exact first-line size reporting. Verification and unlimited skill reads are preserved.
+
+Validation: **187,200 checked benchmark operations** across a same-code control, repository comparison, and installed confirmation; **88 passing unit tests**, including 1,500 randomized read windows and deterministic I/O/allocation bounds. Each benchmark used 12 alternating paired rounds, fresh processes per workload, 200 measured operations plus 60 warmups, CPU affinity, raw timings, p50/p95, and paired bootstrap confidence intervals. A mixed-dependency exploratory run is archived but excluded; the harness now rejects that comparison.
+
+All 12 runtime integration stages passed with `TIA_PI_PACKAGE_VERSION=0.84.4`. The unpinned latest-version gate failed on upstream pi 0.85.0's missing `@earendil-works/pi-server` imports; that issue remains unresolved.
+
+Full results, limitations, raw samples, and reproduction commands: **[read-bounds report](bench/history/read-bounds-v1/README.md)**. Run the harness with `bun run bench:tools <baseline-extension.ts> <output.json> [rounds] [iterations] [warmup]`.
+
+## Optimization version `2026-07-low-level-v4`
 
 This benchmark was recorded with `@earendil-works/pi-coding-agent` **0.81.1**. The slim runner now reads a provider-specific model catalog instead of initializing every provider model, exact full-line edits render bounded diffs without indexing complete files, and the stream writer keeps its common two-index state out of a `Map`.
 
