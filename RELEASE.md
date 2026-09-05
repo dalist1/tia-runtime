@@ -1,5 +1,18 @@
 # Release notes
 
+## v0.5.0
+
+Optimization marker: **`2026-09-runtime-boundaries-v1`**. Validated upstream runtime: **pi 0.84.4**.
+
+- Preserve Jiti's lazy transformer loading through a build-time entrypoint selection; upstream pi files, full CLI, tools, OAuth, and image worker remain unchanged.
+- Installed full-RPC startup: **264.74 → 218.47 ms (1.21×)**. Startup plus cached TypeScript tool probes: **282.16 → 235.24 ms (1.20×)**. Cold transformation remains largely unchanged.
+- Reduce embedded JavaScript **26.2%** and the installed ELF binary **1.9%**; the transformer remains available in a verified companion, so these are not total-install-size or RAM reductions.
+- Snapshot Jiti by content hash, verify reused snapshots, smoke-test staged binaries before atomic replacement, and retain old companions for running processes.
+- Add `TIA_DISABLE_LAZY_JITI=1` as an installation-time stock-build escape hatch and expose the selected mode through `tia status`.
+- Validate **98 tests**, **12 pinned integration stages**, **1,512 process runs**, and **3,024 registered tool calls**, including same-code controls, uncached transformation, and failure injection.
+
+Details, confidence intervals, rejected candidates, and the next optimization boundaries: [runtime report](bench/history/runtime-boundaries-v1/README.md). This does not accelerate model token generation, make the whole installer transactional, or fix the upstream pi 0.85.0 missing-server dependency. Upgrade with `TIA_PI_PACKAGE_VERSION=0.84.4 bash install.sh tia install`.
+
 ## v0.4.0
 
 Optimization marker: **`2026-09-read-bounds-v1`**. Validated upstream runtime: **pi 0.84.4**.
@@ -24,7 +37,7 @@ TIA_PI_PACKAGE_VERSION=0.84.4 bash install.sh tia install
 tia status
 ```
 
-The installer keeps its existing upstream `latest` default. At validation, pi **0.85.0** failed to bundle undeclared `@earendil-works/pi-server` imports. The explicit 0.84.4 upgrade passed all 12 runtime integration stages; unpinned latest-version installation is **not** claimed fixed. See [README.md](README.md#v040-validated-upgrade) for a tag-pinned bootstrap command and [the benchmark report](bench/history/read-bounds-v1/README.md) for complete measurements and limitations.
+The installer keeps its existing upstream `latest` default. At validation, pi **0.85.0** failed to bundle undeclared `@earendil-works/pi-server` imports. The explicit 0.84.4 upgrade passed all 12 runtime integration stages; unpinned latest-version installation is **not** claimed fixed. See [the v0.4.0 README](https://github.com/dalist1/tia-runtime/blob/v0.4.0/README.md#v040-validated-upgrade) for a tag-pinned bootstrap command and [the benchmark report](bench/history/read-bounds-v1/README.md) for complete measurements and limitations.
 
 ## v0.3.0
 

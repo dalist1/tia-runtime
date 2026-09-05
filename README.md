@@ -48,9 +48,9 @@ This installs `tia` to `~/.local/bin`. If that directory is not on `PATH`, the i
 
 This path is smoke-tested from outside the repo checkout.
 
-### v0.4.0 validated upgrade
+### v0.5.0 validated upgrade
 
-Release **v0.4.0** uses optimization marker **`2026-09-read-bounds-v1`** and is validated with pi **0.84.4**:
+Release **v0.5.0** uses optimization marker **`2026-09-runtime-boundaries-v1`** and is validated with pi **0.84.4**:
 
 ```bash
 TIA_PI_PACKAGE_VERSION=0.84.4 bash install.sh tia install
@@ -60,15 +60,31 @@ tia status
 For bootstrap installation, put the version override on the shell side of the pipeline:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/v0.4.0/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/v0.5.0/install.sh | \
   TIA_PI_PACKAGE_VERSION=0.84.4 \
-  INSTALL_BASE_URL=https://raw.githubusercontent.com/dalist1/tia-runtime/v0.4.0/scripts \
+  INSTALL_BASE_URL=https://raw.githubusercontent.com/dalist1/tia-runtime/v0.5.0/scripts \
   bash -s -- tia install
 ```
 
 The installer still defaults to upstream `latest`. At release validation, pi **0.85.0** failed to bundle missing `@earendil-works/pi-server` imports; use the explicit tested version above until upstream compatibility is resolved. This release does not claim to fix that upstream failure.
 
-## Latest measured tool gains — v0.4.0
+## Latest full-runtime improvement — v0.5.0
+
+The wrapper now preserves Jiti's lazy transformer loading instead of embedding its eager compiler entrypoint in every full pi launch. Upstream pi files and its full CLI, tools, OAuth, and image worker are unchanged.
+
+| Full compiled pi workload | Before mean (ms) | After mean (ms) | Paired speedup [95% CI] |
+|---|---:|---:|---:|
+| RPC startup, minimal resources | 264.74 | 218.47 | **1.21× [1.21, 1.22]** |
+| RPC startup + cached TypeScript read/write/edit/bash probes | 282.16 | 235.24 | **1.20× [1.19, 1.20]** |
+| Same probes, transpilation cache disabled | 602.50 | 592.71 | 1.02× [1.01, 1.02] |
+
+This saves about **47 ms** on the cached full-tool startup workload. It is not a token-generation speedup; the uncached improvement is below the 5% materiality threshold. The installed JavaScript bundle shrank **26.2%**, but the ELF binary shrank only **1.9%**—the dependency was moved to a verified companion, not deleted.
+
+Validation: **98 tests**, **12 pinned integration stages**, **1,512 checked process runs**, and **3,024 checked registered tool calls** across same-code controls and two comparisons. System-call tracing confirms zero Babel file opens with a warm transform cache and a real Babel load when that cache is disabled. [Runtime anatomy, raw results, rejected candidates, and next steps](bench/history/runtime-boundaries-v1/README.md).
+
+The compiler snapshots Jiti into a byte-verified, content-addressed `full-runtime/` directory and smoke-tests a staged binary before atomic replacement. Old companions remain for already-running processes. `tia status` shows `full pi build: lazy-jiti`; set `TIA_DISABLE_LAZY_JITI=1` **during installation** to retain the stock bundled build. This protects the binary build boundary, not the entire installer transaction or the unresolved upstream 0.85.0 package failure.
+
+## Retained read-tool gains — v0.4.0
 
 Installed extension, pi **0.84.4**, Bun **1.4.1-canary.1**, Linux i7-1360P, warm ext4 page cache, CPU affinity 2:
 
@@ -80,7 +96,7 @@ Installed extension, pi **0.84.4**, Bun **1.4.1-canary.1**, Linux i7-1360P, warm
 
 Speedup is the geometric mean of paired round-mean ratios, **not** the quotient of the displayed medians. Each workload used 12 alternating pairs, with 200 measured operations and 60 warmups per implementation per pair.
 
-**187,200 checked benchmark operations**, **89 passing release tests**, and **12 passing pinned integration stages**. Same-code controls and identical dependency resolution guard against misleading comparisons. Ordinary reads, verified writes, and edits had no confirmed material change; tiny-read mean gains were inconclusive. These are targeted read gains, **not a 10× improvement across all tools or end-to-end agent latency**.
+**187,200 checked benchmark operations**, **89 passing v0.4.0 release tests**, and **12 passing pinned integration stages**. Same-code controls and identical dependency resolution guard against misleading comparisons. Ordinary reads, verified writes, and edits had no confirmed material change; tiny-read mean gains were inconclusive. These are targeted read gains, **not a 10× improvement across all tools or end-to-end agent latency**.
 
 All workloads, p95 timings, raw samples, and reproduction commands: [read-bounds report](bench/history/read-bounds-v1/README.md). Machine-readable results: [summary](bench/history/read-bounds-v1/summary.json) and [release validation](bench/history/read-bounds-v1/release-validation.json).
 
@@ -90,6 +106,7 @@ All workloads, p95 timings, raw samples, and reproduction commands: [read-bounds
 - creates the tia runtime sandbox under `~/.local/share/tia`
 - runs `tia pi` with:
   - compiled pi startup path
+  - verified, content-addressed Jiti companions under `full-runtime/`, with lazy transformation and staged binary publication
   - sandboxed pi agent dir
   - fast-tools extension enabled
   - in-process zero-spawn `read`/`write`/`edit` tool fast paths (no helper binaries on these paths anymore)
@@ -275,7 +292,13 @@ What it covers:
 
 ## Main benchmark commands
 
-For the current read-bounds comparison (prepare the original extension using the [report's instructions](bench/history/read-bounds-v1/README.md#reproduce)):
+For the current full-runtime comparison (build both binaries from the same source using the [runtime report](bench/history/runtime-boundaries-v1/README.md#reproduce)):
+
+```bash
+bun run bench:runtime <baseline-bin> <candidate-bin> <pi-package-dir> <output.json> 12 5
+```
+
+For the retained read-bounds comparison (prepare the original extension using the [read report](bench/history/read-bounds-v1/README.md#reproduce)):
 
 ```bash
 bun run bench:tools <baseline-extension.ts> <output.json> 12 200 60

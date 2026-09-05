@@ -1,0 +1,119 @@
+{
+ "schemaVersion": 1,
+ "recordedAt": "2026-09-05T01:37:57.377Z",
+ "releaseVersion": "0.5.0",
+ "optimizationVersion": "2026-09-runtime-boundaries-v1",
+ "piVersion": "0.84.4",
+ "jitiVersion": "2.7.0",
+ "bunVersion": "1.4.1",
+ "commands": [
+  {
+   "command": "bash -n install.sh scripts/install-tia.sh test.sh",
+   "exitCode": 0
+  },
+  {
+   "command": "bun run format",
+   "exitCode": 0
+  },
+  {
+   "command": "bun run lint",
+   "exitCode": 0
+  },
+  {
+   "command": "bun run typecheck",
+   "exitCode": 0
+  },
+  {
+   "command": "bun install --frozen-lockfile",
+   "exitCode": 0
+  },
+  {
+   "command": "bun test",
+   "exitCode": 0
+  }
+ ],
+ "unit": {
+  "passed": 98,
+  "failed": 0,
+  "assertions": 2512,
+  "files": 11
+ },
+ "integration": {
+  "bundled": {
+   "command": "TIA_DISABLE_LAZY_JITI=1 TIA_PI_PACKAGE_VERSION=0.84.4 bash test.sh",
+   "exitCode": 0,
+   "stages": [
+    "[1/12] install tia runtime",
+    "[2/12] check tia status",
+    "[3/12] verify tia refreshes shell pi agent links at launch",
+    "[4/12] verify concurrent tia pi launches refresh shell pi agent links safely",
+    "[5/12] verify OAuth flows are bundled into tia pi",
+    "[6/12] verify model selectors expose only GPT providers",
+    "[7/12] verify tia pi does not touch sandbox history on startup",
+    "[8/12] verify deprecated top-level modes are rejected",
+    "[9/12] verify tia pi rpc",
+    "[10/12] verify exact write reliability",
+    "[11/12] verify installed toolkit is clean",
+    "[12/12] verify installer bootstrap path"
+   ]
+  },
+  "lazy-jiti": {
+   "command": "TIA_PI_PACKAGE_VERSION=0.84.4 bash test.sh",
+   "exitCode": 0,
+   "stages": [
+    "[1/12] install tia runtime",
+    "[2/12] check tia status",
+    "[3/12] verify tia refreshes shell pi agent links at launch",
+    "[4/12] verify concurrent tia pi launches refresh shell pi agent links safely",
+    "[5/12] verify OAuth flows are bundled into tia pi",
+    "[6/12] verify model selectors expose only GPT providers",
+    "[7/12] verify tia pi does not touch sandbox history on startup",
+    "[8/12] verify deprecated top-level modes are rejected",
+    "[9/12] verify tia pi rpc",
+    "[10/12] verify exact write reliability",
+    "[11/12] verify installed toolkit is clean",
+    "[12/12] verify installer bootstrap path"
+   ]
+  }
+ },
+ "benchmarks": {
+  "checkedProcesses": 1512,
+  "checkedToolCalls": 3024,
+  "incorrectResults": 0,
+  "controlIntervalsIncludeOne": true
+ },
+ "documentation": {
+  "localFileLinksChecked": 24,
+  "installedStatisticsChecked": true
+ },
+ "installedBinaryMatchesBenchmarkedCandidate": true,
+ "installedBinarySha256": "1b93789a024269bf34d1281a6edb95e6b2f454f8d3362f0323d33b86984ada77",
+ "installedCompanionSha256": "39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1",
+ "sourceHashes": {
+  "scripts/build-pi.ts": "91eae4b5df8f8440bf730c47de7626941ae3810e7c37371e710ade22071073fd",
+  "scripts/build-pi.test.ts": "b91068ec658ba4f4eb77d1de6c34d4034b643dbde7b9fa2416fd317b2559592b",
+  "scripts/install-tia.sh": "76da40e41648e11312de93836effdb69d08060986b71c9505cb1cead5cc399b5",
+  "test.sh": "279e5885ab52c4540a2f5729c9d0965b093daa15db1a7812aa95eb5883beb705",
+  "bench/runtime-boundaries.ts": "0aca999b8e035c3dd6476d6dcb1b997dbb23d33e5c6afc2bbd56036a0e1e36d7",
+  "bench/runtime-boundaries.test.ts": "c751a9d57a535230d9c888cbf803b05e3e968a06aa119f62db93f0b399d4745e",
+  "scripts/fast-tools-extension.ts": "6833dfd32b1a870fb64872f2a5750b63e5fdcb1aaa95d84710b1e283aad9e9dc",
+  "package.json": "f57e9d66b5fe632e7f753a99544fd92d0b60ac0cde5f643a634697e225816b1b",
+  "OPTIMIZATION_VERSION": "96d0d8aad9593ae2733d41fc38aebb6692cbfc2474524fcd8e7c15c97362e09f"
+ },
+ "evidenceHashes": {
+  "lazy-load-trace.json": "3b1b5c90ad3be4d5254786663c3b2d240abacb1e1e318749274863b0fd7267e0",
+  "installed-baseline-build.json": "8871fd806eee4f9e1735cbbfd7cc3d07e4a5e29e13235ca9151e221af21747b4",
+  "baseline-build.json": "529553ecc22a331d54cdb83b457a1ceb3773411e916ad6326e17846d3c394e24",
+  "control.json": "2a5bb7bbe8dcc7359e936e2c98e811f53ea37940f9d7d66f4197069c43256b6c",
+  "installed-candidate-build.json": "59a029badf94dbfeb58343be3cad7e34d1a17d63e700d44aa6696ed7beee7ff8",
+  "candidate-build.json": "2dbb30143bc348fad993683c0cff8b60a6d6049790c8ab11993b29f45a842613",
+  "startup-phases.json": "227e497d0bb3fc07fd4d3fa76d03f0eb9e480e98fece04f7659db0418c9541b5",
+  "installed-confirmation.json": "4c6232add94093a6fd975de678298f6af9408a2b99b7530a8abf3a02c407a7a7",
+  "comparison.json": "40c178eae8e5f7e0bbcbd92e759c46568787a24e7239d3a50aaa2947f07214f3",
+  "exploratory.json": "8e094e5a060c0a457cf557ca5fc7cd6352f78ed88e6d48d7b52cb5871d1cda46"
+ },
+ "upstreamLatest": {
+  "version": "0.85.0",
+  "status": "Unpinned compatibility remains unresolved from the prior release. Published dependency manifest rechecked; no successful latest-version integration claim."
+ }
+}

@@ -8,7 +8,7 @@ Supported tia runtime subcommands from this project are:
 tia pi
 ```
 
-Release **v0.4.0**, optimization marker **`2026-09-read-bounds-v1`**, combines compiled startup, sandboxed runtime wiring, and fast tool overrides. Validated upstream runtime: **pi 0.84.4**.
+Release **v0.5.0**, optimization marker **`2026-09-runtime-boundaries-v1`**, combines compiled startup, sandboxed runtime wiring, and fast tool overrides. Validated upstream runtime: **pi 0.84.4**.
 
 ## Install
 
@@ -68,7 +68,16 @@ bash scripts/install-tia.sh uninstall
 
 ## Benchmarks
 
-### Current read-bounds results — v0.4.0
+### Current full-runtime results — v0.5.0
+
+- Full compiled RPC startup: **264.74 → 218.47 ms**, **1.21×** paired speedup (95% CI 1.21–1.22).
+- RPC plus cached TypeScript read/write/edit/bash probes: **282.16 → 235.24 ms**, **1.20×** (1.19–1.20).
+- With transformation caching disabled: **602.50 → 592.71 ms**, a small 1.02× change, below the 5% materiality threshold.
+- **98 tests**, **12 pinned integration stages**, **1,512 process checks**, and **3,024 registered tool checks**. [Full report and raw timings](../bench/history/runtime-boundaries-v1/README.md).
+
+The wrapper keeps Jiti's transformer lazy and snapshots its dependency into a verified `full-runtime/` companion. It smoke-tests each staged binary before atomic replacement. `tia status` reports `full pi build: lazy-jiti`; set `TIA_DISABLE_LAZY_JITI=1` during installation for the stock bundled build. Old companions remain for running processes. This is not a complete installer transaction, FFF benchmark, or model-token speedup.
+
+### Retained read-bounds results — v0.4.0
 
 | Read workload | Paired mean speedup | 95% CI |
 |---|---:|---:|

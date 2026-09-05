@@ -1,0 +1,18 @@
+{
+ "syscall": "openat",
+ "warmBabelOpens": 0,
+ "uncachedBabelOpens": 1,
+ "note": "Separate correctness traces, not timed benchmark runs. Same candidate and extension. Warm Jiti cache versus JITI_FS_CACHE=false.",
+ "warmEvidence": [
+  "openat(AT_FDCWD, \"/home/fqatipi/tia-runtime/results-runtime-anatomy/full-runtime/jiti-39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1/lib\", O_RDONLY|O_LARGEFILE|O_DIRECTORY) = 7",
+  "openat(AT_FDCWD, \"/home/fqatipi/tia-runtime/results-runtime-anatomy/full-runtime/jiti-39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1/\", O_RDONLY|O_LARGEFILE|O_CLOEXEC|O_DIRECTORY) = 9",
+  "openat(AT_FDCWD, \"/home/fqatipi/tia-runtime/results-runtime-anatomy/full-runtime/jiti-39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1/lib\", O_RDONLY|O_LARGEFILE|O_CLOEXEC|O_DIRECTORY) = 10",
+  "openat(AT_FDCWD, \"/home/fqatipi/tia-runtime/results-runtime-anatomy/full-runtime/jiti-39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1/lib/jiti.mjs\", O_RDONLY|O_LARGEFILE|O_CLOEXEC) = 7",
+  "openat(AT_FDCWD, \"/home/fqatipi/tia-runtime/results-runtime-anatomy/full-runtime/jiti-39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1/dist\", O_RDONLY|O_LARGEFILE|O_DIRECTORY) = 7",
+  "openat(AT_FDCWD, \"/home/fqatipi/tia-runtime/results-runtime-anatomy/full-runtime/jiti-39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1/dist\", O_RDONLY|O_LARGEFILE|O_CLOEXEC|O_DIRECTORY) = 7",
+  "openat(AT_FDCWD, \"/home/fqatipi/tia-runtime/results-runtime-anatomy/full-runtime/jiti-39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1/dist/jiti.cjs\", O_RDONLY|O_LARGEFILE|O_CLOEXEC) = 7"
+ ],
+ "coldEvidence": [
+  "openat(AT_FDCWD, \"/home/fqatipi/tia-runtime/results-runtime-anatomy/full-runtime/jiti-39e482b812652afec0625a5506fe2978994adee766bab8f5ba8205924bca3fc1/dist/babel.cjs\", O_RDONLY|O_LARGEFILE|O_CLOEXEC) = 9"
+ ]
+}

@@ -2,6 +2,22 @@
 
 These are the latest benchmark highlights from the tia research harness.
 
+## v0.5.0: full-runtime boundaries (pi 0.84.4)
+
+Optimization marker: **`2026-09-runtime-boundaries-v1`**. The wrapper selects Jiti's regular lazy entrypoint instead of embedding its eager transformer. No upstream source patch or slim-mode substitution is involved.
+
+| Full compiled pi workload | Before mean (ms) | After mean (ms) | Paired speedup [95% CI] |
+|---|---:|---:|---:|
+| RPC startup, minimal resources | 264.74 | 218.47 | **1.21× [1.21, 1.22]** |
+| RPC startup + cached TypeScript read/write/edit/bash probes | 282.16 | 235.24 | **1.20× [1.19, 1.20]** |
+| Same probes, transpilation cache disabled | 602.50 | 592.71 | 1.02× [1.01, 1.02] |
+
+Installed JavaScript: **6,417,452 → 4,735,915 bytes (−26.2%)**; ELF binary: **87,725,536 → 86,046,176 bytes (−1.9%)**. The dependency still exists in a verified companion. No RAM or total-install-size improvement is claimed.
+
+**98 tests**, **12 pinned integration stages**, **1,512 validated process runs**, and **3,024 validated registered tool calls**. Each suite used 12 alternating pairs, five launches per candidate per pair, three warmups, CPU affinity 2, isolated settings/cache, and no model/network request. The same-code control detected no speedup. The cold-transform improvement is below the 5% materiality threshold.
+
+Full methodology, syscall evidence, raw samples, and architectural next steps: **[runtime-boundaries report](bench/history/runtime-boundaries-v1/README.md)**. This measures compiled runtime startup, not shell-wrapper overhead, default FFF indexing, or token latency. Previous read-tool results below are retained separately, not multiplied into these startup gains.
+
 ## 2026-09 read-bounds pass (pi 0.84.4)
 
 Released as **v0.4.0**, optimization marker **`2026-09-read-bounds-v1`**.
@@ -193,7 +209,13 @@ The harnesses below focus on `tia pi`; their historical measurements are separat
 
 ## Source result files
 
-### Current v0.4.0 records
+### Current v0.5.0 records
+- [Runtime anatomy and methodology](bench/history/runtime-boundaries-v1/README.md)
+- [Installed confirmation](bench/history/runtime-boundaries-v1/installed-confirmation.json)
+- [Same-code control](bench/history/runtime-boundaries-v1/control.json)
+- [Validation](bench/history/runtime-boundaries-v1/validation.json)
+
+### Retained v0.4.0 read records
 - [Detailed report](bench/history/read-bounds-v1/README.md)
 - [Summary statistics and archive checksums](bench/history/read-bounds-v1/summary.json)
 - [Release validation: 89 tests and 12 pinned integration stages](bench/history/read-bounds-v1/release-validation.json)
@@ -253,6 +275,13 @@ The archived v4 full-tier run (`bench/history/2026-07-low-level-v4-feedback/`) c
 
 ## How to reproduce
 
+### Current full-runtime boundary comparison
+```bash
+bun run bench:runtime <baseline-bin> <candidate-bin> <pi-package-dir> <output.json> 12 5
+```
+
+Build both binaries from the same package tree using the [runtime report's instructions](bench/history/runtime-boundaries-v1/README.md#reproduce).
+
 ### Current read-bounds comparison
 ```bash
 bun run bench:tools <baseline-extension.ts> <output.json> 12 200 60
@@ -311,7 +340,8 @@ This compares:
 
 ## Interpretation
 
+- v0.5.0 defers unnecessary transformer work at startup while retaining full pi behavior. It saves about 47 ms in the cached tool-probe workload, not 20% of an arbitrary model turn.
 - v0.4.0 removes unnecessary scanning and copying from three specific read workloads; it does not establish a universal tool speedup.
 - Ordinary read/write/edit changes were not material under the reported confidence-interval threshold. All timed writes and edits retained their own verification.
-- Startup, streaming, bash-helper, and FFF search speedups were not remeasured in this pass. Older measurements above remain historical, not additive gains for v0.4.0.
+- Startup, streaming, bash-helper, and FFF search speedups were not remeasured in the v0.4.0 read pass. The new v0.5.0 startup measurements are separate; other older results remain historical and non-additive.
 - The validated integration target is pi 0.84.4. The upstream 0.85.0 installation failure is separate and unresolved.

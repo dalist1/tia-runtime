@@ -62,6 +62,14 @@ grep -En "pi version:.*[0-9]+\.[0-9]+\.[0-9]+" "${TMP_DIR}/tia-status.txt" >/dev
 grep -En "fff extension:.*enabled" "${TMP_DIR}/tia-status.txt" >/dev/null
 PI_PACKAGE_DIR="$(cat "${HOME}/.local/share/tia/pi-package-dir.txt")"
 HOST_PI_PACKAGE_DIR="${PI_PACKAGE_DIR}"
+bun -e '
+const fs=require("node:fs"),{createHash}=require("node:crypto"),assert=require("node:assert/strict");
+const root=process.argv[1],meta=JSON.parse(fs.readFileSync(root+"/pi-build.json","utf8"));
+const expected=process.env.TIA_DISABLE_LAZY_JITI==="1"?"bundled":"lazy-jiti";
+assert.equal(meta.mode,expected,"Unexpected full-runtime build mode");
+assert.equal(createHash("sha256").update(fs.readFileSync(root+"/bin/pi")).digest("hex"),meta.binarySha256,"Installed binary does not match build metadata");
+if(expected==="lazy-jiti")assert(fs.existsSync(meta.companion.entry),"Missing Jiti companion");
+' "${HOME}/.local/share/tia"
 EXPECTED_PI_VERSION="${TIA_PI_PACKAGE_VERSION:-latest}"
 if [[ "${EXPECTED_PI_VERSION}" == "latest" ]]; then
 	EXPECTED_PI_VERSION="$(npm view @earendil-works/pi-coding-agent version)"

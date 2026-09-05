@@ -1,0 +1,373 @@
+{
+ "note": "Exploratory non-affinity-pinned pilots; not used for release confidence intervals. Production comparisons use the guarded builder and a separate validated harness.",
+ "piVersion": "0.84.4",
+ "jitiVersion": "2.7.0",
+ "bunVersion": "1.4.1",
+ "pilots": {
+  "minimalRpc": {
+   "results": [
+    {
+     "command": "results-runtime-anatomy/pi-baseline --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files < results-runtime-anatomy/request.jsonl",
+     "mean": 0.23596749103999995,
+     "stddev": 0.003084020215998988,
+     "median": 0.23531666204,
+     "user": 0.27889724666666665,
+     "system": 0.031601019999999994,
+     "min": 0.23208725804,
+     "max": 0.24144214304,
+     "times": [
+      0.23400156204,
+      0.24080308904,
+      0.24144214304,
+      0.23347311804,
+      0.23575989404,
+      0.24122179804000002,
+      0.23531666204,
+      0.23515482504000002,
+      0.23569441604,
+      0.23294459704,
+      0.23208725804,
+      0.23405177204,
+      0.23582126804,
+      0.23332036904,
+      0.23841959404000002
+     ],
+     "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "command": "results-runtime-anatomy/pi-lazy-jiti --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files < results-runtime-anatomy/request.jsonl",
+     "mean": 0.19018766324000003,
+     "stddev": 0.011659919315448913,
+     "median": 0.18710070904,
+     "user": 0.2300005133333333,
+     "system": 0.026421953333333335,
+     "min": 0.18035268004,
+     "max": 0.22793530904,
+     "times": [
+      0.18539270804,
+      0.18741771904,
+      0.18035268004,
+      0.18710070904,
+      0.18393134604,
+      0.18844531704,
+      0.19906559604000001,
+      0.18403495604,
+      0.22793530904,
+      0.19271482904,
+      0.18323715604000002,
+      0.19182781804000001,
+      0.18220422804,
+      0.19509224904,
+      0.18406232804
+     ],
+     "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "command": "results-runtime-anatomy/pi-external-highlight --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files < results-runtime-anatomy/request.jsonl",
+     "mean": 0.24279765217333332,
+     "stddev": 0.004226814757756199,
+     "median": 0.24135458704,
+     "user": 0.2839027133333333,
+     "system": 0.030944886666666668,
+     "min": 0.23413318704,
+     "max": 0.25079333804000004,
+     "times": [
+      0.23953778104,
+      0.24571209204,
+      0.23894713204,
+      0.24269106804,
+      0.24067908604000002,
+      0.24000215804,
+      0.25079333804000004,
+      0.24656157604,
+      0.24135458704,
+      0.24580871904,
+      0.24100476404,
+      0.24545547504,
+      0.23413318704,
+      0.24129073704,
+      0.24799308204
+     ],
+     "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "command": "results-runtime-anatomy/pi-lazy-both --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files < results-runtime-anatomy/request.jsonl",
+     "mean": 0.19391253757333332,
+     "stddev": 0.00570016675409789,
+     "median": 0.19306564904,
+     "user": 0.23427251333333332,
+     "system": 0.024509553333333333,
+     "min": 0.18487221504,
+     "max": 0.20674211904,
+     "times": [
+      0.19402248004,
+      0.19306564904,
+      0.18715594404,
+      0.18487221504,
+      0.19183869604,
+      0.19828878304,
+      0.19842064204,
+      0.18568147104,
+      0.19236875804,
+      0.19293066404,
+      0.19841667904000002,
+      0.19126606904000001,
+      0.19808126004,
+      0.20674211904,
+      0.19553663404
+     ],
+     "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "explicitFastTools": {
+   "results": [
+    {
+     "command": "results-runtime-anatomy/pi-baseline --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files -e scripts/fast-tools-extension.ts < results-runtime-anatomy/request.jsonl",
+     "mean": 0.24572407571666666,
+     "stddev": 0.005189536633783643,
+     "median": 0.2461257433,
+     "user": 0.28641953666666664,
+     "system": 0.031935653333333335,
+     "min": 0.23267084580000003,
+     "max": 0.25090538780000005,
+     "times": [
+      0.23267084580000003,
+      0.24496164680000002,
+      0.25090538780000005,
+      0.2436146918,
+      0.24989221680000004,
+      0.2442288928,
+      0.2408897958,
+      0.2488313728,
+      0.2461324208,
+      0.2507567768,
+      0.2496857948,
+      0.2461190658
+     ],
+     "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "command": "results-runtime-anatomy/pi-lazy-jiti --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files -e scripts/fast-tools-extension.ts < results-runtime-anatomy/request.jsonl",
+     "mean": 0.1947683113833333,
+     "stddev": 0.006153326392739938,
+     "median": 0.1960476193,
+     "user": 0.23217762,
+     "system": 0.027330486666666667,
+     "min": 0.1839166338,
+     "max": 0.2040253568,
+     "times": [
+      0.1952853048,
+      0.20241970680000002,
+      0.1839166338,
+      0.1978812838,
+      0.1860629298,
+      0.1938169928,
+      0.1970760728,
+      0.19040432780000002,
+      0.1968099338,
+      0.1903268048,
+      0.1991943888,
+      0.2040253568
+     ],
+     "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "command": "env JITI_FS_CACHE=0 results-runtime-anatomy/pi-baseline --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files -e scripts/fast-tools-extension.ts < results-runtime-anatomy/request.jsonl",
+     "mean": 0.3702384438000001,
+     "stddev": 0.005773402253495518,
+     "median": 0.3689889713000001,
+     "user": 0.6735467033333333,
+     "system": 0.058536903333333314,
+     "min": 0.36325798080000005,
+     "max": 0.38276220480000006,
+     "times": [
+      0.36940876580000004,
+      0.36852908680000007,
+      0.36856917680000006,
+      0.37700937180000005,
+      0.38276220480000006,
+      0.36962529080000006,
+      0.36325798080000005,
+      0.3716003238000001,
+      0.3646693778,
+      0.36463031980000005,
+      0.37595201780000004,
+      0.36684740880000005
+     ],
+     "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "command": "env JITI_FS_CACHE=0 results-runtime-anatomy/pi-lazy-jiti --mode rpc --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-context-files -e scripts/fast-tools-extension.ts < results-runtime-anatomy/request.jsonl",
+     "mean": 0.3638790618833334,
+     "stddev": 0.009579032977847722,
+     "median": 0.3624044913000001,
+     "user": 0.6782735366666666,
+     "system": 0.059191486666666675,
+     "min": 0.35245683780000003,
+     "max": 0.38773131380000003,
+     "times": [
+      0.35245683780000003,
+      0.35398636880000006,
+      0.3639991778000001,
+      0.3646636858,
+      0.3682498678000001,
+      0.35765585080000006,
+      0.38773131380000003,
+      0.35649123680000006,
+      0.36033418180000004,
+      0.37000534380000005,
+      0.3608098048,
+      0.37016507280000005
+     ],
+     "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "transformCacheDisabled": {
+   "runs": 12,
+   "baselineMeanMs": 370.2,
+   "baselineStddevMs": 5.8,
+   "candidateMeanMs": 363.9,
+   "candidateStddevMs": 9.6,
+   "note": "Observed terminal summary only; raw samples not retained. Not used for conclusions."
+  }
+ },
+ "rejections": {
+  "bytecode": {
+   "initial": "Top-level await not supported with bytecode.",
+   "adapter": "import {registerBunOAuthFlows} from '../node_modules/@earendil-works/pi-ai/dist/bun-oauth.js'\nimport {APP_NAME} from '../node_modules/@earendil-works/pi-coding-agent/dist/config.js'\nimport {restoreSandboxEnv} from '../node_modules/@earendil-works/pi-coding-agent/dist/bun/restore-sandbox-env.js'\nprocess.title = APP_NAME\nprocess.emitWarning = () => {}\nregisterBunOAuthFlows()\nrestoreSandboxEnv()\nvoid (async () => {\n await import('../node_modules/@earendil-works/pi-coding-agent/dist/bun/register-bedrock.js')\n await import('../node_modules/@earendil-works/pi-coding-agent/dist/cli.js')\n})().catch(error => { console.error(error); process.exitCode = 1 })\n",
+   "diagnostic": [
+    "  [79ms] compile  results-runtime-anatomy/pi-bytecode",
+    "error: Failed to generate bytecode for ./pi-bytecode"
+   ],
+   "outcome": "Compiler emitted unusable output despite a successful build-command exit. Rejected."
+  },
+  "bareStaticExternal": {
+   "diagnostic": "error: Cannot find module 'jiti/static' from '/$bunfs/root/pi-external-jiti'\n\nBun v1.4.1-canary.1+e0a2b82fd (Linux x64)\n",
+   "outcome": "Rejected; production resolves and snapshots the regular entrypoint."
+  },
+  "highlightExternal": {
+   "outcome": "No pilot improvement; kept bundled."
+  },
+  "rss": {
+   "outcome": "Bun-spawn peak RSS had an inherited high-water floor. No RSS improvement claimed; field removed from production harness before controlled measurements."
+  }
+ }
+}

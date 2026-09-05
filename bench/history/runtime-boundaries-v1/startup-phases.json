@@ -1,0 +1,65 @@
+{
+ "note": "Separate instrumented runs: PI_TIMING=1. Namespaces overlap; do not add main and extension totals. Not used for benchmark speedup estimates.",
+ "runs": [
+  {
+   "round": 0,
+   "label": "baseline",
+   "wallMs": 258.09874199999996,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 22ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 2ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 27ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 1ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 0,
+   "label": "candidate",
+   "wallMs": 205.48675000000003,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 24ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 2ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 28ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 2ms\n  TOTAL: 2ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 1,
+   "label": "baseline",
+   "wallMs": 246.382998,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 23ms\n  readPipedStdin: 1ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 28ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 2ms\n  TOTAL: 2ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 1,
+   "label": "candidate",
+   "wallMs": 205.61111100000005,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 23ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 27ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 1ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 2,
+   "label": "baseline",
+   "wallMs": 248.21205800000007,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 22ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 2ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 27ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 1ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 2,
+   "label": "candidate",
+   "wallMs": 204.369504,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 1ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 24ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 28ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 1ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 3,
+   "label": "baseline",
+   "wallMs": 253.7567059999999,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 24ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 28ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 2ms\n  TOTAL: 2ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 3,
+   "label": "candidate",
+   "wallMs": 201.70999000000006,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 24ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 28ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 1ms\n  TOTAL: 1ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 4,
+   "label": "baseline",
+   "wallMs": 251.94138199999998,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 2ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 0ms\n  createAgentSessionRuntime: 25ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 29ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 2ms\n  TOTAL: 2ms\n-----------------------------------\n\n"
+  },
+  {
+   "round": 4,
+   "label": "candidate",
+   "wallMs": 206.5661399999999,
+   "upstreamTimings": "\n--- Startup Timings: main ---\n  parseArgs: 1ms\n  runMigrations: 1ms\n  createSessionManager: 0ms\n  createRuntime: 1ms\n  createAgentSessionRuntime: 22ms\n  readPipedStdin: 0ms\n  prepareInitialMessage: 0ms\n  initTheme: 1ms\n  resolveModelScope: 0ms\n  createAgentSession: 0ms\n  TOTAL: 26ms\n-----------------------------\n\n\n--- Startup Timings: extensions ---\n  <inline:llama.cpp> factory: 2ms\n  TOTAL: 2ms\n-----------------------------------\n\n"
+  }
+ ]
+}

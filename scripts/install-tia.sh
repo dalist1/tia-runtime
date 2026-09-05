@@ -52,7 +52,7 @@ TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-}"
 if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" ]]; then
 	TIA_OPTIMIZATION_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")"
 fi
-TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-09-read-bounds-v1}"
+TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-09-runtime-boundaries-v1}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 PI_RUNTIME_PACKAGE_BASENAMES=(pi-agent-core pi-ai pi-client pi-protocol pi-telemetry pi-tui pi-coding-agent)
 
@@ -67,6 +67,10 @@ Installs the tia-runtime launcher command so you can run:
   tia pi [args...]
 
 Environment:
+  TIA_PI_PACKAGE_VERSION
+                  Select a pi package version (default: latest; validated: 0.84.4).
+  TIA_DISABLE_LAZY_JITI
+                  Set to 1 to keep the full binary's stock bundled transformer.
   TIA_FFF_SOURCE  FFF source: vanilla (npm @ff-labs/pi-fff) or fork (edxeth/fff GitHub).
                   Set to "fork" to use the forked FFF pi-fff extension.
   TIA_PROXY_CHECK_INTERVAL_SECONDS
@@ -390,16 +394,16 @@ install_pi_sandbox() {
 		fi
 	fi
 
-	local -a pi_compile_entries
-	if [[ -f "${pi_package_dir}/dist/bun/cli.js" ]]; then
-		pi_compile_entries=("${pi_package_dir}/dist/bun/cli.js")
-		if [[ -f "${pi_package_dir}/dist/utils/image-resize-worker.js" ]]; then
-			pi_compile_entries+=("${pi_package_dir}/dist/utils/image-resize-worker.js")
-		fi
-	else
-		pi_compile_entries=("${pi_package_dir}/dist/cli.js")
+	local pi_builder pi_build_info
+	pi_builder="${TIA_ROOT}/build-pi.ts"
+	copy_or_fetch_script_asset "build-pi.ts" "${pi_builder}"
+	pi_build_info="$(mktemp "${TIA_ROOT}/.pi-build-info.XXXXXX")"
+	if ! bun "${pi_builder}" "${pi_package_dir}" "${TIA_PI_BIN}" "${TIA_ROOT}/full-runtime" > "${pi_build_info}"; then
+		rm -f "${pi_builder}" "${pi_build_info}"
+		die "Pi build failed. Compilation and smoke-check failures preserve the previous binary. Set TIA_DISABLE_LAZY_JITI=1 to use the stock bundled build."
 	fi
-	bun build --compile --minify "${pi_compile_entries[@]}" --outfile "${TIA_PI_BIN}"
+	mv -f "${pi_build_info}" "${TIA_ROOT}/pi-build.json"
+	rm -f "${pi_builder}"
 	rm -rf "${TIA_PI_AGENT_DIR}/extensions"
 	mkdir -p "$(dirname -- "${TIA_EXTENSION_PATH}")"
 	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
@@ -473,7 +477,10 @@ install_pi_sandbox() {
 
 write_tia_wrapper() {
 	mkdir -p "${TIA_BIN_DIR}"
-	local installed_pi_version="unknown"
+	local installed_pi_version="unknown" full_build_mode="unknown"
+	if [[ -f "${TIA_ROOT}/pi-build.json" ]]; then
+		full_build_mode="$(bun -e 'console.log(require(process.argv[1]).mode)' "${TIA_ROOT}/pi-build.json")"
+	fi
 	if [[ -f "${TIA_ROOT}/pi-package-dir.txt" ]]; then
 		local installed_pi_dir
 		installed_pi_dir="$(cat "${TIA_ROOT}/pi-package-dir.txt")"
@@ -492,6 +499,7 @@ TIA_FFF_STATE_DIR="${TIA_FFF_STATE_DIR}"
 TIA_FFF_SOURCE_FILE="${TIA_FFF_SOURCE_FILE}"
 TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION}"
 TIA_PI_VERSION="${installed_pi_version}"
+TIA_FULL_BUILD_MODE="${full_build_mode}"
 
 should_use_fast_stream() {
   [[ "\${TIA_DISABLE_FAST_STREAM:-0}" != "1" ]] || return 1
@@ -663,6 +671,7 @@ case "\${subcommand}" in
     printf '%-22s%s\n' 'tia pi agent:' "\${TIA_PI_AGENT_DIR}"
     printf '%-22s%s\n' 'optimization:' "\${TIA_OPTIMIZATION_VERSION}"
     printf '%-22s%s\n' 'pi version:' "\${TIA_PI_VERSION}"
+    printf '%-22s%s\n' 'full pi build:' "\${TIA_FULL_BUILD_MODE}"
     printf '%-22s%s\n' 'shell pi agent:' "\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
     printf '%-22s%s\n' 'history mode:' 'unchanged by tia pi startup'
     printf '%-22s%s\n' 'cliproxy auto-start:' 'enabled for tia pi when systemd user services are available'
