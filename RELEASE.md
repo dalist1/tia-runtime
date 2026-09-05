@@ -8,12 +8,14 @@ Optimization marker: **`2026-09-read-bounds-v1`**. Validated upstream runtime: *
 - stop reading and copying discarded giant lines after read truncation is known
 - bound newline searches to actual input bytes and oversized-line carry storage to the output budget
 - retain exact size diagnostics, UTF-8/CRLF correctness, unlimited skill reads, and existing write/edit verification
-- confirm **274× / 70×** speedups for line-/byte-limited reads with discarded 16 MiB tails, and **2.74×** for oversized first lines; these are not universal tool speedups
+- confirm paired mean speedups of **274.43×** (95% CI 247.62–306.17×) for line-limited reads with a discarded 16 MiB tail, **70.19×** (61.42–80.75×) for byte-limited reads with that tail, and **2.74×** (2.65–2.81×) for oversized first lines; these are not universal tool speedups
 - archive **187,200 checked operations**, raw timings, paired confidence intervals, and same-code controls
 - add randomized, fault, resource-bound, and benchmark-harness tests, including rejection of mixed dependency trees
 - align release metadata and installer/bootstrap optimization markers
 
 Release validation: **89 unit tests passed**, all **12 pinned install/runtime stages passed**, and formatting, lint, TypeScript, shell syntax, and frozen-lockfile installation checks passed. `tia status` reports the new optimization marker. The benchmarked extension's hash is unchanged by the release metadata bump.
+
+The benchmark used 12 alternating pairs per workload, 200 measured operations and 60 warmups per implementation per pair, and identical resolved dependencies. Ordinary reads, verified writes, and edits had no confirmed material change; startup and FFF search were not remeasured. Original timings and release checks remain in [summary.json](bench/history/read-bounds-v1/summary.json) and [release-validation.json](bench/history/read-bounds-v1/release-validation.json).
 
 ### Upgrade and compatibility
 

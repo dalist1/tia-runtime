@@ -68,9 +68,21 @@ curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/v0.4.0/install.
 
 The installer still defaults to upstream `latest`. At release validation, pi **0.85.0** failed to bundle missing `@earendil-works/pi-server` imports; use the explicit tested version above until upstream compatibility is resolved. This release does not claim to fix that upstream failure.
 
-### Latest measured tool gains
+## Latest measured tool gains — v0.4.0
 
-The installed read extension measured **274×** faster line-limited reads with a discarded 16 MiB tail, **70×** faster byte-limited reads with that tail, and **2.74×** faster oversized-first-line handling. These are targeted gains, not a 10× improvement across all tools. **187,200 checked operations**, same-code controls, confidence intervals, and raw samples are recorded in the [read-bounds report](bench/history/read-bounds-v1/README.md).
+Installed extension, pi **0.84.4**, Bun **1.4.1-canary.1**, Linux i7-1360P, warm ext4 page cache, CPU affinity 2:
+
+| Read workload | Before p50 (ms) | After p50 (ms) | Paired mean speedup | 95% CI |
+|---|---:|---:|---:|---:|
+| One requested line followed by a discarded 16 MiB line | 2.1320 | 0.0058 | **274.43×** | 247.62–306.17× |
+| 48 KiB accepted before a discarded 16 MiB line | 2.0934 | 0.0197 | **70.19×** | 61.42–80.75× |
+| Oversized 16 MiB first line, retaining exact size diagnostics | 2.0663 | 0.8372 | **2.74×** | 2.65–2.81× |
+
+Speedup is the geometric mean of paired round-mean ratios, **not** the quotient of the displayed medians. Each workload used 12 alternating pairs, with 200 measured operations and 60 warmups per implementation per pair.
+
+**187,200 checked benchmark operations**, **89 passing release tests**, and **12 passing pinned integration stages**. Same-code controls and identical dependency resolution guard against misleading comparisons. Ordinary reads, verified writes, and edits had no confirmed material change; tiny-read mean gains were inconclusive. These are targeted read gains, **not a 10× improvement across all tools or end-to-end agent latency**.
+
+All workloads, p95 timings, raw samples, and reproduction commands: [read-bounds report](bench/history/read-bounds-v1/README.md). Machine-readable results: [summary](bench/history/read-bounds-v1/summary.json) and [release validation](bench/history/read-bounds-v1/release-validation.json).
 
 ## What tia-runtime installs
 
@@ -87,7 +99,7 @@ The installed read extension measured **274×** faster line-limited reads with a
   - auth/models/settings symlinks refreshed from the shell pi agent without self-linking the tia sandbox, preserving cliproxy model/provider linkage
 - combines runtime sandboxing with the pi fast path in one launcher
 
-## `tia pi` vs stock `pi` (head-to-head)
+## Historical startup comparison — July 2026
 
 Both runtimes execute the **same pi source** (`@earendil-works/pi-coding-agent`), so this isolates what `tia-runtime` adds: AOT-compiled + minified startup, a low-level slim stream runner with on-demand provider modules, and the sandbox wiring. Stock `pi` is run straight from `dist/cli.js`; `tia pi` is the installed launcher.
 
@@ -110,9 +122,9 @@ bash bench/hyperfine-tia-loopback.sh      # slim vs full local HTTP/SSE stream
 bash bench/hyperfine-tia-pi.sh            # tia pi vs stock pi RPC startup
 ```
 
-## Internal fast-path highlights
+## Historical internal fast-path highlights — July 2026
 
-These compare `tia pi`'s retained fast paths against tia's own slower reference paths (not stock `pi`), from the burst/feedback-loop harness:
+These earlier measurements compare retained fast paths against tia's own slower references (not stock `pi`). They were not remeasured for v0.4.0 and must not be combined with its speedups:
 
 | Path | Workload | Result |
 |---|---|---:|
@@ -262,6 +274,14 @@ What it covers:
 - benchmark process cleanup
 
 ## Main benchmark commands
+
+For the current read-bounds comparison (prepare the original extension using the [report's instructions](bench/history/read-bounds-v1/README.md#reproduce)):
+
+```bash
+bun run bench:tools <baseline-extension.ts> <output.json> 12 200 60
+```
+
+Other startup and helper benchmarks:
 
 ```bash
 bash bench/feedback-loop.sh

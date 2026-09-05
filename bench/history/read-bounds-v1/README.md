@@ -8,7 +8,7 @@ Recorded 2026-09-04 (machine UTC clock), pi **0.84.4**, Bun **1.4.1-canary.1**, 
 
 ## Result
 
-**The 10× target was exceeded for reads that discard a giant following line—not for all tools.** The installed-extension confirmation measured **274×** faster line-limited reads, **70×** faster byte-limited reads, and **2.74×** faster oversized-first-line handling.
+**The 10× target was exceeded for reads that discard a giant following line—not for all tools.** The installed-extension confirmation measured paired mean speedups of **274.43×** for line-limited reads, **70.19×** for byte-limited reads, and **2.74×** for oversized-first-line handling.
 
 The implementation change is confined to `scanReadWindow` in `scripts/fast-tools-extension.ts`:
 
@@ -54,7 +54,7 @@ Each workload/candidate gets a fresh process, 60 warmup operations, and 200 meas
 
 These are direct calls to the actual extension functions, including a byte-identical installed copy—not model/API latency, TUI rendering, RPC round trips, cold-disk throughput, or FFF search benchmarks. Assertions and fixture generation can influence allocator/cache state despite being excluded from elapsed time. Warm writes use the default `TIA_FASTWRITE_FSYNC=0`; read-back verification is enabled, but crash durability is not being benchmarked. Zero observed failures does not establish zero production failure probability.
 
-## Reliability gates
+## Original benchmark reliability gates (before release metadata bump)
 
 - **88 unit tests passed**, including native copy/write fault injection and the existing write/edit/patch regression suite.
 - **1,500 deterministic randomized read windows** matched an independent reference, covering skipped oversized lines, Unicode, NULs, CRLF, empty files, truncation, and offsets beyond EOF.
@@ -101,4 +101,8 @@ For installed-code confirmation, place the original source in a temporary direct
 
 ## Artifacts
 
-`summary.json` contains run metadata, checksums, complete summary statistics, and CI results. The four `*.json.gz` files contain the original complete JSON records, including every raw sample; decompress with `gzip -dc <file.json.gz>`. `validation.json` records the final gates and the upstream failure. Harness: `bench/tool-benchmark.ts`; reference oracle: `bench/tool-read-reference.ts`; harness tests: `bench/tool-benchmark.test.ts`.
+- [summary.json](summary.json): metadata, checksums, complete statistics, and confidence intervals.
+- Four `*.json.gz` files: original complete records, including every raw sample; decompress with `gzip -dc <file.json.gz>`.
+- [validation.json](validation.json): original 88-test benchmark gate and the upstream failure.
+- [release-validation.json](release-validation.json): subsequent 89-test release gate, 12 pinned integration stages, and matching installed/source hashes.
+- Harness: `bench/tool-benchmark.ts`; reference oracle: `bench/tool-read-reference.ts`; harness tests: `bench/tool-benchmark.test.ts` (paths relative to the repository root).

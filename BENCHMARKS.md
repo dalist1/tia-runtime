@@ -8,27 +8,29 @@ Released as **v0.4.0**, optimization marker **`2026-09-read-bounds-v1`**.
 
 **Confirmed against the installed extension with identical resolved dependencies:**
 
-| Read workload | Paired mean speedup | 95% CI |
-|---|---:|---:|
-| One requested line followed by a discarded 16 MiB line | **274.43×** | 247.62–306.17× |
-| 48 KiB accepted before a discarded 16 MiB line | **70.19×** | 61.42–80.75× |
-| Oversized 16 MiB first line, retaining exact size diagnostics | **2.74×** | 2.65–2.81× |
+| Read workload | Before p50 (ms) | After p50 (ms) | Paired mean speedup | 95% CI |
+|---|---:|---:|---:|---:|
+| One requested line followed by a discarded 16 MiB line | 2.1320 | 0.0058 | **274.43×** | 247.62–306.17× |
+| 48 KiB accepted before a discarded 16 MiB line | 2.0934 | 0.0197 | **70.19×** | 61.42–80.75× |
+| Oversized 16 MiB first line, retaining exact size diagnostics | 2.0663 | 0.8372 | **2.74×** | 2.65–2.81× |
+
+Speedup is the geometric mean of paired round-mean ratios, not the quotient of the displayed medians. Recorded on pi 0.84.4, Bun 1.4.1-canary.1, Linux i7-1360P, warm ext4 page cache, CPU affinity 2.
 
 These are targeted read-path gains, **not a 10× improvement to all tools or end-to-end agent latency**. Ordinary reads, verified writes, and edits had no confirmed material improvement/regression. Small-read median gains reproduced, but their mean-latency gains did not.
 
 The scanner now bounds newline searches to actual input bytes, avoids reading/copying discarded tails after truncation is known, and drops oversized carry buffers without losing exact first-line size reporting. Verification and unlimited skill reads are preserved.
 
-Validation: **187,200 checked benchmark operations** across a same-code control, repository comparison, and installed confirmation; **88 passing unit tests**, including 1,500 randomized read windows and deterministic I/O/allocation bounds. Each benchmark used 12 alternating paired rounds, fresh processes per workload, 200 measured operations plus 60 warmups, CPU affinity, raw timings, p50/p95, and paired bootstrap confidence intervals. A mixed-dependency exploratory run is archived but excluded; the harness now rejects that comparison.
+Validation: **187,200 checked benchmark operations** across a same-code control, repository comparison, and installed confirmation; **89 passing release tests**, including 1,500 randomized read windows, deterministic I/O/allocation bounds, and version consistency. The original pre-release benchmark gate had 88 tests; its archived record is unchanged. Each benchmark used 12 alternating paired rounds, fresh processes per workload, 200 measured operations plus 60 warmups per implementation per pair, CPU affinity, raw timings, p50/p95, and paired bootstrap confidence intervals. A mixed-dependency exploratory run is archived but excluded; the harness now rejects that comparison.
 
 All 12 runtime integration stages passed with `TIA_PI_PACKAGE_VERSION=0.84.4`. The unpinned latest-version gate failed on upstream pi 0.85.0's missing `@earendil-works/pi-server` imports; that issue remains unresolved.
 
 Full results, limitations, raw samples, and reproduction commands: **[read-bounds report](bench/history/read-bounds-v1/README.md)**. Run the harness with `bun run bench:tools <baseline-extension.ts> <output.json> [rounds] [iterations] [warmup]`.
 
-## Optimization version `2026-07-low-level-v4`
+## Historical optimization version `2026-07-low-level-v4`
 
 This benchmark was recorded with `@earendil-works/pi-coding-agent` **0.81.1**. The slim runner now reads a provider-specific model catalog instead of initializing every provider model, exact full-line edits render bounded diffs without indexing complete files, and the stream writer keeps its common two-index state out of a `Map`.
 
-Current same-source head-to-head results (`hyperfine`, sequential runs; startup/RPC are network-free and end-to-end streaming uses local HTTP/SSE):
+Historical same-source head-to-head results, not remeasured for v0.4.0 (`hyperfine`, sequential runs; startup/RPC are network-free and end-to-end streaming uses local HTTP/SSE):
 
 | Workload | Baseline | `tia pi` optimized | Speedup |
 |---|---:|---:|---:|
@@ -168,7 +170,7 @@ What changed:
 
 ## Summary table (historical research numbers)
 
-These earlier numbers used a `pi-node` (node-runtime) baseline, which starts slower than the bun-run stock `pi` used in the head-to-head above; treat the head-to-head table as the current apples-to-apples comparison.
+These earlier numbers used a `pi-node` (node-runtime) baseline, which starts slower than the bun-run stock `pi` used in the historical head-to-head above. Neither table represents new v0.4.0 measurements.
 
 | Path | Workload | Baseline | Optimized | Speedup |
 |---|---|---:|---:|---:|
@@ -187,9 +189,17 @@ Supported user-facing tia runtime subcommands from this project are:
 - `tia pi`
 
 `pi` compiled direct remains a benchmark reference, not a separate supported install mode.
-Current benchmark results below focus on `tia pi`.
+The harnesses below focus on `tia pi`; their historical measurements are separate from the current read-bounds comparison.
 
 ## Source result files
+
+### Current v0.4.0 records
+- [Detailed report](bench/history/read-bounds-v1/README.md)
+- [Summary statistics and archive checksums](bench/history/read-bounds-v1/summary.json)
+- [Release validation: 89 tests and 12 pinned integration stages](bench/history/read-bounds-v1/release-validation.json)
+- Raw samples: `bench/history/read-bounds-v1/*.json.gz`
+
+The following `results-*` paths are generated historical outputs, not committed current reports:
 
 ### tia startup / rpc
 - `results-tia-pi/rpc.md`
@@ -243,6 +253,13 @@ The archived v4 full-tier run (`bench/history/2026-07-low-level-v4-feedback/`) c
 
 ## How to reproduce
 
+### Current read-bounds comparison
+```bash
+bun run bench:tools <baseline-extension.ts> <output.json> 12 200 60
+```
+
+Prepare the baseline and same-code control using the [detailed reproduction instructions](bench/history/read-bounds-v1/README.md#reproduce). The remaining commands measure separate startup/helper paths.
+
 ### tia pi startup
 ```bash
 bash bench/hyperfine-tia-pi.sh
@@ -294,15 +311,7 @@ This compares:
 
 ## Interpretation
 
-- `tia pi` is the strongest path today.
-- It combines:
-  - compiled startup
-  - sandboxed runtime wiring
-  - slim JSON streaming for `--mode json --no-session`
-  - fast `read`
-  - streamed fast `read` updates
-  - fast exact-text `edit`
-  - faster `bash` handling on the tested workloads
-- `write` improves less dramatically than `read` and `edit`; current feedback-loop write candidates perform exact post-write verification so text mismatches fail the run instead of being counted as success.
-- The slim JSON stream path routes `tia pi --mode json --no-session` to a direct provider-streaming runner. In the local no-prompt startup benchmark, it measured 506.0 ms versus 1.200 s for the full compiled JSON path with `TIA_DISABLE_FAST_STREAM=1` (**2.37x** faster).
-- In the direct tool streaming runner, fast `read` delivered about 7 partial updates per iteration with about 1.29 ms average time-to-first-update across 60 iterations.
+- v0.4.0 removes unnecessary scanning and copying from three specific read workloads; it does not establish a universal tool speedup.
+- Ordinary read/write/edit changes were not material under the reported confidence-interval threshold. All timed writes and edits retained their own verification.
+- Startup, streaming, bash-helper, and FFF search speedups were not remeasured in this pass. Older measurements above remain historical, not additive gains for v0.4.0.
+- The validated integration target is pi 0.84.4. The upstream 0.85.0 installation failure is separate and unresolved.
