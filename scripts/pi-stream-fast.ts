@@ -111,6 +111,21 @@ function defaultSink(chunk: string, callback: () => void): boolean {
  return process.stdout.write(chunk, callback)
 }
 
+export type WriterOptions = {flush: 'microtask' | 'immediate'; deltaChars: number; outputChars: number; controlDelayMs: number}
+
+export function writerOptions(env: Record<string, string | undefined> = process.env): WriterOptions {
+ const integer = (name: string, fallback: number, min: number, max: number) => {
+  const raw = env[name]
+  if (raw === undefined) return fallback
+  const value = Number(raw)
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < min || value > max) throw new Error(`${name} must be an integer from ${min} to ${max}`)
+  return value
+ }
+ const flush = env.TIA_STREAM_FLUSH ?? 'microtask'
+ if (flush !== 'microtask' && flush !== 'immediate') throw new Error('TIA_STREAM_FLUSH must be microtask or immediate')
+ return {flush, deltaChars: integer('TIA_STREAM_DELTA_CHARS', 96, 1, 1048576), outputChars: integer('TIA_STREAM_OUTPUT_CHARS', 16384, 1, 1048576), controlDelayMs: integer('TIA_STREAM_CONTROL_DELAY_MS', 4, 0, 100)}
+}
+
 export class SlimStreamWriter {
  private outChunks: string[] = []
  private outLength = 0
@@ -125,7 +140,10 @@ export class SlimStreamWriter {
  private flushQueued = false
  private sink: StreamSink
 
- constructor(sink: StreamSink = defaultSink) {
+ constructor(
+  sink: StreamSink = defaultSink,
+  private options: WriterOptions = writerOptions({})
+ ) {
   this.sink = sink
  }
 
@@ -167,7 +185,7 @@ export class SlimStreamWriter {
    buffered = delta
    extraDeltas.set(index, buffered)
   }
-  if (buffered.length >= 96) {
+  if (buffered.length >= this.options.deltaChars) {
    this.flushDeltaIndex(index)
   }
   this.flushSoon(true)
@@ -222,7 +240,7 @@ export class SlimStreamWriter {
   this.outChunks.push(line)
   this.outLength += line.length
   if (!schedule) return
-  this.flushSoon(this.outLength >= 16384)
+  this.flushSoon(this.outLength >= this.options.outputChars)
  }
 
  private flushSoon(immediate: boolean) {
@@ -233,6 +251,10 @@ export class SlimStreamWriter {
   }
   if (this.flushQueued) return
   if (immediate) {
+   if (this.options.flush === 'immediate') {
+    this.flush()
+    return
+   }
    this.flushQueued = true
    queueMicrotask(() => {
     this.flushQueued = false
@@ -243,7 +265,7 @@ export class SlimStreamWriter {
   this.timer = setTimeout(() => {
    this.timer = null
    this.flush()
-  }, 4)
+  }, this.options.controlDelayMs)
  }
 
  private settle() {
@@ -692,6 +714,7 @@ async function readStdin(): Promise<string> {
 }
 
 async function main() {
+ const outputOptions = writerOptions()
  const parsed = parseArgs(process.argv.slice(2))
  const inputPromise = parsed.messages.length === 0 && !process.stdin.isTTY ? readStdin() : undefined
  const files = readRuntimeFiles()
@@ -700,7 +723,7 @@ async function main() {
  if (piped) parsed.messages.push(piped)
  const runtime = await prepareRuntime(parsed, catalog, files, DEFAULT_MODELS)
  const apiPromise = parsed.messages.length > 0 ? runtime.loadApi() : undefined
- const writer = new SlimStreamWriter()
+ const writer = new SlimStreamWriter(defaultSink, outputOptions)
  writer.enqueue({t: 'session', model: runtime.model.id, provider: runtime.model.provider})
  const messages: Context['messages'] = []
 

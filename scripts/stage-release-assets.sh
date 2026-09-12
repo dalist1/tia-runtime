@@ -26,7 +26,7 @@ copy_asset() {
 
 copy_asset "mandatory" "install.sh" "tia-install.sh"
 copy_asset "mandatory" "scripts/install-tia.sh" "tia-install-tia.sh"
-copy_asset "mandatory" "scripts/TIA.md" "tia-launcher.md"
+copy_asset "mandatory" "README.md" "tia-launcher.md"
 copy_asset "mandatory" "BENCHMARKS.md" "tia-benchmarks.md"
 copy_asset "optional" "results-tia-pi/rpc.md" "tia-benchmark-tia-pi-rpc.md"
 copy_asset "optional" "results-pi-rpc-direct-smoke/empty.md" "tia-benchmark-pi-direct-rpc-empty.md"

@@ -2,7 +2,13 @@ import {expect, test} from 'bun:test'
 import {mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {buildPi, smokeBinary, snapshotPackage} from './build-pi.ts'
+import {buildPi, compileOptions, smokeBinary, snapshotPackage} from './build-pi.ts'
+
+test('build controls are independent and reject ambiguous environment values', () => {
+ expect(compileOptions({})).toEqual({minify: {syntax: true, whitespace: true, identifiers: true}, bytecode: false})
+ for (const name of ['TIA_PI_MINIFY_SYNTAX', 'TIA_PI_MINIFY_WHITESPACE', 'TIA_PI_MINIFY_IDENTIFIERS', 'TIA_PI_BYTECODE']) expect(() => compileOptions({[name]: 'yes'})).toThrow('0 or 1')
+ expect(compileOptions({TIA_PI_MINIFY_IDENTIFIERS: '0', TIA_PI_BYTECODE: '1'})).toEqual({minify: {syntax: true, whitespace: true, identifiers: false}, bytecode: true})
+})
 
 function fixture() {
  const work = mkdtempSync(join(tmpdir(), 'tia-build-pi-'))
@@ -97,6 +103,18 @@ test('companion reuse is byte-verified and rejects corruption and symlinks', () 
   f.cleanup()
  }
 })
+
+test('non-minified build controls retain smoke validation and record effective choices', async () => {
+ const f = fixture()
+ try {
+  const options = compileOptions({TIA_PI_MINIFY_SYNTAX: '0', TIA_PI_MINIFY_IDENTIFIERS: '0', TIA_PI_MINIFY_WHITESPACE: '0'})
+  const result = await buildPi(f.pkg, f.output, f.runtime, 'lazy-jiti', options)
+  expect(result.options).toEqual(options)
+  expect(await outputOf(f.output)).toBe('fixture')
+ } finally {
+  f.cleanup()
+ }
+}, 30000)
 
 test('compiled smoke check kills a hung child on its deadline', async () => {
  const f = fixture()

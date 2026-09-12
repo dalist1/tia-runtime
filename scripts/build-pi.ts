@@ -4,6 +4,18 @@ import {dirname, join, relative, resolve} from 'node:path'
 
 const digest = (data: Buffer | string) => createHash('sha256').update(data).digest('hex')
 
+export type CompileOptions = {minify: {syntax: boolean; whitespace: boolean; identifiers: boolean}; bytecode: boolean}
+
+export function compileOptions(env: Record<string, string | undefined> = process.env): CompileOptions {
+ const flag = (name: string, fallback: boolean) => {
+  const value = env[name]
+  if (value === undefined) return fallback
+  if (value !== '0' && value !== '1') throw new Error(`${name} must be 0 or 1`)
+  return value === '1'
+ }
+ return {minify: {syntax: flag('TIA_PI_MINIFY_SYNTAX', true), whitespace: flag('TIA_PI_MINIFY_WHITESPACE', true), identifiers: flag('TIA_PI_MINIFY_IDENTIFIERS', true)}, bytecode: flag('TIA_PI_BYTECODE', false)}
+}
+
 function packageFiles(root: string) {
  const files = new Map<string, Buffer>()
  function visit(directory: string) {
@@ -84,7 +96,7 @@ export async function smokeBinary(binary: string, packageDir: string, agentDir: 
  }
 }
 
-export async function buildPi(packageDirArg: string, outfileArg: string, runtimeDirArg: string, mode: 'lazy-jiti' | 'bundled' = 'lazy-jiti') {
+export async function buildPi(packageDirArg: string, outfileArg: string, runtimeDirArg: string, mode: 'lazy-jiti' | 'bundled' = 'lazy-jiti', options = compileOptions({})) {
  const packageDir = realpathSync(packageDirArg)
  const outfile = resolve(outfileArg)
  const runtimeDir = resolve(runtimeDirArg)
@@ -124,7 +136,7 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
  const stage = mkdtempSync(join(dirname(outfile), '.pi-build-'))
  try {
   const binary = join(stage, 'pi')
-  const result = await Bun.build({entrypoints, compile: {outfile: binary}, minify: true, metafile: true, plugins})
+  const result = await Bun.build({entrypoints, compile: {outfile: binary}, ...options, metafile: true, plugins})
   if (!result.success) throw new AggregateError(result.logs, 'Pi compilation failed')
   if (mode === 'lazy-jiti' && matches === 0) throw new Error('Upstream no longer imports jiti/static; use TIA_DISABLE_LAZY_JITI=1 and remeasure before enabling this optimization')
   const agentDir = join(stage, 'agent')
@@ -141,6 +153,7 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
   }
   const metadata = {
    mode,
+   options,
    piVersion: manifest.version,
    bunVersion: Bun.version,
    entry,
@@ -163,5 +176,5 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
 if (import.meta.main) {
  const [packageDir, outfile, runtimeDir] = process.argv.slice(2)
  if (!packageDir || !outfile || !runtimeDir) throw new Error('Usage: build-pi.ts <pi-package-dir> <outfile> <runtime-dir>')
- console.log(JSON.stringify(await buildPi(packageDir, outfile, runtimeDir, process.env.TIA_DISABLE_LAZY_JITI === '1' ? 'bundled' : 'lazy-jiti'), null, 1))
+ console.log(JSON.stringify(await buildPi(packageDir, outfile, runtimeDir, process.env.TIA_DISABLE_LAZY_JITI === '1' ? 'bundled' : 'lazy-jiti', compileOptions()), null, 1))
 }

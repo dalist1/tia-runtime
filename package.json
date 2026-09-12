@@ -3,6 +3,7 @@
  "version": "0.5.0",
  "description": "tia-runtime — Terminal Interactive Agents runtime: an open, sandboxed fast path for terminal coding agents (in-process zero-spawn read/write/edit tools with byte-verified atomic writes, compiled pi startup, slim JSON streaming)",
  "scripts": {
+  "bench:latency": "bun bench/latency.ts",
   "bench:runtime": "bun bench/runtime-boundaries.ts",
   "bench:tools": "bun bench/tool-benchmark.ts",
   "bench:feedback": "bash bench/feedback-loop.sh",

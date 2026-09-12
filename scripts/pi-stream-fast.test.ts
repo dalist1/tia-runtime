@@ -2,7 +2,7 @@ import {expect, test} from 'bun:test'
 import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {resolve} from 'node:path'
-import {createModelMap, resolveOAuth, selectModel, SlimStreamWriter} from './pi-stream-fast.ts'
+import {createModelMap, resolveOAuth, selectModel, SlimStreamWriter, writerOptions} from './pi-stream-fast.ts'
 
 type Frame = {t: string; i: number; s?: string}
 
@@ -201,6 +201,60 @@ test('interleaved deltas beyond the two-slot fast path preserve every index', as
   if (frame.t === 'd') actual.set(frame.i, `${actual.get(frame.i) ?? ''}${frame.s}`)
  }
  expect(actual).toEqual(expected)
+})
+
+test('stream tuning is validated once and defaults to the retained coalescing policy', () => {
+ expect(writerOptions({})).toEqual({flush: 'microtask', deltaChars: 96, outputChars: 16384, controlDelayMs: 4})
+ for (const env of [{TIA_STREAM_FLUSH: 'timer'}, {TIA_STREAM_DELTA_CHARS: '0'}, {TIA_STREAM_OUTPUT_CHARS: 'Infinity'}, {TIA_STREAM_CONTROL_DELAY_MS: '-1'}, {TIA_STREAM_CONTROL_DELAY_MS: '1.5'}, {TIA_STREAM_DELTA_CHARS: ''}]) expect(() => writerOptions(env)).toThrow()
+})
+
+for (const flush of ['microtask', 'immediate']) {
+ test(`stream tuning preserves UTF-8/framing under ${flush} scheduling and delayed backpressure`, async () => {
+  let captured = '',
+   writes = 0,
+   pending = false
+  const writer = new SlimStreamWriter(
+   (chunk, callback) => {
+    expect(pending).toBe(false)
+    pending = true
+    writes++
+    captured += chunk
+    setTimeout(() => {
+     pending = false
+     callback()
+    }, 1)
+    return false
+   },
+   writerOptions({TIA_STREAM_FLUSH: flush, TIA_STREAM_DELTA_CHARS: '1', TIA_STREAM_OUTPUT_CHARS: '1', TIA_STREAM_CONTROL_DELAY_MS: '0'})
+  )
+  for (let index = 0; index < 5; index++) writer.enqueueTextStart(index)
+  for (let i = 0; i < 100; i++) for (let index = 0; index < 5; index++) writer.enqueueDelta(index, 'café😄\u2028\n')
+  for (let index = 0; index < 5; index++) writer.enqueueTextEnd(index)
+  writer.enqueue({t: 'done'})
+  await Promise.all([writer.drain(), writer.drain()])
+  expect(writes).toBeGreaterThan(0)
+  const frames = parseFrames(captured)
+  for (let index = 0; index < 5; index++) {
+   expect(
+    frames
+     .filter(f => f.t === 'd' && f.i === index)
+     .map(f => f.s)
+     .join('')
+   ).toBe('café😄\u2028\n'.repeat(100))
+   const end = frames.findIndex(f => f.t === 'e' && f.i === index)
+   expect(frames.slice(end + 1).some(f => f.i === index && f.t === 'd')).toBe(false)
+  }
+  expect(frames.at(-1)?.t).toBe('done')
+ })
+}
+
+test('immediate scheduling writes the first text before returning, without waiting for a timer or microtask', async () => {
+ const capture = createCapture(),
+  writer = new SlimStreamWriter(capture.sink, writerOptions({TIA_STREAM_FLUSH: 'immediate'}))
+ writer.enqueueTextStart(0)
+ writer.enqueueDelta(0, 'first')
+ expect(parseFrames(capture.read()).at(-1)).toEqual({t: 'd', i: 0, s: 'first'})
+ await writer.drain()
 })
 
 function selectableModel(provider: string, id: string) {

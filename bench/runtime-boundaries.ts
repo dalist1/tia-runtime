@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs'
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync} from 'node:fs'
 import {cpus, release, tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
 
@@ -93,7 +93,21 @@ export default function(pi: ExtensionAPI) {
    const start = performance.now()
    const child = Bun.spawn([binary, ...args], {
     cwd: work,
-    env: {HOME: home, PATH: process.env.PATH ?? '', PI_PACKAGE_DIR: view, PI_CODING_AGENT_DIR: agent, PI_OFFLINE: '1', OPENAI_API_KEY: 'dummy', PI_NO_PROXY_AUTO_START: '1', JITI_FS_CACHE: workload.endsWith('no-transform-cache') ? 'false' : cache, TIA_BOUNDARY_RECEIPT: receipt},
+    env: {
+     HOME: home,
+     PATH: process.env.PATH ?? '',
+     PI_PACKAGE_DIR: view,
+     PI_CODING_AGENT_DIR: agent,
+     PI_OFFLINE: '1',
+     PI_TELEMETRY: '0',
+     PI_SKIP_VERSION_CHECK: '1',
+     OPENAI_API_KEY: 'dummy',
+     PI_NO_PROXY_AUTO_START: '1',
+     JITI_FS_CACHE: workload.endsWith('no-transform-cache') ? 'false' : 'true',
+     TMPDIR: cache,
+     JITI_RESPECT_TMPDIR_ENV: '1',
+     TIA_BOUNDARY_RECEIPT: receipt
+    },
     stdin: new Blob(['{"id":"state","type":"get_state"}\n{"id":"commands","type":"get_commands"}\n']),
     stdout: 'pipe',
     stderr: 'pipe'
@@ -107,6 +121,7 @@ export default function(pi: ExtensionAPI) {
     if (workload === 'version') assert.equal(stdout.trim(), version)
     else validateRpcOutput(stdout, tools)
     if (tools) assert.deepEqual(JSON.parse(readFileSync(receipt, 'utf8')), {read: true, write: true, edit: true, bash: true})
+    if (workload === 'rpc-tools-warm') assert(readdirSync(join(cache, 'jiti')).length > 0, 'Jiti did not use the isolated transform cache')
     const usage = child.resourceUsage()!
     return {ms, cpuMicros: Number(usage.cpuTime.total)}
    } finally {

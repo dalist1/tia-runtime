@@ -1,347 +1,65 @@
-# tia benchmarks
+# Benchmarks
 
-These are the latest benchmark highlights from the tia research harness.
+Runtime **v0.5.0** · `2026-09-runtime-boundaries-v1`
 
-## v0.5.0: full-runtime boundaries (pi 0.84.4)
-
-Optimization marker: **`2026-09-runtime-boundaries-v1`**. The wrapper selects Jiti's regular lazy entrypoint instead of embedding its eager transformer. No upstream source patch or slim-mode substitution is involved.
-
-| Full compiled pi workload | Before mean (ms) | After mean (ms) | Paired speedup [95% CI] |
-|---|---:|---:|---:|
-| RPC startup, minimal resources | 264.74 | 218.47 | **1.21× [1.21, 1.22]** |
-| RPC startup + cached TypeScript read/write/edit/bash probes | 282.16 | 235.24 | **1.20× [1.19, 1.20]** |
-| Same probes, transpilation cache disabled | 602.50 | 592.71 | 1.02× [1.01, 1.02] |
-
-Installed JavaScript: **6,417,452 → 4,735,915 bytes (−26.2%)**; ELF binary: **87,725,536 → 86,046,176 bytes (−1.9%)**. The dependency still exists in a verified companion. No RAM or total-install-size improvement is claimed.
-
-**98 tests**, **12 pinned integration stages**, **1,512 validated process runs**, and **3,024 validated registered tool calls**. Each suite used 12 alternating pairs, five launches per candidate per pair, three warmups, CPU affinity 2, isolated settings/cache, and no model/network request. The same-code control detected no speedup. The cold-transform improvement is below the 5% materiality threshold.
-
-Full methodology, syscall evidence, raw samples, and architectural next steps: **[runtime-boundaries report](bench/history/runtime-boundaries-v1/README.md)**. This measures compiled runtime startup, not shell-wrapper overhead, default FFF indexing, or token latency. Previous read-tool results below are retained separately, not multiplied into these startup gains.
-
-## 2026-09 read-bounds pass (pi 0.84.4)
-
-Released as **v0.4.0**, optimization marker **`2026-09-read-bounds-v1`**.
-
-**Confirmed against the installed extension with identical resolved dependencies:**
-
-| Read workload | Before p50 (ms) | After p50 (ms) | Paired mean speedup | 95% CI |
-|---|---:|---:|---:|---:|
-| One requested line followed by a discarded 16 MiB line | 2.1320 | 0.0058 | **274.43×** | 247.62–306.17× |
-| 48 KiB accepted before a discarded 16 MiB line | 2.0934 | 0.0197 | **70.19×** | 61.42–80.75× |
-| Oversized 16 MiB first line, retaining exact size diagnostics | 2.0663 | 0.8372 | **2.74×** | 2.65–2.81× |
-
-Speedup is the geometric mean of paired round-mean ratios, not the quotient of the displayed medians. Recorded on pi 0.84.4, Bun 1.4.1-canary.1, Linux i7-1360P, warm ext4 page cache, CPU affinity 2.
-
-These are targeted read-path gains, **not a 10× improvement to all tools or end-to-end agent latency**. Ordinary reads, verified writes, and edits had no confirmed material improvement/regression. Small-read median gains reproduced, but their mean-latency gains did not.
-
-The scanner now bounds newline searches to actual input bytes, avoids reading/copying discarded tails after truncation is known, and drops oversized carry buffers without losing exact first-line size reporting. Verification and unlimited skill reads are preserved.
-
-Validation: **187,200 checked benchmark operations** across a same-code control, repository comparison, and installed confirmation; **89 passing release tests**, including 1,500 randomized read windows, deterministic I/O/allocation bounds, and version consistency. The original pre-release benchmark gate had 88 tests; its archived record is unchanged. Each benchmark used 12 alternating paired rounds, fresh processes per workload, 200 measured operations plus 60 warmups per implementation per pair, CPU affinity, raw timings, p50/p95, and paired bootstrap confidence intervals. A mixed-dependency exploratory run is archived but excluded; the harness now rejects that comparison.
-
-All 12 runtime integration stages passed with `TIA_PI_PACKAGE_VERSION=0.84.4`. The unpinned latest-version gate failed on upstream pi 0.85.0's missing `@earendil-works/pi-server` imports; that issue remains unresolved.
-
-Full results, limitations, raw samples, and reproduction commands: **[read-bounds report](bench/history/read-bounds-v1/README.md)**. Run the harness with `bun run bench:tools <baseline-extension.ts> <output.json> [rounds] [iterations] [warmup]`.
-
-## Historical optimization version `2026-07-low-level-v4`
-
-This benchmark was recorded with `@earendil-works/pi-coding-agent` **0.81.1**. The slim runner now reads a provider-specific model catalog instead of initializing every provider model, exact full-line edits render bounded diffs without indexing complete files, and the stream writer keeps its common two-index state out of a `Map`.
-
-Historical same-source head-to-head results, not remeasured for v0.4.0 (`hyperfine`, sequential runs; startup/RPC are network-free and end-to-end streaming uses local HTTP/SSE):
-
-| Workload | Baseline | `tia pi` optimized | Speedup |
-|---|---:|---:|---:|
-| Process startup (`--version`) | stock: 304.8 ± 25.3 ms | 229.1 ± 4.5 ms | **1.33x** |
-| RPC startup (`get_state`) | stock: 324.1 ± 9.6 ms | 261.8 ± 4.4 ms | **1.24x** |
-| JSON startup (`--mode json --no-session`) | full tia: 262.8 ± 13.0 ms | slim tia: 24.2 ± 3.2 ms | **10.87x** |
-| Anthropic end-to-end loopback stream | full tia: 360.6 ± 6.7 ms | slim tia: 32.6 ± 2.7 ms | **11.07x** |
-
-Alternating or paired before/after measurements for this optimization version:
-
-| Path | Workload | Before | After | Speedup |
-|---|---|---:|---:|---:|
-| slim startup | provider-selective no-prompt startup | 20.074 ms | 17.869 ms | **1.12x** |
-| slim startup | unqualified model lookup | 20.485 ms | 19.756 ms | **1.04x** |
-| extension `edit` | 100KB verified replacement + diff | 0.507 ms/op | 0.362 ms/op | **1.40x** |
-| slim stream writer | 2M interleaved deltas | 39.966 ns/delta | 34.858 ns/delta | **1.15x** |
-| native read | 50KB window | 0.853 ms/op | 0.753 ms/op | **1.13x** |
-| native edit | exact replacement | 13.770 ms/op | 7.704 ms/op | **1.79x** |
-| native verified write | 1MB atomic write | 16.731 ms/op | 16.239 ms/op | **1.03x** |
-| native bash | 5MB drain/copy/remove chain | 11.587 ms/op | 3.635 ms/op | **3.19x** |
-
-Low-level changes:
-- provider catalogs are emitted as independent minified JSON files; an allocation-light text index resolves unqualified model IDs, while provider defaults are generated from stock pi and validated against the installed pi-ai catalog
-- aligned full-line edit diffs scan only changed lines and four context lines while retaining generic formatting for other edits
-- the stream writer uses two inline delta slots and lazily allocates a map only for additional content indexes
-- the native read helper uses `memchr`, bounded output buffering, and C built with `zig cc`; the slower duplicate Zig read implementation was removed
-- native copy uses larger `copy_file_range` requests and no longer adds an `fsync` that normal `cp` does not provide
-- native verified writes compare through the existing read/write descriptor without allocating and reopening full files
-- multi-file edits plan under sorted per-file mutation queues and revalidate preflight snapshots before writing, preventing concurrent or external changes from being silently overwritten; rollback failures are surfaced explicitly
-- Linux fault injection covers partial writes, `copy_file_range` and `sendfile` failures after partial progress, verification corruption, and interrupted atomic renames
-- benchmark and RPC paths no longer contain machine-specific package paths; formatting, linting, and TypeScript checks cover every TypeScript source
-
-Follow-up CPU profiles confirmed that the cached read path is primarily UTF-8 decoding plus newline indexing, while verified writes are dominated by the required kernel write/read-back work. Alternating 64KB and 1MB verification-buffer trials produced no repeatable improvement over 256KB, so the existing buffer remains and no additional read/write speedup is claimed.
-
-The complete machine-readable record is `bench/history/2026-07-low-level-v4.json`.
-
-## Optimization version `2026-07-low-level-v3`
-
-The slim streaming path now keeps only its small control plane in the compiled executable. Provider implementations are installed as minified split ESM assets and loaded on demand, while settings, auth, model overrides, and model selection are resolved directly without initializing the full coding-agent registry stack.
-
-| Workload | Previous | Optimized | Speedup |
-|---|---:|---:|---:|
-| Slim JSON startup, no network | 236.2 ± 18.9 ms | 97.5 ± 9.6 ms | **2.42x** |
-| End-to-end loopback Anthropic stream | 238.9 ms | 116.9 ± 11.5 ms | **2.04x** |
-| Full tia JSON vs slim JSON startup | 1.161 s | 97.5 ms | **11.91x** |
-
-The loopback measurement includes process launch, configuration/model/auth resolution, loading the selected provider implementation, an HTTP/SSE request, stream framing, and shutdown. It therefore checks that reducing executable startup does not merely move the cost into first request setup. Text deltas now bypass the 4 ms batching timer and are microtask-coalesced, preserving same-turn batching without adding timer latency.
-
-The launcher routes slim calls before FFF setup and shell-agent symlink refresh. It passes the source agent directory directly to the runner, while retaining the cliproxy availability check. The machine-readable record is `bench/history/2026-07-low-level-v3.json`.
-
-## Optimization version `2026-07-low-level-v2`
-
-The runtime and development baseline are pinned to `@earendil-works/pi-coding-agent` **0.80.6**, verified as the latest npm release on 2026-07-12. `tia status` prints the optimization version so installed runtimes can be tied back to benchmark records. The machine-readable record is committed at `bench/history/2026-07-low-level-v2.json`.
-
-Recorded no-network startup comparison, run sequentially on the same pi 0.80.6 source:
-
-| Workload | Baseline | Optimized | Speedup |
-|---|---:|---:|---:|
-| Process startup (`--version`) | stock: 1.037 ± 0.172 s | `tia pi`: 742.2 ± 121.1 ms | **1.40x** |
-| RPC startup (`get_state`) | stock: 1.901 ± 0.172 s | `tia pi`: 661.4 ± 49.1 ms | **2.87x** |
-| JSON startup (`--mode json --no-session`) | full tia: 656.9 ± 30.0 ms | slim tia: 236.2 ± 18.9 ms | **2.78x** |
-
-Component before/after measurements retained by this optimization version:
-
-| Path | Workload | Before | After | Speedup |
-|---|---|---:|---:|---:|
-| extension `write` | 1MB verified atomic writes | 2.825 ms/op | 2.111 ms/op | **1.34x** |
-| extension `edit` | 100KB verified single replacement + rendered diff | 2.028 ms/op | 1.647 ms/op | **1.23x** |
-| slim stream writer | 10M small deltas | 1.296 ± 0.076 s | 961.3 ± 48.1 ms | **1.35x** |
-| `tia pi` slim launcher | no-prompt JSON startup | 233.3 ± 11.4 ms | 189.9 ± 19.0 ms | **1.23x** |
-
-Tool numbers are medians from 12 alternating baseline/optimized rounds. The stream-writer comparison used `hyperfine`, 15 runs / 3 warmup. The launcher comparison used 30 runs / 5 warmup; its direct slim binary measured 184.2 ± 19.2 ms, reducing wrapper overhead from about 49 ms to about 6 ms.
-
-Low-level changes:
-- atomic writes now verify bytes directly through the already-open temporary file descriptor with a reused 256KB comparison buffer, avoiding a close/reopen cycle and a full-size verification allocation
-- target type/mode uses one `lstat` instead of separate `lstat` + `stat` calls, and collision-safe per-process temp nonces replace timestamp/UUID generation
-- exact edit verification uses the same allocation-bounded scanner; output assembly writes into one exact-size buffer
-- diff generation stores numeric line offsets and materializes only displayed lines instead of splitting both complete files into thousands of strings
-- the launcher caches cliproxy checks for 30 seconds, refreshes shell-agent links only when the source directory changes, and avoids unconditional `mkdir` subprocesses; set `TIA_PROXY_CHECK_INTERVAL_SECONDS=0` for an uncached proxy check
-- the slim stream writer batches output in chunk arrays, avoids repeated buffer lookups, specializes the one-index flush path, and coalesces redundant queued microtasks
-
-Correctness gates included the complete fast-tools I/O/patch suite and a 5,000-case randomized parity check against the previous line-diff formatter.
-
-## Previous head-to-head record (pi 0.80.3)
-
-Same pi source on both sides; isolates what `tia-runtime` adds. Toolchain: pi `0.80.3`, bun `1.4.0`, zig `0.17.0-dev.1158+1d1193aa7`, Linux x86_64 (8 cores). `hyperfine`, 12 runs / 3 warmup (startup), 10 runs / 2 warmup (RPC), no network.
-
-| Workload | stock `pi` | `tia pi` | Speedup |
-|---|---:|---:|---:|
-| Process startup (`--version`) | 751 ± 81 ms | 579 ± 36 ms | **1.30x** |
-| RPC startup (`get_state`) | 802 ± 73 ms | 742 ± 23 ms | **1.08x** |
-| JSON stream startup (`--mode json --no-session`, no prompt) | 769 ± 37 ms | 217 ± 10 ms | **3.54x** |
-
-Reproduce: `bash bench/hyperfine-tia-pi.sh` (RPC) and `bash bench/hyperfine-tia-json-stream.sh` (stream). The stock baseline runs the same compiled pi package's `dist/cli.js`.
-
-## 2026-07 in-process fast-tools pass (10x read/write/edit)
-
-The extension's `read`/`write`/`edit` hot paths were rewritten to run fully in-process, replacing per-call native helper spawns (`fastread-window`, `fastwrite`, `fastedit`) with byte-level I/O inside the extension:
-
-- `read`: single-pass windowed scanner — memchr-backed `Buffer.indexOf` newline scan over a reused scratch buffer, one UTF-8 decode per contiguous accepted run, byte-level joins for lines spanning scan chunks (no split-codepoint decodes), 64KB first read for the common offset-1/50KB-cap window.
-- `write`: atomic temp-file + rename with one byte-for-byte read-back verification of the temp file before the rename replaces the target (rename moves the verified inode). `TIA_FASTWRITE_FSYNC=1` opts into fsync durability (data + parent dir); content verification never depends on it.
-- `edit` (single replacement): in-place byte-level search/replace with read-back verification and best-effort rollback; keeps the target's inode, mode, and symlink identity. Multi-edit and patch paths verify by byte comparison as well.
-
-Why this wins: each old call paid ~1.4 ms of process spawn plus pipe copies and duplicated verification reads; a windowed read or verified 1MB write is fundamentally a sub-millisecond-to-few-millisecond operation once it stays in-process.
-
-Measured on one Linux box (disk-backed `$TMPDIR`, bun 1.4.0, pi 0.80.3) with the real installed extension code path, `bun bench/fast-tools-extension-burst.ts <tool> 40`, medians across 5+ runs before/after:
-
-| Tool | Workload | Before | After | Speedup |
-|---|---|---:|---:|---:|
-| `read` | 5MB file, 50KB window burst | 2.56 ms/op | 0.17 ms/op | **14.7x** |
-| `write` | 1MB verified atomic write burst | 24.7 ms/op | 2.37 ms/op | **10.4x** |
-| `edit` | 100KB file, verified single replacement burst | 20.6 ms/op | 1.84 ms/op | **11.2x** |
-
-Verification semantics kept (all read-back based, none removed): write verifies exact bytes before the atomic rename; edit verifies exact bytes after the in-place write and restores the original on mismatch. Coverage added for chunk-boundary unicode windows, truncation messages, no-trailing-newline windows, CRLF payloads, fsync opt-in, write serialization, and large-file edits (`scripts/fast-tools-io.test.ts`).
-
-The `fastdrain`/`fastcopy` helpers remain on the `bash` fast path; `fastread-window`/`fastwrite`/`fastedit` binaries are now benchmark comparison baselines only and are no longer installed to the agent sandbox.
-
-## 2026-07 optimization pass
-
-Measured on one Linux box with hyperfine (same machine before/after, sandboxed install). Also migrated the pinned pi runtime `0.75.3` → `0.80.3` (latest), which clears 4 Dependabot advisories including a high-severity local privilege-escalation; the slim stream runner's `pi-ai` import moved `stream.js` → `compat.js` to match the restructured package.
-
-| Path | Before | After | Change |
-|---|---:|---:|---:|
-| `tia pi --version` startup (minified compile) | 838 ms | 534 ms | **-36%** |
-| `tia pi` RPC startup (`get_state`) | 1.068 s | 688 ms | **-36%** |
-| `tia pi` slim JSON stream startup (bytecode compile) | 471 ms | 205 ms | **-57%** |
-| extension `write` burst, 1 MB verified writes | ~27.7 ms/op | ~25.0 ms/op | within noise (one redundant read-back removed) |
-
-What changed:
-- the main `tia pi` binary is compiled with `--minify`
-- the slim stream runner is compiled with `--minify --bytecode` (with automatic fallback to a plain minified compile), and its module imports load in parallel
-- native `write` no longer re-verifies in JS what the `fastwrite` helper already verified twice (after temp write and after rename); verification coverage is unchanged
-- the `bash` fast path now defers to stock bash whenever preconditions do not hold (missing source, directory target, missing `rm` target), so exit codes and error output match real bash
-- `bench/hyperfine-tia-json-stream.sh` makes the slim-stream startup benchmark reproducible from the harness
-- `bench/fast-tools-extension-burst.ts` bursts the real installed extension code path instead of a harness re-implementation
-- feedback-loop summaries only report `speedup_vs_baseline` when a suite actually contains a baseline command (retained-only suites now report `n/a` instead of comparing the fast path to itself)
-
-## Summary table (historical research numbers)
-
-These earlier numbers used a `pi-node` (node-runtime) baseline, which starts slower than the bun-run stock `pi` used in the historical head-to-head above. Neither table represents new v0.4.0 measurements.
-
-| Path | Workload | Baseline | Optimized | Speedup |
-|---|---|---:|---:|---:|
-| `tia pi` | RPC startup (`get_state`) | 1.786 s | 0.961 s | **1.86x** |
-| `pi` compiled direct | RPC startup (`get_state`) | 1.476 s | 0.745 s | **1.98x** |
-| `tia pi` slim JSON stream | JSON stream startup (`--mode json --no-session`, no prompt) | 1.200 s | 506.0 ms | **2.37x** |
-| `tia pi` fast tools | `read` burst | 977.7 ms | 188.6 ms | **5.18x** |
-| `tia pi` fast tools | `read` streaming burst | 1.372 s | 249.9 ms | **5.49x** |
-| `tia pi` fast tools | `write` burst | 195.5 ms | 193.0 ms | **1.01x** |
-| `tia pi` fast tools | `edit` burst | 378.3 ms | 151.0 ms | **2.50x** |
-| `tia pi` fast tools | `bash` burst | 513.7 ms | 322.5 ms | **1.59x** |
-
-## Supported runtime subcommands
-
-Supported user-facing tia runtime subcommands from this project are:
-- `tia pi`
-
-`pi` compiled direct remains a benchmark reference, not a separate supported install mode.
-The harnesses below focus on `tia pi`; their historical measurements are separate from the current read-bounds comparison.
-
-## Source result files
-
-### Current v0.5.0 records
-- [Runtime anatomy and methodology](bench/history/runtime-boundaries-v1/README.md)
-- [Installed confirmation](bench/history/runtime-boundaries-v1/installed-confirmation.json)
-- [Same-code control](bench/history/runtime-boundaries-v1/control.json)
-- [Validation](bench/history/runtime-boundaries-v1/validation.json)
-
-### Retained v0.4.0 read records
-- [Detailed report](bench/history/read-bounds-v1/README.md)
-- [Summary statistics and archive checksums](bench/history/read-bounds-v1/summary.json)
-- [Release validation: 89 tests and 12 pinned integration stages](bench/history/read-bounds-v1/release-validation.json)
-- Raw samples: `bench/history/read-bounds-v1/*.json.gz`
-
-The following `results-*` paths are generated historical outputs, not committed current reports:
-
-### tia startup / rpc
-- `results-tia-pi/rpc.md`
-- `results-pi-rpc-direct-smoke/empty.md`
-
-### tia slim JSON streaming
-- `results-tia-json-stream/startup.md`
-
-### tia fast tools burst
-- `results-pi-tools-fast-burst-smoke/read.md`
-- `results-pi-tools-fast-burst-smoke/write.md`
-- `results-pi-tools-fast-burst-smoke/edit.md`
-- `results-pi-tools-fast-burst-smoke/bash.md`
-
-### tia fast tools streaming
-- `results-pi-tools-fast-stream-smoke/read.md`
-
-### tia fast tools persistent
-- `results-pi-tools-persistent-smoke/read.md`
-- `results-pi-tools-persistent-smoke/edit.md`
-- `results-pi-tools-persistent-smoke/bash.md`
-
-## Feedback-loop harness
-
-Use the feedback loop when comparing optimization ideas across both speed and reliability:
+## Granular latency
 
 ```bash
+bun run bench:latency --init results-latency/config.json
+bun run bench:latency --slice results-latency/config.json results-latency/one.json transformCache coding
+bun run bench:latency --plan results-latency/one.json
+bun run bench:latency --run results-latency/one.json results-latency/one-run
+```
+
+`--slice <config> <new-config> <axis|baseline> [scenario]` varies one parameter and preserves the baseline. Progress prints after every process. `maxDurationMs` defaults to **60000**; interrupted/expired runs retain partial evidence but cannot report success. Change the budget explicitly for longer confirmations.
+
+- **15 runtime/request axes:** persistence, skills, prompts, themes, context, fast tools, FFF modes, transform caching, thinking, cache retention, transport, and four slim-output controls. `--plan` prints supported values, scope, exclusions and exact run counts.
+- **Five build axes:** lazy Jiti, syntax/whitespace/identifier minification, bytecode. `--build <pi-package> <new-build-dir>` screens them; append `grid` for all 32 combinations. Use generated `targets.json` in a config, preferably two targets at a time.
+- Config designs: `oat`, `pairs` (all two-factor combinations), `grid` (bounded Cartesian product). First axis value = baseline. Named slices avoid long global sweeps.
+- Scenarios: `paced`, `coding`, `burst-long-context`, `sparse`, `slow-consumer`.
+- Metrics: launch/readiness, request setup, first text, per-delta delivery p50/p95/p99/max, inter-delta gaps, completion tail, CPU/output bytes, four-tool continuations and warm RPC turns.
+- Exact text, tool results, file bytes, completion, cache state and source/binary hashes are checked. Raw JSONL samples and exact synthetic request bodies are retained with hashes; errors/timeouts never become fast samples.
+
+**Scope:** local Anthropic SSE, dummy credentials, telemetry off. Deltas are not model tokens; pipe receipt is not terminal paint. Provider thinking/cache/transport axes measure request construction, not reasoning quality, real cache hits or WebSocket performance. Only RPC measures warm sessions; slim cannot run coding tools. Use compiled binaries or an explicitly isolated launcher installation—not your shared workstation launcher. Unknown controls fail validation; inapplicable axes are reported.
+
+**Statistics:** seeded randomized AB/BA blocks, same-code controls and 10,000 paired bootstrap resamples. Multiple-comparison intervals are exploratory, not automatic tuning recommendations. Inspect `controlWarnings`, tail latency and CPU, then confirm a shortlist independently. No user settings are changed.
+
+**Cache correction:** `JITI_FS_CACHE` is boolean. Current harnesses isolate through `TMPDIR` and `JITI_RESPECT_TMPDIR_ENV=1`, checking cache files before/after. Historical records are unchanged; earlier directory-valued cache settings did not prove isolation.
+
+## Current screening evidence
+
+[Machine-readable index, checksums and validation](bench/history/latency-v1/index.json).
+
+| Completed suite | Checked processes | Prompts | Tool calls |
+|---|---:|---:|---:|
+| Same-source build grid, isolated caches | 576 | 1,152 | 2,304 |
+| Slim parameter screening | 612 | 612 | 0 |
+| Corrected cache-only coding slice | 20 | 60 | 240 |
+
+Pi **0.85.0**, Bun **1.4.3**, Linux, CPU affinity 2. Two build-control warnings prevent a blanket performance claim. The best alternative build's coding first-text ratio was **1.02× [0.96, 1.10]**: inconclusive, so full minification and lazy Jiti remain the defaults. Immediate slim flushing did not consistently outperform microtask coalescing. No universal lowest-latency or live-model speedup is claimed.
+
+The cache slice confirmed actual cold/warm separation: mean RPC readiness **324 ms warm**, **1,040 ms cold**, **1,000 ms caching disabled** (four measured rounds; exploratory). This is cache-state sensitivity, not a newly shipped 3× speedup. The earlier misisolated full sweep and interrupted rerun are excluded from completed evidence.
+
+## Tuning controls
+
+| Scope | Variables | Defaults |
+|---|---|---|
+| Build/install | `TIA_PI_MINIFY_SYNTAX`, `TIA_PI_MINIFY_WHITESPACE`, `TIA_PI_MINIFY_IDENTIFIERS` | `1`; each accepts `0`/`1` |
+| Build/install | `TIA_PI_BYTECODE`, `TIA_DISABLE_LAZY_JITI` | `0`; unsupported bytecode builds fail safely |
+| Slim only | `TIA_STREAM_FLUSH` | `microtask`; optional `immediate` |
+| Slim only | `TIA_STREAM_DELTA_CHARS`, `TIA_STREAM_OUTPUT_CHARS` | `96`, `16384`; integers 1–1048576 |
+| Slim only | `TIA_STREAM_CONTROL_DELAY_MS` | `4`; integer 0–100 |
+
+Thresholds count UTF-16 code units. Text bypasses the control timer. Verification/backpressure handling stays enabled. Resource removal changes functionality; it is not automatically recommended.
+
+## Other benchmarks
+
+```bash
+bun run bench:runtime <before-bin> <after-bin> <pi-package> <output.json> 12 5
+bun run bench:tools <before-extension.ts> <output.json> 12 200 60
+bun run bench:writer
 bash bench/feedback-loop.sh
-```
-
-Defaults:
-- 5 smoke rounds
-- repeated `hyperfine` runs per round
-- correctness gates before benchmarking
-- score = mean latency penalized by variance and failures
-- retained candidates: compiled/native helpers, compiled/Zig-built helpers, and warm daemon/native helpers
-- native helper coverage now includes read, verified write, edit, and optimized bash drain/copy paths
-- retired slow approaches: stock Bun tool baseline and Bun source-runner fast path
-- `bench/feedback-loop.sh` auto-installs the pinned Zig nightly (`0.17.0-dev.1441+d5181a9c9`) locally via `scripts/install-zig.sh` unless `SETUP_ZIG=0`
-- Zig is treated as a measured candidate only when `zig` can build helper variants and beat the current native helpers in this same loop
-
-Results are written under `results-feedback-loop/<run-id>/summary.md` and `summary.json`.
-
-For a heavier confirmation pass:
-
-```bash
-TIER=full ROUNDS=5 bash bench/feedback-loop.sh
-```
-
-The archived v4 full-tier run (`bench/history/2026-07-low-level-v4-feedback/`) completed five rounds with 100% successful runs. GCC comparison helpers led the variance-adjusted ranking in all five retained suites; GCC had the lower mean for stream/bash/read, while native retained a slightly lower mean for edit/write but with higher variance. Raw timings are archived for each round. Verified writes perform exact post-write content checks, so any mismatch fails the run.
-
-## How to reproduce
-
-### Current full-runtime boundary comparison
-```bash
-bun run bench:runtime <baseline-bin> <candidate-bin> <pi-package-dir> <output.json> 12 5
-```
-
-Build both binaries from the same package tree using the [runtime report's instructions](bench/history/runtime-boundaries-v1/README.md#reproduce).
-
-### Current read-bounds comparison
-```bash
-bun run bench:tools <baseline-extension.ts> <output.json> 12 200 60
-```
-
-Prepare the baseline and same-code control using the [detailed reproduction instructions](bench/history/read-bounds-v1/README.md#reproduce). The remaining commands measure separate startup/helper paths.
-
-### tia pi startup
-```bash
-bash bench/hyperfine-tia-pi.sh
-```
-
-This resolves a stock pi baseline automatically (installed `pi-node`/`pi`, else the compiled pi package's `dist/cli.js` via bun) and compares it against `tia pi` on the RPC `get_state` startup path.
-
-### tia slim JSON streaming
-```bash
-bash bench/hyperfine-tia-json-stream.sh
-```
-
-This benchmark isolates local JSON streaming startup/runner overhead by sending no prompt. It does not measure provider first-token or token-throughput latency, which is network/model dependent.
-
-### tia Anthropic HTTP/SSE loopback
-```bash
 bash bench/hyperfine-tia-loopback.sh
 ```
 
-This starts a local Anthropic-compatible SSE endpoint and compares full and slim `tia pi` using the same model, prompt, endpoint, and installed pi source. It includes process launch, configuration/model/auth resolution, provider loading, one HTTP request/stream, JSON framing, and shutdown without internet or model latency.
-
-### tia fast tools burst
-```bash
-bash bench/hyperfine-pi-tools-fast-burst.sh
-```
-
-This now compares retained candidates only:
-- `fast (compiled + native helpers)` where read/write/copy/drain are C built with zig cc and edit is pure Zig
-- `fast (compiled + gcc comparison helpers)` when GCC comparison helpers are available
-- `fast (warm daemon + native helpers)`
-
-### tia fast tools streaming
-```bash
-bash bench/hyperfine-pi-tools-fast-stream.sh
-```
-
-This now compares retained candidates only:
-- `fast (compiled + native helpers)` where read streaming uses the C helper built with zig cc
-- `fast (compiled + gcc comparison read helper)` when the GCC comparison helper is available
-
-### tia fast tools persistent warm runner
-```bash
-bash bench/hyperfine-pi-tools-persistent.sh
-```
-
-This compares:
-- `fast (compiled cold spawn-per-request)`
-- `fast (compiled warm daemon + native helpers)`
-
-## Interpretation
-
-- v0.5.0 defers unnecessary transformer work at startup while retaining full pi behavior. It saves about 47 ms in the cached tool-probe workload, not 20% of an arbitrary model turn.
-- v0.4.0 removes unnecessary scanning and copying from three specific read workloads; it does not establish a universal tool speedup.
-- Ordinary read/write/edit changes were not material under the reported confidence-interval threshold. All timed writes and edits retained their own verification.
-- Startup, streaming, bash-helper, and FFF search speedups were not remeasured in the v0.4.0 read pass. The new v0.5.0 startup measurements are separate; other older results remain historical and non-additive.
-- The validated integration target is pi 0.84.4. The upstream 0.85.0 installation failure is separate and unresolved.
+Retained historical gains: [full startup: ~47 ms saved](bench/history/runtime-boundaries-v1/README.md); [targeted oversized-tail reads: 70–274×](bench/history/read-bounds-v1/README.md). These are workload-specific and must not be multiplied into agent/model speedups.

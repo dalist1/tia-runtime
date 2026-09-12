@@ -601,7 +601,7 @@ configure_fff_env() {
   if [[ -L "\${TIA_FFF_STATE_DIR}" && ! -d "\${TIA_FFF_STATE_DIR}" ]]; then
     rm -f "\${TIA_FFF_STATE_DIR}"
   fi
-  mkdir -p "\${TIA_FFF_STATE_DIR}"
+  [[ -d "\${TIA_FFF_STATE_DIR}" ]] || mkdir -p "\${TIA_FFF_STATE_DIR}"
   local arg prev="" cli_mode=""
   for arg in "\$@"; do
     if [[ "\${prev}" == "--fff-mode" ]]; then

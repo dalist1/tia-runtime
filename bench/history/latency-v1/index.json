@@ -1,0 +1,189 @@
+{
+ "schemaVersion": 1,
+ "recordedAt": "2026-09-12T08:58:07.200Z",
+ "scope": "Offline loopback screening, not live model performance. Full build and cache runs assert cache isolation. Slim screening predates the cache fix but never uses Jiti. Full build/slim records predate per-process progress and the 60-second budget. Retained evidence is byte-for-byte unchanged.",
+ "runs": [
+  {
+   "name": "build",
+   "checkedProcesses": 576,
+   "checkedPrompts": 1152,
+   "checkedToolCalls": 2304,
+   "controlWarnings": [
+    {
+     "target": "lazy-0_syntax-1_whitespace-1_identifiers-1_bytecode-0",
+     "scenario": "paced",
+     "phase": "cold",
+     "metric": "deliveryP95Ms",
+     "speedup": {
+      "ratio": 1.3934462122664,
+      "ci95": [
+       1.1035900925649231,
+       1.7864790505741917
+      ]
+     }
+    },
+    {
+     "target": "lazy-0_syntax-0_whitespace-0_identifiers-1_bytecode-0",
+     "scenario": "coding",
+     "phase": "warm-1",
+     "metric": "deliveryP95Ms",
+     "speedup": {
+      "ratio": 1.422814515538484,
+      "ci95": [
+       1.1663872254925267,
+       1.7631009597558305
+      ]
+     }
+    }
+   ],
+   "artifacts": [
+    {
+     "path": "build/config.json.gz",
+     "sha256": "e45af8d5d74be0422f01fdc2f2adb569af5a6fb6a685bea37bcd9d2cce1798ad",
+     "originalSha256": "6afb06e2e73774cb1004880c8b43d8b7ffb6e621ecd3f1e79f2f7093a709863a",
+     "bytes": 671
+    },
+    {
+     "path": "build/manifest.json.gz",
+     "sha256": "9cdd5d18eeb03560467e6a186a4792e653e4cf6366755b629b089425c212b2af",
+     "originalSha256": "36cc7ba5832b61131edc220ecfd2e344f6a6a181455ba28dd2329cbf4ed77620",
+     "bytes": 11668
+    },
+    {
+     "path": "build/summary.json.gz",
+     "sha256": "6a02e393872f55c2b2f38d10624093f3ee2eb099150131034a89ff92fde1aad2",
+     "originalSha256": "88d3dcd1ab06e3e2785e73145b7582787e332635779500e90fa47bc5aeb7593a",
+     "bytes": 239966
+    },
+    {
+     "path": "build/samples.jsonl.gz",
+     "sha256": "d2c4da9f66e44f1c2ea70bb7fc655cfc4442c6f91d0c3fe582c3d9a523fa7e21",
+     "originalSha256": "3451f37359424198aaa6f9695635f6d12e51f2fe449cd21b764b1b727ac45352",
+     "bytes": 4008135
+    }
+   ]
+  },
+  {
+   "name": "slim",
+   "checkedProcesses": 612,
+   "checkedPrompts": 612,
+   "checkedToolCalls": 0,
+   "controlWarnings": [],
+   "artifacts": [
+    {
+     "path": "slim/config.json.gz",
+     "sha256": "9f0929d0ea0708fbbbd27886ad30a0c1579ca0a2c4ea27362341583c0cb7ceec",
+     "originalSha256": "0a6f15908a20256c149648633f5694fc0f94eb4942b6c78a53ad965799548416",
+     "bytes": 643
+    },
+    {
+     "path": "slim/manifest.json.gz",
+     "sha256": "e52490ff08d59ffe21edde9bd5eb4e3a0eccd1a6e402e3c8b7610737859b3a01",
+     "originalSha256": "df6367407c11271d15809c22cf88398c3ba919cd86e9df7fc88687bea65f2003",
+     "bytes": 2884
+    },
+    {
+     "path": "slim/summary.json.gz",
+     "sha256": "7dfb8479ca8993b14259a1578bb43b3a4c46fe37616f071f40991d070c794f50",
+     "originalSha256": "7ee4bd448370adbd708537141a1085c7c794dee9a48f77cba0e71790d1231ec2",
+     "bytes": 141370
+    },
+    {
+     "path": "slim/samples.jsonl.gz",
+     "sha256": "1b96c9a3264bbde520e10842f8d9b6896a888997f168cbf686758c28abd1d5ba",
+     "originalSha256": "72dc8feeaa5312f30ca93b021f031fa87f76c8a739de6ec32ec3b7ff0048f5a3",
+     "bytes": 2281312
+    }
+   ]
+  },
+  {
+   "name": "cache",
+   "checkedProcesses": 20,
+   "checkedPrompts": 60,
+   "checkedToolCalls": 240,
+   "controlWarnings": [],
+   "artifacts": [
+    {
+     "path": "cache/config.json.gz",
+     "sha256": "5622d98240c729dc30e864eed1099e6d0a87afd4081d36a10766a7c348c81d13",
+     "originalSha256": "9c47c1e0ae4b7bb4d0516eeaa1c8c103ceba7f4186add539d41db2032949559d",
+     "bytes": 564
+    },
+    {
+     "path": "cache/manifest.json.gz",
+     "sha256": "02e9c8c9212632f4d20c8a781106f869dd2eb67e4d1111d05e1ebd4ceda934da",
+     "originalSha256": "5e44315fe9428369091845878d68eed1adc7c17bec758155cb4faf1d2905d104",
+     "bytes": 4348
+    },
+    {
+     "path": "cache/summary.json.gz",
+     "sha256": "d3b714fd805283a40969f8cb834105b65cd66fe6f1d3cab3400b5e099a2fbab3",
+     "originalSha256": "d055ba1372d57c56a66d7d13e6ed042c1c28168a622d5730190be8ce7e3bd5a8",
+     "bytes": 25694
+    },
+    {
+     "path": "cache/samples.jsonl.gz",
+     "sha256": "8b45f79b1396eb1ce1a4e5d78af051e3a078421f979b7e41ac2a16272580f214",
+     "originalSha256": "093a37827a1349979081d5d0ccffd6421344a86c1a7a544947a39cac94d10a9d",
+     "bytes": 399658
+    }
+   ]
+  }
+ ],
+ "totals": {
+  "processes": 1208,
+  "prompts": 1824,
+  "toolCalls": 2544
+ },
+ "buildAttempts": {
+  "combinations": 32,
+  "built": 16,
+  "rejected": 16,
+  "path": "build-attempts.json.gz",
+  "sha256": "c7258556e40ead955d4e000cfb4dc073ea5aa64302b5e1c073c80b068306bd5f"
+ },
+ "excluded": [
+  {
+   "source": "build-sweep",
+   "reason": "Pilot before verified transform-cache isolation; excluded from current full-runtime evidence",
+   "sha256": "02b17356e1b769e2ef1af057a0617c347f23f2a6f477638fa3a8b1605246945f",
+   "records": 576
+  },
+  {
+   "source": "full-sweep",
+   "reason": "Pilot before verified transform-cache isolation; excluded from current full-runtime evidence",
+   "sha256": "0184b936e2fc24446142213a19664d18af28f93a3942c1ab9b5bdd72ca51a4c2",
+   "records": 513
+  },
+  {
+   "source": "full-verified",
+   "reason": "Interrupted; incomplete rounds, not a successful benchmark",
+   "sha256": "33ca121cf3b23b1f5d8e74cbd7068411b3328f7d0c2b4acd360265d85e4bbb0f",
+   "records": 155
+  }
+ ],
+ "validation": {
+  "unitTests": 116,
+  "unitFailures": 0,
+  "integrationStages": 12,
+  "integrationExit": 0,
+  "integrationPiVersion": "0.85.1",
+  "unitLogSha256": "56b8d8828c989b26f7a387ce34f8a54b91791920f385f6d4bdc3b10cda4c56c4",
+  "integrationLogSha256": "05921a17dc4136254d74f9bdfca657019f1373c787de998fd64a9b35422bf744",
+  "telemetry": "PI_TELEMETRY=0 PI_OFFLINE=1 PI_SKIP_VERSION_CHECK=1 DO_NOT_TRACK=1 BUN_DISABLE_TELEMETRY=1; env -i test invocations retain pi opt-outs through an exported env shell function."
+ },
+ "workingTreeScope": "Pre-existing changes in fast-tools-extension.ts, its tests and test.sh were present during validation and are intentionally excluded from this commit. Extension hashes are recorded in each manifest.",
+ "cleanup": {
+  "deleted": [
+   "bench/LATENCY.md (new duplicate guide)",
+   "scripts/TIA.md (duplicate launcher guide; release staging now uses README.md)"
+  ],
+  "condensed": [
+   "README.md",
+   "BENCHMARKS.md",
+   "RELEASE.md"
+  ],
+  "preserved": "Existing bench/history evidence and AGENTS.md; no runtime/session/source cleanup."
+ },
+ "conclusion": "No confirmed across-workload improvement over existing minified/lazy-Jiti and microtask defaults. Keep them; provide independent experimental controls. Model generation, terminal rendering, real cache hits, and WebSocket/provider tuning remain unverified."
+}
