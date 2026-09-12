@@ -10,8 +10,8 @@ const FASTDRAIN_BIN = () => join(fastToolsDir(), 'fastdrain')
 const FASTCOPY_BIN = () => join(fastToolsDir(), 'fastcopy')
 const READ_SCAN_CHUNK = 256 * 1024
 const READ_FIRST_CHUNK = 64 * 1024
-const selectorFilterMarker = Symbol.for('tia.gpt-model-selector-filter')
-const gptSelectorProviders = new Set(['openai', 'openai-codex'])
+const selectorFilterMarker = Symbol.for('tia.copilot-model-selector-filter')
+const codexSubscriptionModelIds = new Set(['gpt-5.6-sol', 'gpt-5.6-luna', 'gpt-6-astra'])
 
 let readScratch: Buffer | null = null
 let verifyScratch: Buffer | null = null
@@ -49,18 +49,26 @@ type EditToolError = Error & {details: EditFailureDetails}
 
 type EditResultDetails = {verified?: boolean; files?: number; diff?: string}
 
-function installGptSelectorFilter() {
+export function isCopilotSelectorModel(model: {provider: string}) {
+ return model.provider === 'github-copilot'
+}
+
+export function codexSubscriptionTarget(model: {provider: string; id: string}) {
+ return model.provider === 'github-copilot' && codexSubscriptionModelIds.has(model.id) ? model.id : undefined
+}
+
+function installCopilotSelectorFilter() {
  const prototype = ModelRuntime.prototype
  if (Reflect.get(prototype, selectorFilterMarker)) return
 
  const getAvailable = prototype.getAvailable
  const getAvailableSnapshot = prototype.getAvailableSnapshot
  prototype.getAvailable = async function (providerId?: string) {
-  if (providerId && !gptSelectorProviders.has(providerId)) return []
-  return (await getAvailable.call(this, providerId)).filter(model => gptSelectorProviders.has(model.provider))
+  if (providerId && providerId !== 'github-copilot') return []
+  return (await getAvailable.call(this, providerId)).filter(isCopilotSelectorModel)
  }
  prototype.getAvailableSnapshot = function () {
-  return getAvailableSnapshot.call(this).filter(model => gptSelectorProviders.has(model.provider))
+  return getAvailableSnapshot.call(this).filter(isCopilotSelectorModel)
  }
  Reflect.defineProperty(prototype, selectorFilterMarker, {value: true})
 }
@@ -1413,7 +1421,7 @@ async function tryOptimizedBash(cwd: string, command: string, signal?: AbortSign
 }
 
 export default function (pi: ExtensionAPI) {
- installGptSelectorFilter()
+ installCopilotSelectorFilter()
 
  const stockRead = createReadToolDefinition(process.cwd())
  const stockWrite = createWriteToolDefinition(process.cwd())
@@ -1421,9 +1429,10 @@ export default function (pi: ExtensionAPI) {
  let remappingSelectorModel = false
 
  pi.on('model_select', async (event, ctx) => {
-  if (remappingSelectorModel || event.model.provider !== 'github-copilot' || event.model.id !== 'gpt-5.6-sol') return
+  const targetId = codexSubscriptionTarget(event.model)
+  if (remappingSelectorModel || !targetId) return
 
-  const target = ctx.modelRegistry.find('openai-codex', 'gpt-5.6-sol')
+  const target = ctx.modelRegistry.find('openai-codex', targetId)
   if (!target) return
 
   remappingSelectorModel = true

@@ -3,7 +3,19 @@ import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
 import {readFile, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
-import {applyPlannedEdits, combinedEditDiff, duplicateEditError, editToolDescription, editToolPromptSnippet, fastEdit, missingEditError, planClassicEdits, planOptimizedBash, planPatch} from './fast-tools-extension'
+import {applyPlannedEdits, codexSubscriptionTarget, combinedEditDiff, duplicateEditError, editToolDescription, editToolPromptSnippet, fastEdit, isCopilotSelectorModel, missingEditError, planClassicEdits, planOptimizedBash, planPatch} from './fast-tools-extension'
+
+test('selector displays every model under Copilot while preserving three Codex targets', () => {
+ expect(isCopilotSelectorModel({provider: 'github-copilot'})).toBe(true)
+ expect(isCopilotSelectorModel({provider: 'openai-codex'})).toBe(false)
+ expect(isCopilotSelectorModel({provider: 'openai'})).toBe(false)
+
+ expect(codexSubscriptionTarget({provider: 'github-copilot', id: 'gpt-5.6-sol'})).toBe('gpt-5.6-sol')
+ expect(codexSubscriptionTarget({provider: 'github-copilot', id: 'gpt-5.6-luna'})).toBe('gpt-5.6-luna')
+ expect(codexSubscriptionTarget({provider: 'github-copilot', id: 'gpt-6-astra'})).toBe('gpt-6-astra')
+ expect(codexSubscriptionTarget({provider: 'github-copilot', id: 'gpt-5.6-terra'})).toBeUndefined()
+ expect(codexSubscriptionTarget({provider: 'openai-codex', id: 'gpt-5.6-sol'})).toBeUndefined()
+})
 
 test('edit diagnostics explain indentation-only exact-match failures', () => {
  const content = 'function render() {\n\tfields.push({label:"skills",value:"—"});\n\tfields.push({label:"spawning",value:"false"});\n}\n'

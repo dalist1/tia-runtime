@@ -126,14 +126,19 @@ run_with_optional_timeout env -i HOME="${HOME}" PATH="${PATH}" PI_NO_PROXY_AUTO_
 	> "${TMP_DIR}/tia-oauth-bundle.jsonl"
 bun -e 'const events=require("node:fs").readFileSync(process.argv[1],"utf8").trim().split(/\n+/).map(JSON.parse); const message=events.map(event=>event.message).find(message=>message?.role==="assistant"); if (!message || message.errorMessage?.includes("OAuth auth derivation failed") || !message.diagnostics?.some(item=>item.type==="provider_transport_failure")) process.exit(1);' "${TMP_DIR}/tia-oauth-bundle.jsonl"
 
-printf '[6/12] verify model selectors expose only GPT providers\n'
+printf '[6/12] verify every selector model displays under Copilot\n'
 SELECTOR_AGENT_DIR="${TMP_DIR}/selector-agent"
 mkdir -p "${SELECTOR_AGENT_DIR}"
-printf '%s\n' '{"providers":{"openai":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"private-openai","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]},"openai-codex":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"private-codex","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]},"selector-test":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"visible-model","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]}}}' > "${SELECTOR_AGENT_DIR}/models.json"
+printf '%s\n' '{"providers":{"openai":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"private-openai","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]},"openai-codex":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"private-codex","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]},"github-copilot":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"copilot-only","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]},"selector-test":{"baseUrl":"http://127.0.0.1:1/v1","api":"openai-completions","apiKey":"test","models":[{"id":"visible-model","reasoning":false,"input":["text"],"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0},"contextWindow":1000,"maxTokens":100}]}}}' > "${SELECTOR_AGENT_DIR}/models.json"
 printf '%s\n' '{}' > "${SELECTOR_AGENT_DIR}/settings.json"
 PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${SELECTOR_AGENT_DIR}" tia pi --list-models > "${TMP_DIR}/selector-models.txt"
-grep -q 'openai.*private-openai' "${TMP_DIR}/selector-models.txt"
-grep -q 'openai-codex.*private-codex' "${TMP_DIR}/selector-models.txt"
+grep -q 'github-copilot.*copilot-only' "${TMP_DIR}/selector-models.txt"
+grep -q 'github-copilot.*gpt-5.6-sol' "${TMP_DIR}/selector-models.txt"
+grep -q 'github-copilot.*gpt-5.6-luna' "${TMP_DIR}/selector-models.txt"
+grep -q 'github-copilot.*gpt-6-astra' "${TMP_DIR}/selector-models.txt"
+grep -q 'github-copilot.*gpt-5.6-terra' "${TMP_DIR}/selector-models.txt"
+! grep -q 'openai-codex' "${TMP_DIR}/selector-models.txt"
+! grep -q 'openai.*private-openai' "${TMP_DIR}/selector-models.txt"
 ! grep -q 'selector-test.*visible-model' "${TMP_DIR}/selector-models.txt"
 
 printf '[7/12] verify tia pi does not touch sandbox history on startup\n'
