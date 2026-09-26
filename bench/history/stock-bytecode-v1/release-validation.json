@@ -1,0 +1,81 @@
+{
+ "schemaVersion": 1,
+ "recordedAt": "2026-09-26T08:15:29.821Z",
+ "version": "0.6.0",
+ "optimization": "2026-09-esm-bytecode-v1",
+ "defaultBytecode": true,
+ "format": "esm",
+ "unitTests": {
+  "passed": 126,
+  "failed": 0,
+  "assertions": 2718
+ },
+ "checks": {
+  "shellSyntax": "passed",
+  "format": "passed",
+  "lint": "passed",
+  "typecheck": "passed"
+ },
+ "integrations": [
+  {
+   "mode": "default bytecode; nested pi-ai with stale sibling",
+   "stagesPassed": 12
+  },
+  {
+   "mode": "TIA_PI_BYTECODE=0; synchronized package tree",
+   "stagesPassed": 12
+  }
+ ],
+ "preservation": "Bootstrap tests retain an unrelated extension and an existing custom fast-tools.ts. Guard tests reject missing/symlink/invalid preservation settings before changing the binary.",
+ "scope": "Isolated HOME, Pi 0.87.1, Bun 1.4.3, FFF 0.10.7-nightly.c3f2c7f, dummy auth and local loopback. Not a live-model test or a whole-install transaction guarantee.",
+ "sources": [
+  {
+   "path": "scripts/build-pi.ts",
+   "sha256": "4a6295cd75ae757fce804b6427f65fbbdf0dde770b811eda94a4a2d2d17599e6"
+  },
+  {
+   "path": "scripts/build-pi.test.ts",
+   "sha256": "1d3a8b547d7bc2d3d38ae426765789be6b73af5d91d080d192b991ce7a03133d"
+  },
+  {
+   "path": "scripts/install-tia.sh",
+   "sha256": "021801c231f09e3289552837a24ad604a4c7790aee8912fcf277baefcca5a4b1"
+  },
+  {
+   "path": "scripts/resolve-pi-ai.ts",
+   "sha256": "fbc051d495a2de0366e1983a7b5dec23ec3460f2897d9c688b7f27b3ef67f7e2"
+  },
+  {
+   "path": "scripts/resolve-pi-ai.test.ts",
+   "sha256": "a07aee60a7c8071bc1a5048af90a8ec20922069cd2dc4f39682323844c8c039a"
+  },
+  {
+   "path": "scripts/installer-guards.test.ts",
+   "sha256": "cdf23d49b2368cc24709f8872abf26c9475e7c3e25a9ae9abb7bc022b5cc411b"
+  },
+  {
+   "path": "test.sh",
+   "sha256": "430a1c20135cb78701d8ca11e835d711b488374a1d84ad70fad781d05bccaed5"
+  }
+ ],
+ "artifacts": [
+  {
+   "path": "release-unit-validation.log.gz",
+   "sha256": "1abc06c140f34e3cd5982246778a9ef8612b7e3b0ddea815649648a091e6578e",
+   "originalSha256": "ce655d840ca6235438bd93e9663eb9b956db9442000831f8c4789bd7e6702cc4",
+   "bytes": 4310
+  },
+  {
+   "path": "release-default-integration.log.gz",
+   "sha256": "fbca1866a209a6289946a93c71ea2c248a40d75e5d968725f93823aa8d85952d",
+   "originalSha256": "97a86a73463e2fa82e7fea96e43295437505d1fa1e32b073263ac0c28b742692",
+   "bytes": 341
+  },
+  {
+   "path": "release-optout-integration.log.gz",
+   "sha256": "fbca1866a209a6289946a93c71ea2c248a40d75e5d968725f93823aa8d85952d",
+   "originalSha256": "97a86a73463e2fa82e7fea96e43295437505d1fa1e32b073263ac0c28b742692",
+   "bytes": 341
+  }
+ ]
+}

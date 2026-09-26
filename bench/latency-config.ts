@@ -3,7 +3,7 @@ import {existsSync, readFileSync} from 'node:fs'
 import {join, resolve} from 'node:path'
 
 type Value = string | number | boolean
-export type Target = {name: string; command: string[]; protocol: 'rpc' | 'json' | 'slim'; buildMetadata?: string}
+export type Target = {name: string; command: string[]; protocol: 'rpc' | 'json' | 'slim'; buildMetadata?: string; stockNode?: boolean}
 export type Scenario = {name: string; turns: number; deltas: number; deltaChars: number; cadenceMs: number; firstDelayMs: number; thinkingDeltas: number; promptChars: number; tools: boolean; consumerDelayMs: number}
 export type Config = {schemaVersion: 1; packageDir: string; fastTools: string; fffExtension?: string; targets: Target[]; axes: Record<string, Value[]>; design: 'oat' | 'pairs' | 'grid'; rounds: number; warmups: number; seed: number; timeoutMs: number; maxDurationMs?: number; maxRuns: number; scenarios: Scenario[]}
 export type Profile = {name: string; values: Record<string, Value>}
@@ -88,7 +88,9 @@ export function validateConfig(config: Config) {
  integer(config.maxRuns, 1, 100000)
  assert(config.targets.length > 0 && config.scenarios.length > 0)
  for (const target of config.targets) {
-  keys(target, ['name', 'command', 'protocol', 'buildMetadata'])
+  keys(target, ['name', 'command', 'protocol', 'buildMetadata', 'stockNode'])
+  if (target.stockNode !== undefined) assert.equal(target.stockNode, true, 'stockNode must be true or omitted')
+  if (target.stockNode) assert(target.protocol !== 'slim' && !target.buildMetadata, 'Stock Node cannot use slim/build metadata')
   assert(/^[\w.-]+$/.test(target.name) && ['rpc', 'json', 'slim'].includes(target.protocol))
   assert(target.command.length > 0 && target.command.every(arg => typeof arg === 'string' && arg.length > 0))
  }

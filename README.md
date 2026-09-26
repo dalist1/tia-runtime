@@ -2,7 +2,7 @@
 
 A faster pi coding-agent runtime: compiled startup, FFF search, and in-process read/write/edit tools with byte-verified writes.
 
-**v0.5.0** · optimization marker `2026-09-runtime-boundaries-v1`
+**v0.6.0** · optimization marker `2026-09-esm-bytecode-v1`
 
 ## Run
 
@@ -22,6 +22,8 @@ curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/install.sh
 - `tia pi --mode json --no-session "prompt"` is the **model-only slim stream**, not a coding-agent substitute. Set `TIA_DISABLE_FAST_STREAM=1` for full JSON/tool compatibility.
 - Writes remain verified; `TIA_FASTWRITE_FSYNC=1` additionally enables durability.
 - Install controls: `TIA_PI_PACKAGE_VERSION=<version>`, `TIA_FFF_SOURCE=vanilla|fork`, `TIA_ENABLE_FFF=0`.
+- ESM bytecode is enabled by default (tested with Bun 1.4.3); set `TIA_PI_BYTECODE=0` for older compilers. [Measurements](BENCHMARKS.md#stock-pi-versus-esm-bytecode) and [release status](RELEASE.md).
+- Other user extensions are preserved. Use `TIA_PRESERVE_FAST_TOOLS=1` to retain an existing customized `fast-tools.ts` during reinstall.
 - Uninstall: `bash install.sh tia uninstall`.
 
 ## Benchmark one parameter

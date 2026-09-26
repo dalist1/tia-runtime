@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import {appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs'
+import {appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs'
 import {cpus, release, tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import {buildPi} from '../scripts/build-pi.ts'
@@ -22,11 +22,49 @@ type Sample = {
  stdoutBytes: number
  eventCount: number
  cache: {mode: string; beforeFiles: number; afterFiles: number}
+ nodeCompileCache: {beforeFiles: number; afterFiles: number}
  turns: {phase: string; trace: TurnTrace; metrics: ReturnType<typeof metrics>}[]
 }
 const json = (path: string, value: unknown) => writeFileSync(path, JSON.stringify(value, null, 1) + '\n', {flag: 'wx'})
 const shaFile = (path: string) => hash(readFileSync(path))
 const turnCount = (target: Target, scenario: Scenario) => (target.protocol === 'rpc' ? scenario.turns : 1)
+
+function filesUnder(directory: string): string[] {
+ if (!existsSync(directory)) return []
+ return readdirSync(directory, {withFileTypes: true}).flatMap(entry => (entry.isDirectory() ? filesUnder(join(directory, entry.name)) : entry.isFile() ? [join(directory, entry.name)] : []))
+}
+
+export function stockIdentity(target: Target, packageDir: string) {
+ if (!target.stockNode) return undefined
+ const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
+ const entry = realpathSync(join(packageDir, typeof manifest.bin === 'string' ? manifest.bin : manifest.bin.pi))
+ assert.equal(target.command.length, 2, 'Stock target must use node and the published bin entry, without wrapper flags')
+ assert.equal(realpathSync(target.command[1]), entry, 'Stock target is not the published bin entry')
+ const runtime = Bun.spawnSync([target.command[0], '--version'], {env: {PATH: process.env.PATH ?? '', PI_TELEMETRY: '0', DO_NOT_TRACK: '1', BUN_DISABLE_TELEMETRY: '1'}, stdout: 'pipe', stderr: 'pipe', timeout: 10000})
+ assert.equal(runtime.exitCode, 0, 'Cannot identify stock runtime')
+ const identity = {name: 'node', version: runtime.stdout.toString().trim()}
+ assert(/^v\d+\.\d+\.\d+(?:-\S+)?$/.test(identity.version), 'Stock target must use Node, not a Bun substitution')
+ const sources = filesUnder(join(packageDir, 'dist'))
+  .filter(path => path.endsWith('.js'))
+  .sort()
+  .map(path => ({path, sha256: shaFile(path)}))
+ return {version: manifest.version, packageDir: realpathSync(packageDir), packageSha256: shaFile(join(packageDir, 'package.json')), entry, runtime: identity, sources}
+}
+
+export function comparisonScope(before: {metadata?: any; stock?: ReturnType<typeof stockIdentity>}, after: {metadata?: any; stock?: ReturnType<typeof stockIdentity>}, packageDir: string) {
+ if (before.stock && after.metadata && realpathSync(after.metadata.entry) === realpathSync(join(packageDir, 'dist/bun/cli.js')) && after.metadata.entrySha256 === shaFile(after.metadata.entry)) return 'same-package stock vs compiled; runtime, entrypoint and dependency bundling differ'
+ if (
+  before.metadata &&
+  after.metadata &&
+  before.metadata.entry === after.metadata.entry &&
+  before.metadata.entrySha256 === after.metadata.entrySha256 &&
+  before.metadata.inputsSha256 &&
+  before.metadata.inputsSha256 === after.metadata.inputsSha256 &&
+  before.metadata.companion?.sha256 === after.metadata.companion?.sha256
+ )
+  return 'same build inputs and companion'
+ return undefined
+}
 
 function setup(config: Config, work: string) {
  const view = join(work, 'package')
@@ -73,6 +111,7 @@ function fixture(config: Config, cell: Cell, work: string, id: number, url: stri
  json(join(agent, 'models.json'), {providers: {latency: {baseUrl: url, api: 'anthropic-messages', apiKey: 'loopback-only', models: [{id: 'latency-fixture', reasoning: true, input: ['text'], contextWindow: 2000000, maxTokens: 65536, cost: {input: 0, output: 0, cacheRead: 0, cacheWrite: 0}}]}}})
  const cache = v.transformCache === 'cold' ? join(directory, 'cache') : join(work, 'cache', hash(JSON.stringify([cell.target.name, cell.profile.values])).slice(0, 16))
  mkdirSync(cache, {recursive: true})
+ const nodeCache = join(work, 'node-cache', cell.target.name)
  const env: Record<string, string> = {
   HOME: home,
   PATH: process.env.PATH ?? '',
@@ -94,6 +133,7 @@ function fixture(config: Config, cell: Cell, work: string, id: number, url: stri
   PI_CACHE_RETENTION: String(v.cacheRetention),
   JITI_FS_CACHE: v.transformCache === 'disabled' ? 'false' : 'true',
   JITI_RESPECT_TMPDIR_ENV: '1',
+  NODE_COMPILE_CACHE: nodeCache,
   PI_FFF_MODE: v.fffMode === 'disabled' || !v.fffMode ? 'override' : String(v.fffMode),
   FFF_FRECENCY_DB: join(directory, 'fff-frecency.sqlite'),
   FFF_HISTORY_DB: join(directory, 'fff-history.sqlite')
@@ -104,7 +144,7 @@ function fixture(config: Config, cell: Cell, work: string, id: number, url: stri
  if (cell.target.protocol !== 'slim') {
   for (const key of ['skills', 'prompts', 'themes', 'context']) if (!v[key]) args.push(parameters[key].control)
  }
- return {directory, env, args, cache: join(cache, 'jiti')}
+ return {directory, env, args, cache: join(cache, 'jiti'), nodeCache}
 }
 
 export async function runCell(config: Config, cell: Cell, work: string, server: ReturnType<typeof loopback>, id: number, round: number, warmup: boolean, signal?: AbortSignal): Promise<Sample> {
@@ -112,6 +152,8 @@ export async function runCell(config: Config, cell: Cell, work: string, server: 
  const f = fixture(config, cell, work, id, server.url)
  const cacheFiles = () => (existsSync(f.cache) ? readdirSync(f.cache).length : 0)
  const beforeFiles = cacheFiles()
+ const nodeCacheBefore = filesUnder(f.nodeCache).length
+ if (cell.target.stockNode && round >= 0 && config.warmups > 0) assert(nodeCacheBefore > 0, 'Stock Node compile cache was not primed')
  const cacheMode = String(cell.profile.values.transformCache ?? 'not-applicable')
  const needsTransforms = cell.target.protocol !== 'slim' && (cell.profile.values.fastTools || cell.profile.values.fffMode !== 'disabled')
  if (cacheMode === 'cold') assert.equal(beforeFiles, 0, 'Cold cache is not empty')
@@ -276,6 +318,7 @@ export async function runCell(config: Config, cell: Cell, work: string, server: 
    stdoutBytes,
    eventCount,
    cache: {mode: cacheMode, beforeFiles, afterFiles},
+   nodeCompileCache: {beforeFiles: nodeCacheBefore, afterFiles: filesUnder(f.nodeCache).length},
    turns: turns.map((trace, index) => ({phase: index ? `warm-${index}` : 'cold', trace, metrics: metrics(trace, cell.scenario, start)}))
   }
  } catch (error) {
@@ -326,7 +369,16 @@ async function benchmark(config: Config, output: string) {
    assert.equal(metadata.binarySha256, shaFile(executable), 'Target/build metadata hash mismatch')
   }
   const commandFiles = target.command.map(arg => resolve(arg)).filter(path => existsSync(path) && statSync(path).isFile())
-  return {name: target.name, executable, sha256: shaFile(executable), commandFiles: commandFiles.map(path => ({path, sha256: shaFile(path)})), metadata, provenance: metadata ? 'build-metadata-verified' : 'caller-supplied; dependency equivalence not established'}
+  const stock = stockIdentity(target, config.packageDir)
+  return {
+   name: target.name,
+   executable,
+   sha256: shaFile(executable),
+   commandFiles: commandFiles.map(path => ({path, sha256: shaFile(path)})),
+   metadata,
+   stock,
+   provenance: metadata ? 'build-metadata-verified' : stock ? 'published Node bin; source hashes verified' : 'caller-supplied; dependency equivalence not established'
+  }
  })
  const sources = ['bench/latency.ts', 'bench/latency-config.ts', 'bench/latency-fixture.ts', 'bench/tool-benchmark.ts', 'scripts/build-pi.ts', 'bun.lock'].map(path => ({path, sha256: shaFile(resolve(import.meta.dir, '..', path))}))
  const extensionSources = [config.fastTools, ...(config.fffExtension ? [config.fffExtension] : [])].map(path => ({path: resolve(path), sha256: shaFile(path)}))
@@ -386,6 +438,7 @@ async function benchmark(config: Config, output: string) {
   for (const identity of identities) {
    assert.equal(shaFile(identity.executable), identity.sha256, 'Binary changed during benchmark')
    for (const source of identity.commandFiles) assert.equal(shaFile(source.path), source.sha256, 'Command source changed during benchmark')
+   for (const source of identity.stock?.sources ?? []) assert.equal(shaFile(source.path), source.sha256, 'Stock source changed during benchmark')
   }
   for (const source of [...sources.map(s => ({...s, path: resolve(import.meta.dir, '..', s.path)})), ...extensionSources]) assert.equal(shaFile(source.path), source.sha256, 'Benchmark source changed during run')
   const summary = summarize(samples, config)
@@ -394,19 +447,39 @@ async function benchmark(config: Config, output: string) {
    return {target: target.name, profile: profile.name, scenario: scenario.name, readyMs: distribution(rows.map(r => r.readyMs)), elapsedMs: distribution(rows.map(r => r.elapsedMs)), cpuMicros: distribution(rows.map(r => r.cpuMicros)), stdoutBytes: distribution(rows.map(r => r.stdoutBytes))}
   })
   const targetComparisons = config.targets.slice(1).flatMap(target => {
-   const baselineTarget = config.targets.find(t => t.protocol === target.protocol)!
-   if (baselineTarget === target) return []
-   const before = identities.find(t => t.name === baselineTarget.name)!,
-    after = identities.find(t => t.name === target.name)!
-   if (!before.metadata || !after.metadata || before.metadata.entry !== after.metadata.entry || before.metadata.entrySha256 !== after.metadata.entrySha256) return [{target: target.name, baseline: baselineTarget.name, status: 'not-compared: source equivalence not established'}]
-   return config.scenarios
-    .filter(s => target.protocol !== 'slim' || !s.tools)
-    .map(scenario => {
-     const select = (name: string) => samples.filter(s => !s.warmup && s.target === name && s.scenario === scenario.name && s.profile === 'baseline').sort((a, b) => a.round - b.round)
-     const left = select(before.name),
-      right = select(after.name)
-     const comparison = (get: (s: Sample) => number) => ({baseline: distribution(left.map(get)), candidate: distribution(right.map(get)), speedup: pairedSpeedup(left.map(get), right.map(get))})
-     return {target: target.name, baseline: baselineTarget.name, scenario: scenario.name, status: 'exploratory', spawnToFirstTextMs: comparison(s => s.turns[0].metrics.scalar.spawnToFirstTextMs), elapsedMs: comparison(s => s.elapsedMs)}
+   const baselines = new Set([config.targets.find(t => t.protocol === target.protocol), config.targets.find(t => t.protocol === target.protocol && t.buildMetadata)])
+   return [...baselines]
+    .filter((t): t is Target => !!t && t !== target && config.targets.indexOf(t) < config.targets.indexOf(target))
+    .flatMap(baselineTarget => {
+     const before = identities.find(t => t.name === baselineTarget.name)!,
+      after = identities.find(t => t.name === target.name)!
+     const scope = comparisonScope(before, after, config.packageDir)
+     if (!scope) return [{target: target.name, baseline: baselineTarget.name, status: 'not-compared: source equivalence not established'}]
+     return planned.cells
+      .filter(c => c.target === target && c.profile.name !== 'control')
+      .map(({scenario, profile}) => {
+       const matching = planned.cells.find(c => c.target === baselineTarget && c.scenario === scenario && c.profile.name === profile.name)
+       assert(matching && JSON.stringify(matching.profile.values) === JSON.stringify(profile.values), 'Cross-target profiles differ')
+       const select = (name: string) => samples.filter(s => !s.warmup && s.target === name && s.scenario === scenario.name && s.profile === profile.name).sort((a, b) => a.round - b.round)
+       const left = select(before.name),
+        right = select(after.name)
+       assert.equal(left.length, config.rounds)
+       assert.equal(right.length, config.rounds)
+       const comparison = (get: (s: Sample) => number) => ({baseline: distribution(left.map(get)), candidate: distribution(right.map(get)), speedup: [...left, ...right].every(s => get(s) > 0) ? pairedSpeedup(left.map(get), right.map(get)) : null})
+       return {
+        target: target.name,
+        baseline: baselineTarget.name,
+        profile: profile.name,
+        scenario: scenario.name,
+        status: 'exploratory',
+        scope,
+        readyMs: comparison(s => s.readyMs),
+        cpuMicros: comparison(s => s.cpuMicros),
+        spawnToFirstTextMs: comparison(s => s.turns[0].metrics.scalar.spawnToFirstTextMs),
+        elapsedMs: comparison(s => s.elapsedMs),
+        turns: left[0].turns.map((turn, i) => ({phase: turn.phase, comparisons: Object.fromEntries(['promptToFirstTextMs', 'promptToDoneMs', 'deliveryP95Ms', 'completionTailMs', ...(scenario.tools ? ['toolSpanMs'] : [])].map(field => [field, comparison(s => s.turns[i].metrics.scalar[field])]))}))
+       }
+      })
     })
   })
   const controlWarnings = summary
@@ -452,8 +525,8 @@ async function buildMatrix(packageDir: string, output: string, grid: boolean) {
  assert(!existsSync(output), 'Build directory already exists; use a new path')
  mkdirSync(output, {recursive: true})
  const choices = grid
-  ? Array.from({length: 32}, (_, bits) => ({lazy: !(bits & 1), syntax: !(bits & 2), whitespace: !(bits & 4), identifiers: !(bits & 8), bytecode: !!(bits & 16)}))
-  : [{lazy: true, syntax: true, whitespace: true, identifiers: true, bytecode: false}, ...['lazy', 'syntax', 'whitespace', 'identifiers', 'bytecode'].map(key => ({lazy: true, syntax: true, whitespace: true, identifiers: true, bytecode: false, [key]: key === 'bytecode'}))]
+  ? Array.from({length: 32}, (_, bits) => ({lazy: !(bits & 1), syntax: !(bits & 2), whitespace: !(bits & 4), identifiers: !(bits & 8), bytecode: !(bits & 16)}))
+  : [{lazy: true, syntax: true, whitespace: true, identifiers: true, bytecode: true}, ...['lazy', 'syntax', 'whitespace', 'identifiers', 'bytecode'].map(key => ({lazy: true, syntax: true, whitespace: true, identifiers: true, bytecode: true, [key]: false}))]
  const targets: Target[] = [],
   attempts: any[] = []
  for (const [index, c] of choices.entries()) {
@@ -483,6 +556,30 @@ async function buildMatrix(packageDir: string, output: string, grid: boolean) {
  )
 }
 
+async function stockMatrix(packageDir: string, output: string) {
+ assert(!existsSync(output), 'Build directory already exists; use a new path')
+ const node = Bun.which('node')
+ assert(node, 'Stock comparison requires Node.js')
+ const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8'))
+ const config = defaultConfig()
+ config.packageDir = packageDir
+ config.targets = [{name: 'stock-node', command: [node, join(packageDir, typeof manifest.bin === 'string' ? manifest.bin : manifest.bin.pi)], protocol: 'rpc', stockNode: true}]
+ stockIdentity(config.targets[0], packageDir)
+ mkdirSync(output, {recursive: true})
+ for (const bytecode of [false, true]) {
+  const name = bytecode ? 'tia-bytecode' : 'tia-source',
+   binary = join(output, name),
+   buildMetadata = `${binary}.json`
+  const metadata = await buildPi(packageDir, binary, join(output, 'full-runtime'), 'lazy-jiti', {minify: {syntax: true, whitespace: true, identifiers: true}, bytecode})
+  json(buildMetadata, metadata)
+  config.targets.push({name, command: [binary], protocol: 'rpc', buildMetadata})
+ }
+ config.axes = {fastTools: [false, true], thinking: ['off'], transformCache: ['warm']}
+ config.warmups = 2
+ json(join(output, 'config.json'), config)
+ console.error(`Built same-package targets. Slice one scenario before running: --slice ${join(output, 'config.json')} <new-config.json> fastTools coding`)
+}
+
 export async function main(args = process.argv.slice(2)) {
  const [action, input, output, extra, scenario] = args
  if (args.length > 5) throw new Error('Too many arguments')
@@ -499,6 +596,10 @@ export async function main(args = process.argv.slice(2)) {
   await buildMatrix(resolve(input), resolve(output), extra === 'grid')
   return
  }
+ if (action === '--stock' && input && output && !extra) {
+  await stockMatrix(resolve(input), resolve(output))
+  return
+ }
  if ((action === '--plan' || action === '--run') && input && !extra) {
   const config: Config = JSON.parse(readFileSync(resolve(input), 'utf8'))
   const planned = plan(config)
@@ -511,7 +612,7 @@ export async function main(args = process.argv.slice(2)) {
    return
   }
  }
- throw new Error('Usage: bun run bench:latency --init <config.json> | --slice <config.json> <new-config.json> <axis|baseline> [scenario] | --plan <config.json> | --run <config.json> <new-output-dir> | --build <pi-package-dir> <new-build-dir> [grid]')
+ throw new Error('Usage: bun run bench:latency --init <config.json> | --slice <config.json> <new-config.json> <axis|baseline> [scenario] | --plan <config.json> | --run <config.json> <new-output-dir> | --build <pi-package-dir> <new-build-dir> [grid] | --stock <pi-package-dir> <new-build-dir>')
 }
 
 if (import.meta.main) await main()

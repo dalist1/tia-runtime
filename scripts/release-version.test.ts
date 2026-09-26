@@ -9,6 +9,7 @@ test('release version and optimization marker stay consistent across metadata an
  const marker = read('OPTIMIZATION_VERSION').trim()
  expect(version).toMatch(/^\d+\.\d+\.\d+$/)
  expect(read('RELEASE.md').match(/^## v(.+)$/m)?.[1]).toBe(version)
+ expect(read('scripts/install-tia.sh')).toContain(`TIA_VERSION="${version}"`)
  expect(read('scripts/install-tia.sh')).toContain(`TIA_OPTIMIZATION_VERSION="\${TIA_OPTIMIZATION_VERSION:-${marker}}"`)
  for (const path of ['README.md', 'RELEASE.md', 'BENCHMARKS.md']) {
   expect(read(path)).toContain(`v${version}`)

@@ -1,6 +1,20 @@
 # Benchmarks
 
-Runtime **v0.5.0** · `2026-09-runtime-boundaries-v1`
+Runtime **v0.6.0** · `2026-09-esm-bytecode-v1`
+
+## Stock Pi versus ESM bytecode
+
+Fresh **Pi 0.87.1** results and validation: [stock/bytecode comparison](bench/history/stock-bytecode-v1/README.md). ESM bytecode is **enabled by default** in v0.6.0; use `TIA_PI_BYTECODE=0` to disable it. Tested on Linux with Bun 1.4.3. Startup improves substantially, but warm turns do not consistently improve. The retained benchmark report describes the pre-release opt-in state; [RELEASE.md](RELEASE.md) owns current release/dependency status.
+
+```bash
+# Use an isolated, version-pinned package tree. This does not install over your runtime.
+bun run bench:latency --stock /absolute/path/to/pi-coding-agent results-stock-builds
+bun run bench:latency --slice results-stock-builds/config.json results-stock-coding.json fastTools coding
+bun run bench:latency --plan results-stock-coding.json
+taskset -c 2 bun run bench:latency --run results-stock-coding.json results-stock-coding
+```
+
+Choose an available CPU; `taskset` is Linux-specific. `--stock` builds bytecode off/on from identical inputs and selects the package's published Node bin, not an older unbundled entry or slim substitute. Both tool profiles retain read/write/edit/bash; `fastTools=false` uses stock tools. Resource discovery and persistence remain enabled. Node's compile cache is isolated and warmed; the cold-transform slice resets Jiti only. Node version, published JS hashes, compiled-input fingerprint, companion hash and cache counts are retained. Stock-vs-compiled comparisons explicitly include runtime/entrypoint differences; they are not attributed solely to bytecode.
 
 ## Granular latency
 
@@ -26,7 +40,7 @@ bun run bench:latency --run results-latency/one.json results-latency/one-run
 
 **Cache correction:** `JITI_FS_CACHE` is boolean. Current harnesses isolate through `TMPDIR` and `JITI_RESPECT_TMPDIR_ENV=1`, checking cache files before/after. Historical records are unchanged; earlier directory-valued cache settings did not prove isolation.
 
-## Current screening evidence
+## Earlier parameter screening (Pi 0.85.0)
 
 [Machine-readable index, checksums and validation](bench/history/latency-v1/index.json).
 
@@ -45,10 +59,13 @@ The cache slice confirmed actual cold/warm separation: mean RPC readiness **324 
 | Scope | Variables | Defaults |
 |---|---|---|
 | Build/install | `TIA_PI_MINIFY_SYNTAX`, `TIA_PI_MINIFY_WHITESPACE`, `TIA_PI_MINIFY_IDENTIFIERS` | `1`; each accepts `0`/`1` |
-| Build/install | `TIA_PI_BYTECODE`, `TIA_DISABLE_LAZY_JITI` | `0`; unsupported bytecode builds fail safely |
+| Build/install | `TIA_PI_BYTECODE` | `1`; unsupported compilers fail before binary replacement; set `0` to opt out |
+| Build/install | `TIA_DISABLE_LAZY_JITI` | `0`; set `1` to bundle the transformer |
 | Slim only | `TIA_STREAM_FLUSH` | `microtask`; optional `immediate` |
 | Slim only | `TIA_STREAM_DELTA_CHARS`, `TIA_STREAM_OUTPUT_CHARS` | `96`, `16384`; integers 1–1048576 |
 | Slim only | `TIA_STREAM_CONTROL_DELAY_MS` | `4`; integer 0–100 |
+
+Full-runtime bytecode explicitly preserves **ESM** (including `import.meta`, top-level await and dynamic imports). Bun's implicit CJS bytecode format is not compatible with Pi. Unsupported compilers still fail before binary publication; use `TIA_PI_BYTECODE=0` to opt out. No automatic fallback hides a failed candidate.
 
 Thresholds count UTF-16 code units. Text bypasses the control timer. Verification/backpressure handling stays enabled. Resource removal changes functionality; it is not automatically recommended.
 

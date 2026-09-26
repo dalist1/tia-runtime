@@ -1,10 +1,11 @@
 import {expect, test} from 'bun:test'
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import {buildPi} from '../scripts/build-pi.ts'
 import {defaultConfig, parameters, plan, profiles, shuffle, sliceConfig, validateConfig} from './latency-config.ts'
 import {JsonlReader, metrics, newTurn, textChunks} from './latency-fixture.ts'
+import {comparisonScope, stockIdentity} from './latency.ts'
 
 function config() {
  const c = defaultConfig()
@@ -138,48 +139,74 @@ test('new low-level controls are independently registered rather than hidden in 
  for (const control of ['TIA_STREAM_FLUSH', 'TIA_STREAM_DELTA_CHARS', 'TIA_STREAM_OUTPUT_CHARS', 'TIA_STREAM_CONTROL_DELAY_MS']) expect(Object.values(parameters).some(p => p.control === control && p.values.length > 1)).toBe(true)
 })
 
-test('offline harness validates full coding-tool continuations, cold and warm turns, provenance and paired control', async () => {
- const work = mkdtempSync(join(tmpdir(), 'tia-latency-test-'))
+test('stock identity verifies the published Node entry and rejects substitutions', () => {
+ const work = mkdtempSync(join(tmpdir(), 'tia-stock-identity-'))
  try {
-  const c = config()
-  c.packageDir = resolve('node_modules/@earendil-works/pi-coding-agent')
-  const binary = join(work, 'pi')
-  await buildPi(c.packageDir, binary, join(work, 'full-runtime'))
-  c.targets = [{name: 'compiled-rpc', command: [binary], protocol: 'rpc'}]
-  c.axes = {fastTools: [true, false], transformCache: ['warm', 'cold', 'disabled']}
-  c.scenarios = [{...c.scenarios[1], turns: 2, deltas: 3, cadenceMs: 1, firstDelayMs: 1}]
-  c.timeoutMs = 30000
-  const path = join(work, 'config.json'),
-   output = join(work, 'run')
-  writeFileSync(path, JSON.stringify(c))
-  const child = Bun.spawn([process.execPath, resolve('bench/latency.ts'), '--run', path, output], {stdout: 'pipe', stderr: 'pipe'})
-  const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()])
-  expect(code, stderr).toBe(0)
-  const summary = JSON.parse(readFileSync(join(output, 'summary.json'), 'utf8'))
-  expect(summary.checkedProcesses).toBe(15)
-  expect(summary.checkedPrompts).toBe(30)
-  expect(summary.checkedToolCalls).toBe(120)
-  expect(summary.samplesSha256).toMatch(/^[a-f0-9]{64}$/)
-  expect(summary.summary.some((row: any) => row.phase === 'warm-1')).toBe(true)
-  const samples = readFileSync(join(output, 'samples.jsonl'), 'utf8')
-   .trim()
-   .split('\n')
-   .map(line => JSON.parse(line))
-  expect(samples.every(s => s.turns.every((t: any) => t.trace.requests.length === 2))).toBe(true)
-  for (const sample of samples) {
-   if (sample.cache.mode === 'cold') {
-    expect(sample.cache.beforeFiles).toBe(0)
-    expect(sample.cache.afterFiles).toBeGreaterThan(0)
-   }
-   if (sample.cache.mode === 'disabled') expect(sample.cache.afterFiles).toBe(0)
-   if (sample.cache.mode === 'warm' && !sample.warmup && sample.profile !== 'fastTools=false') expect(sample.cache.beforeFiles).toBeGreaterThan(0)
-  }
-  const request = JSON.parse(samples[0].turns[0].trace.requests[0].body)
-  expect(request.tools.map((tool: any) => tool.name)).toEqual(expect.arrayContaining(['read', 'write', 'edit', 'bash']))
+  mkdirSync(join(work, 'dist/bun'), {recursive: true})
+  writeFileSync(join(work, 'package.json'), JSON.stringify({version: '1.2.3', bin: {pi: 'dist/cli.js'}}))
+  for (const path of ['dist/cli.js', 'dist/bun/cli.js']) writeFileSync(join(work, path), 'console.log("fixture")')
+  const target = {name: 'stock', command: [Bun.which('node')!, join(work, 'dist/cli.js')], protocol: 'rpc' as const, stockNode: true}
+  const stock = stockIdentity(target, work)!
+  expect(stock.version).toBe('1.2.3')
+  expect(stock.sources.length).toBe(2)
+  expect(stock.runtime.version).toMatch(/^v\d+\.\d+\.\d+/)
+  expect(() => stockIdentity({...target, command: [process.execPath, target.command[1]]}, work)).toThrow('must use Node')
+  expect(() => stockIdentity({...target, command: [target.command[0], join(work, 'dist/bun/cli.js')]}, work)).toThrow('published bin')
+  expect(() => stockIdentity({...target, command: [...target.command, '--no-tools']}, work)).toThrow('without wrapper flags')
+  const source = stock.sources.find(s => s.path.endsWith('/bun/cli.js'))!
+  const metadata = {entry: source.path, entrySha256: source.sha256, inputsSha256: 'identical-graph', companion: {sha256: 'jiti'}}
+  expect(comparisonScope({stock}, {metadata}, work)).toContain('runtime, entrypoint and dependency bundling differ')
+  expect(comparisonScope({metadata}, {metadata: {...metadata, options: {bytecode: true}}}, work)).toBe('same build inputs and companion')
+  for (const changes of [{inputsSha256: undefined}, {inputsSha256: 'changed'}, {companion: {sha256: 'changed'}}, {entrySha256: 'changed'}]) expect(comparisonScope({metadata}, {metadata: {...metadata, ...changes}}, work)).toBeUndefined()
+  expect(comparisonScope({}, {metadata}, work)).toBeUndefined()
  } finally {
   rmSync(work, {recursive: true, force: true})
  }
-}, 90000)
+})
+
+for (const bytecode of [false, true])
+ test(`offline harness validates coding continuations, cold/warm caches and turns (bytecode=${bytecode})`, async () => {
+  const work = mkdtempSync(join(tmpdir(), 'tia-latency-test-'))
+  try {
+   const c = config()
+   c.packageDir = resolve('node_modules/@earendil-works/pi-coding-agent')
+   const binary = join(work, 'pi')
+   await buildPi(c.packageDir, binary, join(work, 'full-runtime'), 'lazy-jiti', {minify: {syntax: true, whitespace: true, identifiers: true}, bytecode})
+   c.targets = [{name: 'compiled-rpc', command: [binary], protocol: 'rpc'}]
+   c.axes = {fastTools: [true, false], transformCache: ['warm', 'cold', 'disabled']}
+   c.scenarios = [{...c.scenarios[1], turns: 2, deltas: 3, cadenceMs: 1, firstDelayMs: 1}]
+   c.timeoutMs = 30000
+   const path = join(work, 'config.json'),
+    output = join(work, 'run')
+   writeFileSync(path, JSON.stringify(c))
+   const child = Bun.spawn([process.execPath, resolve('bench/latency.ts'), '--run', path, output], {stdout: 'pipe', stderr: 'pipe'})
+   const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text(), new Response(child.stdout).text()])
+   expect(code, stderr).toBe(0)
+   const summary = JSON.parse(readFileSync(join(output, 'summary.json'), 'utf8'))
+   expect(summary.checkedProcesses).toBe(15)
+   expect(summary.checkedPrompts).toBe(30)
+   expect(summary.checkedToolCalls).toBe(120)
+   expect(summary.samplesSha256).toMatch(/^[a-f0-9]{64}$/)
+   expect(summary.summary.some((row: any) => row.phase === 'warm-1')).toBe(true)
+   const samples = readFileSync(join(output, 'samples.jsonl'), 'utf8')
+    .trim()
+    .split('\n')
+    .map(line => JSON.parse(line))
+   expect(samples.every(s => s.turns.every((t: any) => t.trace.requests.length === 2))).toBe(true)
+   for (const sample of samples) {
+    if (sample.cache.mode === 'cold') {
+     expect(sample.cache.beforeFiles).toBe(0)
+     expect(sample.cache.afterFiles).toBeGreaterThan(0)
+    }
+    if (sample.cache.mode === 'disabled') expect(sample.cache.afterFiles).toBe(0)
+    if (sample.cache.mode === 'warm' && !sample.warmup && sample.profile !== 'fastTools=false') expect(sample.cache.beforeFiles).toBeGreaterThan(0)
+   }
+   const request = JSON.parse(samples[0].turns[0].trace.requests[0].body)
+   expect(request.tools.map((tool: any) => tool.name)).toEqual(expect.arrayContaining(['read', 'write', 'edit', 'bash']))
+  } finally {
+   rmSync(work, {recursive: true, force: true})
+  }
+ }, 90000)
 
 for (const deadline of ['process', 'run'])
  test(`${deadline} budget archives failure without a success summary, leaking credentials, or reusing an output directory`, async () => {

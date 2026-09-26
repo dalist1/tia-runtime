@@ -13,7 +13,7 @@ export function compileOptions(env: Record<string, string | undefined> = process
   if (value !== '0' && value !== '1') throw new Error(`${name} must be 0 or 1`)
   return value === '1'
  }
- return {minify: {syntax: flag('TIA_PI_MINIFY_SYNTAX', true), whitespace: flag('TIA_PI_MINIFY_WHITESPACE', true), identifiers: flag('TIA_PI_MINIFY_IDENTIFIERS', true)}, bytecode: flag('TIA_PI_BYTECODE', false)}
+ return {minify: {syntax: flag('TIA_PI_MINIFY_SYNTAX', true), whitespace: flag('TIA_PI_MINIFY_WHITESPACE', true), identifiers: flag('TIA_PI_MINIFY_IDENTIFIERS', true)}, bytecode: flag('TIA_PI_BYTECODE', true)}
 }
 
 function packageFiles(root: string) {
@@ -82,7 +82,12 @@ function packageRoot(entry: string, name: string) {
 }
 
 export async function smokeBinary(binary: string, packageDir: string, agentDir: string, version: string, timeoutMs = 10000) {
- const child = Bun.spawn([binary, '--version'], {env: {PATH: process.env.PATH ?? '', HOME: agentDir, PI_PACKAGE_DIR: packageDir, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1', PI_NO_PROXY_AUTO_START: '1'}, stdin: 'ignore', stdout: 'pipe', stderr: 'pipe'})
+ const child = Bun.spawn([binary, '--version'], {
+  env: {PATH: process.env.PATH ?? '', HOME: agentDir, PI_PACKAGE_DIR: packageDir, PI_CODING_AGENT_DIR: agentDir, PI_OFFLINE: '1', PI_TELEMETRY: '0', PI_SKIP_VERSION_CHECK: '1', DO_NOT_TRACK: '1', BUN_DISABLE_TELEMETRY: '1', PI_NO_PROXY_AUTO_START: '1'},
+  stdin: 'ignore',
+  stdout: 'pipe',
+  stderr: 'pipe'
+ })
  let timedOut = false
  const timer = setTimeout(() => {
   timedOut = true
@@ -136,7 +141,7 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
  const stage = mkdtempSync(join(dirname(outfile), '.pi-build-'))
  try {
   const binary = join(stage, 'pi')
-  const result = await Bun.build({entrypoints, compile: {outfile: binary}, ...options, metafile: true, plugins})
+  const result = await Bun.build({entrypoints, compile: {outfile: binary}, ...options, format: 'esm', metafile: true, plugins})
   if (!result.success) throw new AggregateError(result.logs, 'Pi compilation failed')
   if (mode === 'lazy-jiti' && matches === 0) throw new Error('Upstream no longer imports jiti/static; use TIA_DISABLE_LAZY_JITI=1 and remeasure before enabling this optimization')
   const agentDir = join(stage, 'agent')
@@ -144,6 +149,11 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
   await smokeBinary(binary, packageDir, agentDir, manifest.version)
   if (companion && filesDigest(packageFiles(companion.directory)) !== companion.sha256) throw new Error('Companion changed during compilation')
   const graph = result.metafile!
+  const inputs = createHash('sha256')
+  for (const path of Object.keys(graph.inputs).sort()) {
+   const bytes = readFileSync(resolve(path))
+   inputs.update(JSON.stringify([resolve(path), bytes.length])).update(bytes)
+  }
   const contributions = new Map<string, number>()
   for (const output of Object.values(graph.outputs)) {
    for (const [input, value] of Object.entries(output.inputs)) {
@@ -154,10 +164,12 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
   const metadata = {
    mode,
    options,
+   format: 'esm',
    piVersion: manifest.version,
    bunVersion: Bun.version,
    entry,
    entrySha256: digest(readFileSync(entry)),
+   inputsSha256: inputs.digest('hex'),
    companion,
    rewrittenImports: matches,
    binaryBytes: statSync(binary).size,

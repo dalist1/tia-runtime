@@ -18,6 +18,7 @@ else
 fi
 INSTALL_BASE_URL="${INSTALL_BASE_URL:-https://raw.githubusercontent.com/dalist1/tia-runtime/main/scripts}"
 RUNTIME_NAME="tia-runtime"
+TIA_VERSION="0.6.0"
 XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
 XDG_BIN_HOME="${XDG_BIN_HOME:-${HOME}/.local/bin}"
 TIA_ROOT="${TIA_ROOT:-${XDG_DATA_HOME}/tia}"
@@ -52,7 +53,7 @@ TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-}"
 if [[ -z "${TIA_OPTIMIZATION_VERSION}" && -f "${ROOT_DIR}/OPTIMIZATION_VERSION" ]]; then
 	TIA_OPTIMIZATION_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/OPTIMIZATION_VERSION")"
 fi
-TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-09-runtime-boundaries-v1}"
+TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION:-2026-09-esm-bytecode-v1}"
 PACKAGE_NAME_PI="@earendil-works/pi-coding-agent"
 PI_RUNTIME_PACKAGE_BASENAMES=(pi-agent-core pi-ai pi-client pi-protocol pi-server pi-telemetry pi-tui pi-coding-agent)
 
@@ -68,9 +69,15 @@ Installs the tia-runtime launcher command so you can run:
 
 Environment:
   TIA_PI_PACKAGE_VERSION
-                  Select a pi package version (default: latest; validated: 0.85.0).
+                  Select a pi package version (default: latest; pin for reproducible builds).
   TIA_DISABLE_LAZY_JITI
                   Set to 1 to keep the full binary's stock bundled transformer.
+  TIA_PI_BYTECODE
+                  ESM bytecode is enabled by default (tested with Bun 1.4.3).
+                  Set to 0 for compilers without ESM bytecode support.
+  TIA_PRESERVE_FAST_TOOLS
+                  Set to 1 to retain an existing locally customized fast-tools.ts.
+                  Unrelated extensions are always preserved.
   TIA_FFF_SOURCE  FFF source: vanilla (npm @ff-labs/pi-fff) or fork (edxeth/fff GitHub).
                   Set to "fork" to use the forked FFF pi-fff extension.
   TIA_PROXY_CHECK_INTERVAL_SECONDS
@@ -350,6 +357,13 @@ install_fff_extension_install() {
 
 install_pi_sandbox() {
 	need_cmd bun
+	case "${TIA_PRESERVE_FAST_TOOLS:-0}" in
+		0) ;;
+		1)
+			[[ -f "${TIA_EXTENSION_PATH}" && ! -L "${TIA_EXTENSION_PATH}" ]] || die "TIA_PRESERVE_FAST_TOOLS=1 requires an existing regular fast-tools.ts"
+			;;
+		*) die "TIA_PRESERVE_FAST_TOOLS must be 0 or 1" ;;
+	esac
 	mkdir -p "$(dirname -- "${TIA_PI_BIN}")" "$(dirname -- "${TIA_EXTENSION_PATH}")"
 	ensure_directory "${TIA_FFF_STATE_DIR}"
 
@@ -394,19 +408,30 @@ install_pi_sandbox() {
 		fi
 	fi
 
+	local pi_ai_dir dependency_resolver
+	dependency_resolver="${TIA_ROOT}/resolve-pi-ai.ts"
+	copy_or_fetch_script_asset "resolve-pi-ai.ts" "${dependency_resolver}"
+	if ! pi_ai_dir="$(bun "${dependency_resolver}" "${pi_package_dir}")"; then
+		rm -f "${dependency_resolver}"
+		die "Pi dependency validation failed before compilation; previous binary preserved."
+	fi
+	rm -f "${dependency_resolver}"
+
 	local pi_builder pi_build_info
 	pi_builder="${TIA_ROOT}/build-pi.ts"
 	copy_or_fetch_script_asset "build-pi.ts" "${pi_builder}"
 	pi_build_info="$(mktemp "${TIA_ROOT}/.pi-build-info.XXXXXX")"
 	if ! bun "${pi_builder}" "${pi_package_dir}" "${TIA_PI_BIN}" "${TIA_ROOT}/full-runtime" > "${pi_build_info}"; then
 		rm -f "${pi_builder}" "${pi_build_info}"
-		die "Pi build failed. Compilation and smoke-check failures preserve the previous binary. Set TIA_DISABLE_LAZY_JITI=1 to use the stock bundled build."
+		die "Pi build failed. Compilation and smoke-check failures preserve the previous binary. Set TIA_PI_BYTECODE=0 for compilers without ESM bytecode support, or TIA_DISABLE_LAZY_JITI=1 to use the stock bundled transformer."
 	fi
 	mv -f "${pi_build_info}" "${TIA_ROOT}/pi-build.json"
 	rm -f "${pi_builder}"
-	rm -rf "${TIA_PI_AGENT_DIR}/extensions"
 	mkdir -p "$(dirname -- "${TIA_EXTENSION_PATH}")"
-	copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
+	if [[ "${TIA_PRESERVE_FAST_TOOLS:-0}" != "1" ]]; then
+		rm -f "${TIA_EXTENSION_PATH}"
+		copy_or_fetch_script_asset "fast-tools-extension.ts" "${TIA_EXTENSION_PATH}"
+	fi
 	local pi_node_modules
 	pi_node_modules="$(dirname -- "$(dirname -- "${pi_package_dir}")")"
 	ln -sfn "${pi_node_modules}" "${TIA_PI_AGENT_DIR}/node_modules"
@@ -416,8 +441,7 @@ install_pi_sandbox() {
 	copy_or_fetch_script_asset "pi-stream-fast.ts" "${TIA_ROOT}/pi-stream-fast.ts"
 	rm -rf "${TIA_PI_STREAM_RUNTIME_DIR}"
 	mkdir -p "${TIA_PI_STREAM_RUNTIME_DIR}"
-	local pi_ai_dir catalog_builder
-	pi_ai_dir="$(dirname -- "${pi_package_dir}")/pi-ai"
+	local catalog_builder
 	[[ -f "${pi_ai_dir}/dist/api/anthropic-messages.js" ]] || die "Could not locate pi-ai stream implementations"
 	[[ -f "${pi_package_dir}/dist/core/model-resolver.js" ]] || die "Could not locate pi default model definitions"
 	catalog_builder="${TIA_ROOT}/build-stream-catalog.ts"
@@ -473,13 +497,14 @@ install_pi_sandbox() {
 	fi
 
 	printf '%s\n' "${pi_package_dir}" > "${TIA_ROOT}/pi-package-dir.txt"
+	printf '%s\n' "${pi_ai_dir}" > "${TIA_ROOT}/pi-ai-package-dir.txt"
 }
 
 write_tia_wrapper() {
 	mkdir -p "${TIA_BIN_DIR}"
-	local installed_pi_version="unknown" full_build_mode="unknown"
+	local installed_pi_version="unknown" full_build_mode="unknown" full_bytecode="unknown"
 	if [[ -f "${TIA_ROOT}/pi-build.json" ]]; then
-		full_build_mode="$(bun -e 'console.log(require(process.argv[1]).mode)' "${TIA_ROOT}/pi-build.json")"
+		read -r full_build_mode full_bytecode <<< "$(bun -e 'const build=require(process.argv[1]); console.log(build.mode, build.options.bytecode ? "enabled" : "disabled")' "${TIA_ROOT}/pi-build.json")"
 	fi
 	if [[ -f "${TIA_ROOT}/pi-package-dir.txt" ]]; then
 		local installed_pi_dir
@@ -497,9 +522,11 @@ TIA_PI_STREAM_BIN="${TIA_PI_STREAM_BIN}"
 TIA_PI_AGENT_DIR="${TIA_PI_AGENT_DIR}"
 TIA_FFF_STATE_DIR="${TIA_FFF_STATE_DIR}"
 TIA_FFF_SOURCE_FILE="${TIA_FFF_SOURCE_FILE}"
+TIA_VERSION="${TIA_VERSION}"
 TIA_OPTIMIZATION_VERSION="${TIA_OPTIMIZATION_VERSION}"
 TIA_PI_VERSION="${installed_pi_version}"
 TIA_FULL_BUILD_MODE="${full_build_mode}"
+TIA_FULL_BYTECODE="${full_bytecode}"
 
 should_use_fast_stream() {
   [[ "\${TIA_DISABLE_FAST_STREAM:-0}" != "1" ]] || return 1
@@ -660,6 +687,7 @@ case "\${subcommand}" in
     exec "\${TIA_PI_BIN}" "\$@"
     ;;
   status)
+    printf '%-22s%s\n' 'tia version:' "\${TIA_VERSION}"
     printf '%-22s%s\n' 'tia root:' "\${TIA_ROOT}"
     if [[ -x "\${TIA_PI_BIN}" ]]; then
       printf '%-22s%s\n' 'tia pi available:' 'yes'
@@ -672,6 +700,7 @@ case "\${subcommand}" in
     printf '%-22s%s\n' 'optimization:' "\${TIA_OPTIMIZATION_VERSION}"
     printf '%-22s%s\n' 'pi version:' "\${TIA_PI_VERSION}"
     printf '%-22s%s\n' 'full pi build:' "\${TIA_FULL_BUILD_MODE}"
+    printf '%-22s%s\n' 'ESM bytecode:' "\${TIA_FULL_BYTECODE}"
     printf '%-22s%s\n' 'shell pi agent:' "\${PI_CODING_AGENT_DIR:-\${HOME}/.pi/agent}"
     printf '%-22s%s\n' 'history mode:' 'unchanged by tia pi startup'
     printf '%-22s%s\n' 'cliproxy auto-start:' 'enabled for tia pi when systemd user services are available'
@@ -720,6 +749,7 @@ uninstall_all() {
 }
 
 status_all() {
+	printf 'tia version:         %s\n' "${TIA_VERSION}"
 	printf '%s command: %s\n' "${RUNTIME_NAME}" "${TIA_CMD_PATH}"
 	[[ -x "${TIA_CMD_PATH}" ]] && printf '%s installed: yes\n' "${RUNTIME_NAME}" || printf '%s installed: no\n' "${RUNTIME_NAME}"
 	printf '%s root: %s\n' "${RUNTIME_NAME}" "${TIA_ROOT}"

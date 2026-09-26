@@ -20,6 +20,7 @@ run_with_optional_timeout() {
 }
 assert_clean_toolkit() {
 	local agent_dir="$1"
+	local preserved_extension="${2:-}"
 	[[ -f "${agent_dir}/extensions/fast-tools.ts" ]]
 	[[ -f "${agent_dir}/extensions/fff/index.ts" || ! -d "${agent_dir}/extensions/fff" ]]
 	local entry
@@ -28,7 +29,7 @@ assert_clean_toolkit() {
 		fast-tools.ts|fff)
 			;;
 		*)
-			return 1
+			[[ "$(basename -- "${entry}")" == "${preserved_extension}" ]] || return 1
 			;;
 		esac
 	done < <(find "${agent_dir}/extensions" -mindepth 1 -maxdepth 1)
@@ -67,8 +68,13 @@ const fs=require("node:fs"),{createHash}=require("node:crypto"),assert=require("
 const root=process.argv[1],meta=JSON.parse(fs.readFileSync(root+"/pi-build.json","utf8"));
 const expected=process.env.TIA_DISABLE_LAZY_JITI==="1"?"bundled":"lazy-jiti";
 assert.equal(meta.mode,expected,"Unexpected full-runtime build mode");
+assert.equal(meta.format,"esm","Full runtime must retain ESM semantics");
+assert.equal(meta.options.bytecode,process.env.TIA_PI_BYTECODE!=="0","Unexpected bytecode build setting");
 assert.equal(createHash("sha256").update(fs.readFileSync(root+"/bin/pi")).digest("hex"),meta.binarySha256,"Installed binary does not match build metadata");
 if(expected==="lazy-jiti")assert(fs.existsSync(meta.companion.entry),"Missing Jiti companion");
+const pkg=fs.readFileSync(root+"/pi-package-dir.txt","utf8").trim(), ai=fs.readFileSync(root+"/pi-ai-package-dir.txt","utf8").trim();
+assert.equal(fs.realpathSync(Bun.resolveSync("@earendil-works/pi-ai",pkg)),fs.realpathSync(Bun.resolveSync("@earendil-works/pi-ai",ai)),"Slim dependency differs from the full runtime");
+assert.equal(JSON.parse(fs.readFileSync(ai+"/package.json","utf8")).version,meta.piVersion,"Unsynchronized pi-ai dependency");
 ' "${HOME}/.local/share/tia"
 EXPECTED_PI_VERSION="${TIA_PI_PACKAGE_VERSION:-latest}"
 if [[ "${EXPECTED_PI_VERSION}" == "latest" ]]; then
@@ -159,11 +165,13 @@ bun -e 'const fs=require("node:fs"); const lines=fs.readFileSync(process.argv[1]
 
 STREAM_AGENT_DIR="${TMP_DIR}/stream-agent"
 mkdir -p "${STREAM_AGENT_DIR}"
+DEFAULT_MODELS="${HOME}/.local/share/tia/stream-runtime/default-models.json"
+ANTHROPIC_DEFAULT="$(bun -e 'console.log(require(process.argv[1]).anthropic)' "${DEFAULT_MODELS}")"
 env -i HOME="${HOME}" PATH="${PATH}" ANTHROPIC_API_KEY=dummy PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
 	tia pi --mode json --no-session --provider anthropic > "${TMP_DIR}/tia-stream-provider.jsonl"
 env -i HOME="${HOME}" PATH="${PATH}" ANTHROPIC_API_KEY=dummy PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
-	tia pi --mode json --no-session --model claude-opus-4-8 > "${TMP_DIR}/tia-stream-model.jsonl"
-bun -e 'for (const path of process.argv.slice(1)) { const event=JSON.parse(require("node:fs").readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== "anthropic" || event.model !== "claude-opus-4-8") process.exit(1); }' \
+	tia pi --mode json --no-session --model "${ANTHROPIC_DEFAULT}" > "${TMP_DIR}/tia-stream-model.jsonl"
+bun -e 'const model=process.argv[1]; for (const path of process.argv.slice(2)) { const event=JSON.parse(require("node:fs").readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== "anthropic" || event.model !== model) process.exit(1); }' "${ANTHROPIC_DEFAULT}" \
 	"${TMP_DIR}/tia-stream-provider.jsonl" "${TMP_DIR}/tia-stream-model.jsonl"
 env -i HOME="${HOME}" PATH="${PATH}" XAI_API_KEY=dummy PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
 	tia pi --mode json --no-session --provider xai > "${TMP_DIR}/tia-stream-xai.jsonl"
@@ -172,8 +180,8 @@ env -i HOME="${HOME}" PATH="${PATH}" ANTHROPIC_API_KEY=dummy XAI_API_KEY=dummy P
 printf '%s\n' '{"providers":{"local-fast":{"baseUrl":"http://127.0.0.1:11434/v1","api":"openai-completions","apiKey":"local","models":[{"id":"local-model"}]}}}' > "${STREAM_AGENT_DIR}/models.json"
 env -i HOME="${HOME}" PATH="${PATH}" PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
 	tia pi --mode json --no-session --provider local-fast > "${TMP_DIR}/tia-stream-custom.jsonl"
-bun -e 'const fs=require("node:fs"); const checks=[[process.argv[1],"xai","grok-4.6"],[process.argv[2],"anthropic","claude-opus-4-8"],[process.argv[3],"local-fast","local-model"]]; for (const [path,provider,model] of checks) { const event=JSON.parse(fs.readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== provider || event.model !== model) process.exit(1); }' \
-	"${TMP_DIR}/tia-stream-xai.jsonl" "${TMP_DIR}/tia-stream-auth-fallback.jsonl" "${TMP_DIR}/tia-stream-custom.jsonl"
+bun -e 'const fs=require("node:fs"), defaults=require(process.argv[4]); const checks=[[process.argv[1],"xai",defaults.xai],[process.argv[2],"anthropic",defaults.anthropic],[process.argv[3],"local-fast","local-model"]]; for (const [path,provider,model] of checks) { const event=JSON.parse(fs.readFileSync(path,"utf8").trim()); if (event.t !== "session" || event.provider !== provider || event.model !== model) process.exit(1); }' \
+	"${TMP_DIR}/tia-stream-xai.jsonl" "${TMP_DIR}/tia-stream-auth-fallback.jsonl" "${TMP_DIR}/tia-stream-custom.jsonl" "${DEFAULT_MODELS}"
 LOOPBACK_READY="${TMP_DIR}/loopback.port"
 bun "${ROOT_DIR}/bench/anthropic-loopback-server.ts" "${LOOPBACK_READY}" >"${TMP_DIR}/loopback-server.log" 2>&1 &
 LOOPBACK_PID="$!"
@@ -186,7 +194,7 @@ done
 LOOPBACK_PORT="$(tr -d '[:space:]' < "${LOOPBACK_READY}")"
 printf '%s\n' "{\"providers\":{\"anthropic\":{\"baseUrl\":\"http://127.0.0.1:${LOOPBACK_PORT}\",\"apiKey\":\"dummy\"}}}" > "${STREAM_AGENT_DIR}/models.json"
 run_with_optional_timeout env -i HOME="${HOME}" PATH="${PATH}" PI_NO_PROXY_AUTO_START=1 PI_CODING_AGENT_DIR="${STREAM_AGENT_DIR}" \
-	tia pi --mode json --no-session --provider anthropic --model claude-opus-4-8 loopback > "${TMP_DIR}/tia-stream-loopback.jsonl"
+	tia pi --mode json --no-session --provider anthropic --model "${ANTHROPIC_DEFAULT}" loopback > "${TMP_DIR}/tia-stream-loopback.jsonl"
 kill "${LOOPBACK_PID}" >/dev/null 2>&1 || true
 wait "${LOOPBACK_PID}" 2>/dev/null || true
 LOOPBACK_PID=""
@@ -204,6 +212,9 @@ BOOTSTRAP_HOME="${TMP_DIR}/bootstrap-home"
 BOOTSTRAP_BIN_HOME="${BOOTSTRAP_HOME}/bin"
 BOOTSTRAP_DATA_HOME="${BOOTSTRAP_HOME}/share"
 mkdir -p "${TMP_DIR}/bootstrap-cwd" "${BOOTSTRAP_DATA_HOME}/tia/pi-agent"
+mkdir -p "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/extensions"
+printf 'export default function () {}\n' > "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/extensions/user-kept.ts"
+printf 'export default function () { void "local-fast-tools"; }\n' > "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/extensions/fast-tools.ts"
 ln -s "${TMP_DIR}/missing-fff-state" "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff"
 (
 	cd "${TMP_DIR}/bootstrap-cwd"
@@ -213,6 +224,7 @@ ln -s "${TMP_DIR}/missing-fff-state" "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff"
 	XDG_DATA_HOME="${BOOTSTRAP_DATA_HOME}" \
 	INSTALL_BASE_URL="$(bun -e 'const { pathToFileURL } = require("node:url"); console.log(pathToFileURL(process.argv[1]).href)' "${ROOT_DIR}/scripts")" \
 	PI_PACKAGE_DIR="${HOST_PI_PACKAGE_DIR}" \
+	TIA_PRESERVE_FAST_TOOLS=1 \
 	TIA_ENABLE_FFF=0 \
 	bash -s -- tia install > "${TMP_DIR}/bootstrap-install.txt" 2>&1
 )
@@ -228,9 +240,9 @@ rm -rf "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff"
 ln -s "${TMP_DIR}/missing-fff-state" "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff"
 HOME="${BOOTSTRAP_HOME}" PI_NO_PROXY_AUTO_START=1 "${BOOTSTRAP_BIN_HOME}/tia" pi --version >/dev/null
 [[ -d "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff" && ! -L "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/fff" ]]
-assert_clean_toolkit "${BOOTSTRAP_DATA_HOME}/tia/pi-agent"
+[[ "$(cat "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/extensions/user-kept.ts")" == 'export default function () {}' ]]
+[[ "$(cat "${BOOTSTRAP_DATA_HOME}/tia/pi-agent/extensions/fast-tools.ts")" == 'export default function () { void "local-fast-tools"; }' ]]
+assert_clean_toolkit "${BOOTSTRAP_DATA_HOME}/tia/pi-agent" user-kept.ts
 [[ ! -e "${BOOTSTRAP_BIN_HOME}/max" ]]
-
-bash "${ROOT_DIR}/bench/cleanup-processes.sh" >/dev/null
 
 printf 'All runtime tests passed.\n'

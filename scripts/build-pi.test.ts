@@ -5,7 +5,8 @@ import {join} from 'node:path'
 import {buildPi, compileOptions, smokeBinary, snapshotPackage} from './build-pi.ts'
 
 test('build controls are independent and reject ambiguous environment values', () => {
- expect(compileOptions({})).toEqual({minify: {syntax: true, whitespace: true, identifiers: true}, bytecode: false})
+ expect(compileOptions({})).toEqual({minify: {syntax: true, whitespace: true, identifiers: true}, bytecode: true})
+ expect(compileOptions({TIA_PI_BYTECODE: '0'}).bytecode).toBe(false)
  for (const name of ['TIA_PI_MINIFY_SYNTAX', 'TIA_PI_MINIFY_WHITESPACE', 'TIA_PI_MINIFY_IDENTIFIERS', 'TIA_PI_BYTECODE']) expect(() => compileOptions({[name]: 'yes'})).toThrow('0 or 1')
  expect(compileOptions({TIA_PI_MINIFY_IDENTIFIERS: '0', TIA_PI_BYTECODE: '1'})).toEqual({minify: {syntax: true, whitespace: true, identifiers: false}, bytecode: true})
 })
@@ -38,6 +39,8 @@ test('lazy build snapshots its dependency and keeps old binaries usable after so
  const f = fixture()
  try {
   const first = await buildPi(f.pkg, f.output, f.runtime)
+  expect(first.options.bytecode).toBe(true)
+  expect(first.format).toBe('esm')
   expect(first.rewrittenImports).toBe(1)
   expect(first.companion?.version).toBe('2.7.0')
   expect(await outputOf(f.output)).toBe('fixture')
@@ -115,6 +118,27 @@ test('non-minified build controls retain smoke validation and record effective c
   f.cleanup()
  }
 }, 30000)
+
+for (const bytecode of [false, true])
+ test(`ESM build preserves import.meta, top-level await and dynamic imports (bytecode=${bytecode})`, async () => {
+  const f = fixture()
+  try {
+   writeFileSync(join(f.pkg, 'dist/bun/lazy.js'), 'export const value = await Promise.resolve("loaded");')
+   writeFileSync(
+    f.entry,
+    `import {createJiti} from "jiti/static";
+const lazy = await import("./lazy.js");
+if (!import.meta.url.startsWith("file:") || lazy.value !== "loaded") throw new Error("Invalid ESM runtime");
+console.log(process.argv.includes("--version") ? "9.8.7" : createJiti() + ":" + lazy.value);`
+   )
+   const result = await buildPi(f.pkg, f.output, f.runtime, 'lazy-jiti', {...compileOptions({}), bytecode})
+   expect(result.format).toBe('esm')
+   expect(result.options.bytecode).toBe(bytecode)
+   expect(await outputOf(f.output)).toBe('fixture:loaded')
+  } finally {
+   f.cleanup()
+  }
+ }, 30000)
 
 test('compiled smoke check kills a hung child on its deadline', async () => {
  const f = fixture()
