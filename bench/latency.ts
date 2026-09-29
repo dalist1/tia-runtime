@@ -60,7 +60,8 @@ export function comparisonScope(before: {metadata?: any; stock?: ReturnType<type
   before.metadata.entrySha256 === after.metadata.entrySha256 &&
   before.metadata.inputsSha256 &&
   before.metadata.inputsSha256 === after.metadata.inputsSha256 &&
-  before.metadata.companion?.sha256 === after.metadata.companion?.sha256
+  before.metadata.companion?.sha256 === after.metadata.companion?.sha256 &&
+  JSON.stringify(before.metadata.sourceTransforms ?? []) === JSON.stringify(after.metadata.sourceTransforms ?? [])
  )
   return 'same build inputs and companion'
  return undefined

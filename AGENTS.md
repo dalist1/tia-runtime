@@ -14,9 +14,13 @@ Validation for runtime/install/streaming/tool changes:
 bash -n install.sh scripts/install-tia.sh test.sh
 bun run format
 bun run lint
+bun run typecheck
 bun test
-bash test.sh
+bash test.sh                                   # disposable HOME only
+bun run test:faults results-faults/<new-dir>   # installer/transaction/store changes
 ```
+
+Never validate against the live `~/.local/share/tia` root; upgrading it is a separate, explicitly approved step.
 
 <!-- tia-runtime-guidance:start -->
 ## Pi / tia usage guidance

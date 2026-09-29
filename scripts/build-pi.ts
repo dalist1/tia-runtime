@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto'
 import {existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync} from 'node:fs'
 import {dirname, join, relative, resolve} from 'node:path'
+import {isolateResourceSource} from './runtime-resources.ts'
 
 const digest = (data: Buffer | string) => createHash('sha256').update(data).digest('hex')
 
@@ -101,7 +102,7 @@ export async function smokeBinary(binary: string, packageDir: string, agentDir: 
  }
 }
 
-export async function buildPi(packageDirArg: string, outfileArg: string, runtimeDirArg: string, mode: 'lazy-jiti' | 'bundled' = 'lazy-jiti', options = compileOptions({})) {
+export async function buildPi(packageDirArg: string, outfileArg: string, runtimeDirArg: string, mode: 'lazy-jiti' | 'bundled' = 'lazy-jiti', options = compileOptions({}), isolateResources = false) {
  const packageDir = realpathSync(packageDirArg)
  const outfile = resolve(outfileArg)
  const runtimeDir = resolve(runtimeDirArg)
@@ -115,6 +116,20 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
  let companion: {directory: string; sha256: string; version: string; entry: string} | undefined
  let matches = 0
  const plugins: Bun.BunPlugin[] = []
+ const sourceTransforms: {path: string; sha256: string}[] = []
+ if (isolateResources)
+  plugins.push({
+   name: 'tia-generation-resources',
+   setup(build) {
+    build.onLoad({filter: /(?:package-manager|loader)\.js$/}, args => {
+     const kind = args.path === join(packageDir, 'dist/core/package-manager.js') ? 'packages' : args.path === join(packageDir, 'dist/core/extensions/loader.js') ? 'loader' : undefined
+     if (!kind) return undefined
+     const contents = isolateResourceSource(readFileSync(args.path, 'utf8'), kind)
+     sourceTransforms.push({path: args.path, sha256: digest(contents)})
+     return {contents, loader: 'js'}
+    })
+   }
+  })
  if (mode === 'lazy-jiti') {
   const standardEntry = Bun.resolveSync('jiti', packageDir)
   const staticEntry = Bun.resolveSync('jiti/static', packageDir)
@@ -143,6 +158,7 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
   const binary = join(stage, 'pi')
   const result = await Bun.build({entrypoints, compile: {outfile: binary}, ...options, format: 'esm', metafile: true, plugins})
   if (!result.success) throw new AggregateError(result.logs, 'Pi compilation failed')
+  if (isolateResources && sourceTransforms.length !== 2) throw new Error('Upstream resource discovery boundary changed; refusing a non-isolated runtime')
   if (mode === 'lazy-jiti' && matches === 0) throw new Error('Upstream no longer imports jiti/static; use TIA_DISABLE_LAZY_JITI=1 and remeasure before enabling this optimization')
   const agentDir = join(stage, 'agent')
   mkdirSync(agentDir)
@@ -165,6 +181,7 @@ export async function buildPi(packageDirArg: string, outfileArg: string, runtime
    mode,
    options,
    format: 'esm',
+   sourceTransforms: sourceTransforms.sort((a, b) => a.path.localeCompare(b.path)),
    piVersion: manifest.version,
    bunVersion: Bun.version,
    entry,

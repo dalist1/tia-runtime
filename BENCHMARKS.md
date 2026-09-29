@@ -1,6 +1,6 @@
 # Benchmarks
 
-Runtime **v0.6.0** · `2026-09-esm-bytecode-v1`
+Runtime **v0.7.0** · `2026-09-atomic-runtime-v1`
 
 ## Stock Pi versus ESM bytecode
 

@@ -1,5 +1,20 @@
 # Release
 
+## v0.7.0
+
+Optimization marker: `2026-09-atomic-runtime-v1`.
+
+- **Atomic runtime generations.** `install` builds a private, sealed generation (synchronized Pi package set, FFF closure from a recorded lockfile, stream catalogs, native helpers, launcher and an extension snapshot), validates the sealed tree through its own launcher, then switches one `current` pointer by atomic rename. Any failure before the switch leaves the previous runtime selected and its files untouched; post-commit verification failures are reported as committed with the previous activation retained. [Contract and status](ATOMIC-UPGRADE-PLAN.md).
+- New commands: `tia rollback`, `tia verify`, `tia generations`, `tia recover`, `tia prune [--apply]`. `uninstall` now deactivates (tombstone activation) instead of deleting the runtime root; `tia rollback` reactivates.
+- Upgrading a v0.6.0 install retains the old launcher byte-for-byte as a rollback target. Sessions, credentials, settings and FFF databases are shared and never rolled back.
+- A `fast-tools.ts` that matches no TIA-shipped version is no longer overwritten by default: install stops until `TIA_PRESERVE_FAST_TOOLS=1` (keep) or `=0` (replace) is chosen. A choice to preserve is remembered for the same file hash.
+- **TIA stays in sync with Pi.** Unpinned installs build the host Pi version, and a host Pi update triggers one background transactional sync on the next launch (`tia sync` to run it now, `TIA_AUTO_SYNC=0` to opt out). Full and slim modes now read the same TIA agent configuration.
+- Without a host Pi, "latest" resolves by publish date across all registry channels, not the `latest` dist-tag. FFF keeps the currently installed version unless overridden; FFF install failures now stop the install instead of silently disabling FFF.
+- Credential links in `pi-agent/` still follow the shell agent directory, but user-owned regular files are no longer replaced or deleted.
+- `test.sh` now runs entirely in a disposable HOME.
+
+[Validation evidence](bench/history/atomic-runtime-v1/README.md). The maintainer's live runtime was upgraded on 2026-09-29 (Pi 0.99.1, rollback targets retained). The human review gate is still open (see the plan's implementation status).
+
 ## v0.6.0
 
 Optimization marker: `2026-09-esm-bytecode-v1`.

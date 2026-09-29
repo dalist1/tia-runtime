@@ -1,0 +1,134 @@
+{
+ "schemaVersion": 1,
+ "recordedAt": "2026-09-29T19:38:16.355Z",
+ "version": "0.7.0",
+ "optimization": "2026-09-atomic-runtime-v1",
+ "baseCommit": "035d2d7871c1d3a7093b25e28986269fc4ba1c31",
+ "bun": "1.4.3",
+ "checks": {
+  "shellSyntax": "passed",
+  "runtimeAssets": "passed",
+  "format": "passed",
+  "lint": "passed",
+  "typecheck": "passed"
+ },
+ "unitTests": {
+  "passed": 151,
+  "failed": 0,
+  "assertions": 3264,
+  "files": 16
+ },
+ "integration": {
+  "stagesPassed": 14,
+  "passed": true
+ },
+ "faultMatrix": {
+  "injectedFailures": 36,
+  "modes": [
+   "inputs",
+   "SIGKILL",
+   "throw"
+  ],
+  "pins": {
+   "TIA_PI_PACKAGE_VERSION": "0.87.1",
+   "TIA_FFF_PACKAGE_VERSION": "0.10.7-nightly.c3f2c7f"
+  },
+  "allContained": true
+ },
+ "fixtureCrashes": {
+  "phases": 16,
+  "modes": [
+   "throw",
+   "SIGTERM",
+   "SIGKILL"
+  ],
+  "total": 48
+ },
+ "scope": "Disposable HOME/roots on ext4 (Linux x64), loopback providers, dummy credentials; Pi 0.87.1 (matrix/integration pins), 0.99.1 (latest-by-date upgrade), 0.85.0 legacy fixture; FFF 0.10.7-nightly.c3f2c7f. Validation used disposable roots only; the live runtime was upgraded afterwards (see live).",
+ "sources": [
+  {
+   "path": "scripts/install-tia.sh",
+   "sha256": "8ffebf8d73c356e0a20b6802e63491cb350829a3381a12e3481a5f0a4402cc5b"
+  },
+  {
+   "path": "scripts/runtime-assets.json",
+   "sha256": "4537372646932a01a4bd22ca8a244c1e90859eaac51b48ecee6e1543f83120b2"
+  },
+  {
+   "path": "scripts/runtime-store.ts",
+   "sha256": "4bd3f1177c4de12b32979d3966f196875852da0b918f7881fb6e00f6ed3bd0fd"
+  },
+  {
+   "path": "scripts/runtime-build.ts",
+   "sha256": "2abf689dbf2db8540719893a62516930af26bd89f025a99fb96261c2f3e93ae8"
+  },
+  {
+   "path": "scripts/runtime-manager.ts",
+   "sha256": "1a286334a1d2ad841268f033e66ae0b4194c93afd5f3ec690302871f2bfe559d"
+  },
+  {
+   "path": "scripts/runtime-control.ts",
+   "sha256": "200211f9901c9fb20252797da84abfc19fbaf5fa676acfa0861ffdb258729a1c"
+  },
+  {
+   "path": "scripts/runtime-smoke.ts",
+   "sha256": "922ee35ffdb872000964bb387ff3d6062137b0345d8370868567e4b88d69c905"
+  },
+  {
+   "path": "scripts/runtime-launch.sh",
+   "sha256": "9c0479d7e6168b20bd8c30ccaedf202b50695aa1204d583e173b041d4adab194"
+  },
+  {
+   "path": "scripts/runtime-resources.ts",
+   "sha256": "efbaf33506b02888d2bbc7652d8ccfb3147f4d078331e2a68dfae155fafeeef3"
+  },
+  {
+   "path": "scripts/runtime-bootstrap.ts",
+   "sha256": "2b1a835398e02e6feba1b609e0508d4814bb4c7b47c16cd616627401f1b91875"
+  },
+  {
+   "path": "scripts/build-pi.ts",
+   "sha256": "0af4585aa7e681fd68c18a48260c732237979772c4437b566df9bfeb9f24b4e9"
+  },
+  {
+   "path": "scripts/runtime-fixture.ts",
+   "sha256": "5e6d022e4c86790075da22bba7151c1891d1ec9f0f50266bded31d2b2e4dd952"
+  },
+  {
+   "path": "scripts/runtime-transaction.test.ts",
+   "sha256": "905c57eac31a2d7c3ffe7d33e7d40da1588216b98226b5440e39a0c512e9b6fb"
+  },
+  {
+   "path": "scripts/runtime-launch.test.ts",
+   "sha256": "7947f3c3a2e0704d476e61409e9e52f96d3605ec74dbc9f58f8eb6980e07dfeb"
+  },
+  {
+   "path": "scripts/runtime-fault-matrix.ts",
+   "sha256": "188bebfc185d8c6f9a87d915619849142fb01931221a9603691d674ea62c3a09"
+  },
+  {
+   "path": "test.sh",
+   "sha256": "6d266dd35ccc130e469d0b95ba64820984514f1555659fa884a654e4582e16c7"
+  }
+ ],
+ "hostSync": {
+  "unit": "launcher/selection tests",
+  "integration": "stage 14: host 0.87.1 -> 0.99.1 synchronized by one launch"
+ },
+ "live": {
+  "date": "2026-09-29",
+  "generation": "485b768a-0124-4586-bd16-e2140e2eba16",
+  "activation": "4b5da46d-ae60-479c-a5fc-0dfa585981b7",
+  "pi": "0.99.1",
+  "piSource": "host",
+  "fff": "0.10.7-nightly.c3f2c7f",
+  "fastToolsPreservedSha256": "6a0f0e687aaccc4e9d40b9d49b5913d94e30207ca2b08626b0afef82c61ff487",
+  "userStateUnchanged": true,
+  "slimDefault": "openai-codex/gpt-6.1-sol",
+  "fullListsGpt61Sol": true,
+  "rollbackTargets": [
+   "24fb0009-0368-4a85-8d5e-da44bcd64e4b",
+   "20bf355b-b370-4a99-80e1-b175b895aec4 (v0.6.0 launcher)"
+  ]
+ }
+}
