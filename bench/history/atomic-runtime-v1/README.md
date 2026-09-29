@@ -1,6 +1,6 @@
 # Atomic runtime generations — validation (v0.7.0)
 
-Offline acceptance evidence for [ATOMIC-UPGRADE-PLAN.md](../../../ATOMIC-UPGRADE-PLAN.md#implementation-status), recorded 2026-09-29 on Linux x64 (ext4) with Bun 1.4.3. Every validation run used disposable HOMEs/roots, loopback providers and dummy credentials. The live runtime was upgraded afterwards; that record is at the end of this page.
+Offline acceptance evidence for [ATOMIC-UPGRADE-PLAN.md](../../../ATOMIC-UPGRADE-PLAN.md#implementation-status), recorded 2026-09-29 on Linux x64 (ext4) with Bun 1.4.3. Every validation run used disposable HOMEs/roots, loopback providers and dummy credentials. Machine-local deployment records are retained privately.
 
 | Gate | Result |
 | --- | --- |
@@ -16,8 +16,6 @@ Offline acceptance evidence for [ATOMIC-UPGRADE-PLAN.md](../../../ATOMIC-UPGRADE
 
 **Host Pi sync** (stage 14, [receipts](host-sync-receipts.tar.gz)): a root installed against a host Pi manifest at 0.87.1 was left running while the manifest was bumped to 0.99.1. One ordinary `tia pi` launch still ran 0.87.1 and started a background transaction. The next launch ran a verified 0.99.1 generation. `tia sync` then reported "already matches", and rollback with `TIA_AUTO_SYNC=0` stayed on 0.87.1.
 
-**Live upgrade (2026-09-29):** generation `485b768a…` (Pi 0.99.1 from the host, FFF 0.10.7-nightly.c3f2c7f, preserved `fast-tools.ts` 6a0f0e68…). User settings, models, trust and `fast-tools.ts` hashes were unchanged, and `tia verify` passed. Slim mode defaulted to `openai-codex/gpt-6.1-sol`, and full-mode `--list-models` included it. The installer output is in the receipts archive.
-
 Not covered: the human review gate, cross-filesystem/rename denial, fsync failure injection, power loss, other filesystems and platforms. The status record in the plan owns these.
 
-[`release-validation.json`](release-validation.json) pins the source hashes for these runs. Bulky disposable roots (sealed generations, about 6.5 GB) were deleted after the runs; transaction logs and matrix rows were retained locally under the gitignored `results-atomic-v2/`.
+The original source-hash receipt is retained privately, byte-for-byte, alongside deployment records. These results describe the recorded release, not subsequent source changes. Bulky disposable roots (sealed generations, about 6.5 GB) were deleted after the runs; transaction logs and matrix rows were retained locally under the gitignored `results-atomic-v2/`.

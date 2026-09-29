@@ -15,11 +15,12 @@
   "resolve-pi-ai.ts": "fbc051d495a2de0366e1983a7b5dec23ec3460f2897d9c688b7f27b3ef67f7e2",
   "build-stream-catalog.ts": "f5d6d9b11b3a1b943494dcd31aa1a62b1312b5d688adc7d23f391c909b33cba2",
   "pi-stream-fast.ts": "977d94d8352c60651a628a1c3846f9338cee23d08802fd194b783b7f513d3e33",
-  "fast-tools-extension.ts": "6833dfd32b1a870fb64872f2a5750b63e5fdcb1aaa95d84710b1e283aad9e9dc",
+  "fast-tools-extension.ts": "2c96fba9a536f2fe7f1ea750194e057e7dfe2d9f5d1aa45391ed2ca6a40aec9c",
   "fastcopy.c": "92431984b343cd7a15525b7230a98778aa427ecb4e9ead50813b89cd3614d21d",
   "fastdrain.c": "68ef1b18f129034c5cbfab31065c4c4fc6ab5cc9ecfce2e6a9134131e5c3a608"
  },
  "shippedFastTools": [
+  "2c96fba9a536f2fe7f1ea750194e057e7dfe2d9f5d1aa45391ed2ca6a40aec9c",
   "4a6d8679b24305c11c657a71eeeda3aca1ee917fbb76960995b6b39587fdfc13",
   "53274df8f66c83e5d5e110942b267c47ee3c13461a91633d1cd26720d8c150fb",
   "566a613c0be3cb3cf555527397e151e5ed7c5e0cd9b47ce06eb7f60c389079c1",

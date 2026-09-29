@@ -22,6 +22,11 @@ bun run test:faults results-faults/<new-dir>   # installer/transaction/store cha
 
 Never validate against the live `~/.local/share/tia` root; upgrading it is a separate, explicitly approved step.
 
+## Upstream behavior and local configuration
+
+- Preserve Pi's original model-selector UI and configured provider catalog. Shipped tool extensions must not filter providers or remap model selections.
+- Keep machine-local settings, extensions, instructions and deployment receipts outside the repository. Do not include them in commits, release notes, fixtures or published artifacts.
+
 <!-- tia-runtime-guidance:start -->
 ## Pi / tia usage guidance
 

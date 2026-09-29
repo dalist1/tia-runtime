@@ -1,6 +1,6 @@
 # Atomic runtime upgrade plan
 
-**Status:** implemented, offline-validated in disposable roots, and **applied to the live runtime on 2026-09-29** (see [Implementation status](#implementation-status)). The human review gate is still open. This plan remains the acceptance contract for v0.7.0.
+**Status:** implemented and offline-validated in disposable roots (see [Implementation status](#implementation-status)). Machine-local deployment records are retained privately. The human review gate is still open. This plan remains the acceptance contract for v0.7.0.
 
 ## Goal and guarantee
 
@@ -28,7 +28,7 @@ Use same-filesystem staging under `generations/`. Validate every destination aga
 
 Persisted Pi state survives upgrades and rollback. `auth.json`, settings, models, keybindings, trust, sessions, session directories, FFF search/history databases, and shell-owned settings retain their current paths and bytes. Generation-specific transient data must not be shared across generations in a way that can mix code. Sealed generations are read-only, so runtime caches cannot live inside them: package-manager temp data exists only during staging, and Jiti's transform cache (`$TMPDIR/jiti`) keys each entry by the absolute source path and validates it against a source hash, so generation-private extension paths already keep entries generation-specific. Keep native helpers, `NODE_PATH`, Pi package/assets, slim catalogs/chunks, and bundled extension dependencies generation-specific.
 
-Preserve the installed custom `copilot-labeled-codex.ts` and other user extensions. Preserve a customized `fast-tools.ts` by default only when its origin/hash is known to be user-owned; otherwise present a fail-closed choice or require `TIA_PRESERVE_FAST_TOOLS=1`. Never silently copy an extension `node_modules` symlink back to a global/shared package set. Validate each preserved extension's dependency resolution against the generation's exact Pi API and dependency closure. Maintain the stable logical extension identity/settings selection while making its immutable generation copy available to the loader. If a custom extension cannot be made generation-isolated, block activation and identify the exact extension; do not silently disable it or load dependencies from mutable global paths.
+Preserve installed user extensions. Preserve a customized `fast-tools.ts` by default only when its origin/hash is known to be user-owned; otherwise present a fail-closed choice or require `TIA_PRESERVE_FAST_TOOLS=1`. Never silently copy an extension `node_modules` symlink back to a global/shared package set. Validate each preserved extension's dependency resolution against the generation's exact Pi API and dependency closure. Maintain the stable logical extension identity/settings selection while making its immutable generation copy available to the loader. If a custom extension cannot be made generation-isolated, block activation and identify the exact extension; do not silently disable it or load dependencies from mutable global paths.
 
 Resolve FFF's configured source/version from current installed state unless the user explicitly overrides it. Install and validate its complete dependency graph in staging. Preserve only mutable FFF databases and configuration across versions, not installed FFF code or native module symlinks.
 
@@ -86,12 +86,6 @@ Single status record for this migration (2026-09-29). "Offline-tested" means dis
 - `scripts/runtime-launch.test.ts`: host-Pi version precedence, one-shot background sync, opt-outs, clean `tia sync` environment, generation pinning under hostile env values, slim routing, credential-link semantics, update blocking, FFF state repair, `fast-tools.ts` provenance policy, resource-transform drift.
 - `scripts/runtime-fault-matrix.ts` (`bun run test:faults <new-dir>`): the real installer (real packages, compile and smoke) killed/failed at every phase, plus unknown Pi/FFF versions, unreachable registry and an external SIGTERM to the shell installer.
 - `test.sh` (14 stages, disposable HOME; stage 14 bumps a host Pi manifest from 0.87.1 to 0.99.1 and requires one ordinary launch to produce a verified 0.99.1 generation in the background): full/slim/tool/FFF/OAuth/RPC/bootstrap checks through a sealed generation, and a v0.6.0 installation with a symlinked custom extension, customized `fast-tools.ts` and real-shaped settings/sessions upgraded (fail-closed refusal, explicit preservation, byte-identical user state), a live legacy session and a live generation session each answering across activation changes, rollback to byte-identical legacy `tia status`, and reinstall.
-
-**Live runtime** (`~/.local/share/tia`, 2026-09-29):
-
-- 21:13 — a first live install (Pi 0.99.1, preserved `fast-tools.ts` c4f8cd0f…) migrated the v0.6.0 launcher; it was started outside this implementation session and built from an earlier working tree. It passed all phases, and the v0.6.0 launcher is retained byte-for-byte as legacy activation `20bf355b…`.
-- 21:26 — the `gpt-6.1-sol` configuration moved into the shared `~/.pi/agent/settings.json`/`models.json` (TIA links to them) and `fast-tools.ts` gained the `openai-codex` selector (6a0f0e68…). The 21:13 generation's snapshot lacked the selector, so `gpt-6.1-sol` was hidden in full mode.
-- 21:34 — a private receipt/backup was written to `~/.local/share/tia-backups/pre-0.7.0-20260929T212746/` (mode 0700, hashes and link targets; no credentials copied). Final code was installed with `TIA_PRESERVE_FAST_TOOLS=1`: generation `485b768a…`, activation `4b5da46d…`, Pi 0.99.1 from the host, FFF 0.10.7-nightly.c3f2c7f. Settings, models, trust and `fast-tools.ts` hashes were unchanged, `tia verify` passed (17,280 entries), slim default resolved to `openai-codex/gpt-6.1-sol`, and full-mode `--list-models` included `openai-codex gpt-6.1-sol` like the host `pi`. Rollback targets: `24fb0009…` (21:13 generation), then the v0.6.0 launcher.
 
 **Not covered / remaining blockers:**
 
