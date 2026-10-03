@@ -11,7 +11,7 @@ type Measurement = {name: string; bytes: number; samplesMs: number[]; checks: nu
 type WorkerResult = {measurements: Measurement[]; maxRssKiB: number}
 type Pair = {order: string[]; baseline: WorkerResult; candidate: WorkerResult}
 
-const workloads = ['read-small', 'read-5MiB-window', 'read-deep-offset', 'read-line-limit-giant-tail', 'read-byte-limit-giant-tail', 'read-giant-first-line', 'read-unicode-boundary', 'read-unlimited-skill', 'write-1MiB-verified', 'edit-100KB-verified-diff']
+const workloads = ['read-small', 'read-5MiB-window', 'read-deep-offset', 'read-line-limit-giant-tail', 'read-byte-limit-giant-tail', 'read-giant-first-line', 'read-unicode-boundary', 'read-unlimited-skill', 'write-1MiB-verified', 'edit-100KB-verified-diff', 'patch-100KB-numbered', 'patch-10-file-verified']
 
 export function quantile(values: number[], fraction: number) {
  assert(values.length > 0 && values.every(value => Number.isFinite(value) && value >= 0))
@@ -110,6 +110,24 @@ async function worker(source: string, iterations: number, warmup: number, worklo
      assert.equal(readFileSync(editTarget, 'utf8'), editPayloads[(index + 1) % 2])
      assert.match(result.details.diff, /BEFORE/)
      assert.match(result.details.diff, /AFTER!/)
+    }
+   )
+  }
+  if (workload.startsWith('patch-')) {
+   const count = workload === 'patch-10-file-verified' ? 10 : 1
+   const filler = `${'f'.repeat(99)}\n`.repeat(500)
+   const payloads = [`${filler}BEFORE\n${filler}`, `${filler}AFTER!\n${filler}`]
+   const names = Array.from({length: count}, (_, index) => `patch-${index}.txt`)
+   for (const name of names) writeFileSync(join(work, name), payloads[0])
+   const patches = [0, 1].map(index => names.map(name => `--- a/${name}\n+++ b/${name}\n@@ -501 +501 @@\n-${index ? 'AFTER!' : 'BEFORE'}\n+${index ? 'BEFORE' : 'AFTER!'}\n`).join(''))
+   await measure(
+    workload,
+    Buffer.byteLength(payloads[0]) * count,
+    index => ext.fastPatch(work, patches[index % 2]),
+    (result, index) => {
+     assert.equal(result.details.verified, true)
+     assert.equal(result.details.files, count)
+     for (const name of names) assert.equal(readFileSync(join(work, name), 'utf8'), payloads[(index + 1) % 2])
     }
    )
   }

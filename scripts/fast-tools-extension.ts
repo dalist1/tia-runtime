@@ -1,6 +1,6 @@
-import {closeSync, existsSync, fchmodSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, renameSync, rmSync, statSync, writeFileSync, writeSync} from 'node:fs'
+import {closeSync, existsSync, fchmodSync, fstatSync, fsyncSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, readlinkSync, readSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync} from 'node:fs'
 import {homedir} from 'node:os'
-import {basename, dirname, isAbsolute, join, resolve} from 'node:path'
+import {basename, dirname, join, resolve} from 'node:path'
 import {createBashTool, createBashToolDefinition, createReadToolDefinition, createWriteToolDefinition, DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type ExtensionAPI, formatSize, getAgentDir} from '@earendil-works/pi-coding-agent'
 import {Container, Spacer, Text} from '@earendil-works/pi-tui'
 import {Type} from '@sinclair/typebox'
@@ -20,16 +20,17 @@ type TextToolUpdate = {content: TextBlock[]; details: any}
 
 type ToolUpdateFn = ((update: TextToolUpdate) => void) | undefined
 
-type OptimizedBashStep = {description: string; run: () => Promise<void>}
+type OptimizedBashStep = {description: string; run: (signal?: AbortSignal) => Promise<void>}
 
 type ReplacementEdit = {oldText: string; newText: string}
 type MultiReplacementEdit = ReplacementEdit & {path?: string}
 type ClassicEdit = {path: string; oldText: string; newText: string}
 type DiffHint = {beforeStart: number; beforeEnd: number; afterStart: number; afterEnd: number}
 type PlannedFileEdit = {path: string; absolutePath: string; before: string; after: string; editCount: number; diffHint?: DiffHint}
-type PatchOperation = {kind: 'add'; path: string; contents: string} | {kind: 'delete'; path: string} | {kind: 'update'; path: string; chunks: PatchChunk[]}
-type PatchChunk = {oldLines: string[]; newLines: string[]; isEndOfFile: boolean}
-type PlannedPatchFile = {path: string; absolutePath: string; before: string | null; after: string | null}
+type PatchOperation = {kind: 'add'; path: string; contents: string} | {kind: 'delete'; path: string; chunks?: PatchChunk[]} | {kind: 'update'; path: string; chunks: PatchChunk[]; movePath?: string}
+type PatchChunk = {oldLines: string[]; newLines: string[]; context: number[]; isEndOfFile: boolean; oldStart?: number; anchor?: string; oldNoNewline?: boolean; newNoNewline?: boolean}
+type PlannedPatchFile = {path: string; absolutePath: string; before: string | null; after: string | null; moveFrom?: string}
+type FileSnapshot = {mode: number; link?: string}
 type EditFailureDetails = {
  reason: 'not_found' | 'indentation_mismatch' | 'line_ending_mismatch' | 'duplicate_match'
  path: string
@@ -68,7 +69,32 @@ function uniqueStrings(values: string[]) {
 }
 
 function normalizeUnifiedDiffPath(path: string) {
- const trimmed = path.trim()
+ let trimmed = path.split('\t')[0].trim()
+ if (trimmed.startsWith('"')) {
+  const quoted = path.match(/^"((?:[^"\\]|\\.)*)"(?:\t.*)?$/)
+  if (!quoted) throw new Error(`Invalid quoted patch path: ${path}`)
+  const bytes: number[] = []
+  for (let i = 0; i < quoted[1].length;) {
+   if (quoted[1][i] !== '\\') {
+    const code = quoted[1].codePointAt(i)!
+    bytes.push(...Buffer.from(String.fromCodePoint(code)))
+    i += code > 0xffff ? 2 : 1
+    continue
+   }
+   const escape = quoted[1].slice(i + 1).match(/^[0-7]{1,3}/)?.[0]
+   if (escape) {
+    bytes.push(parseInt(escape, 8))
+    i += 1 + escape.length
+   } else {
+    const escapes: Record<string, string> = {t: '\t', n: '\n', r: '\r', b: '\b', f: '\f', v: '\v', a: '\x07', '\\': '\\', '"': '"'}
+    const value = escapes[quoted[1][i + 1]]
+    if (value === undefined) throw new Error(`Invalid escape in patch path: ${path}`)
+    bytes.push(...Buffer.from(value))
+    i += 2
+   }
+  }
+  trimmed = Buffer.from(bytes).toString('utf8')
+ }
  if (trimmed === '/dev/null') return ''
  if (trimmed.startsWith('a/') || trimmed.startsWith('b/')) return trimmed.slice(2)
  return trimmed
@@ -76,13 +102,20 @@ function normalizeUnifiedDiffPath(path: string) {
 
 function patchOperationPaths(patchText: string) {
  const paths: string[] = []
+ const displayPath = (path: string) => {
+  try {
+   return normalizeUnifiedDiffPath(path)
+  } catch {
+   return path
+  }
+ }
  for (const line of patchText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n')) {
   const match = line.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/)
   if (match) paths.push(match[1])
   const oldFile = line.match(/^---\s+(.+)$/)
   const newFile = line.match(/^\+\+\+\s+(.+)$/)
-  if (oldFile) paths.push(normalizeUnifiedDiffPath(oldFile[1]))
-  if (newFile) paths.push(normalizeUnifiedDiffPath(newFile[1]))
+  if (oldFile) paths.push(displayPath(oldFile[1]))
+  if (newFile) paths.push(displayPath(newFile[1]))
  }
  return uniqueStrings(paths)
 }
@@ -340,7 +373,7 @@ function exactMatchLines(content: string, oldText: string, limit = 8) {
  let index = content.indexOf(oldText)
  while (index !== -1 && locations.length < limit) {
   locations.push(lineNumberAt(content, index))
-  index = content.indexOf(oldText, index + Math.max(oldText.length, 1))
+  index = content.indexOf(oldText, index + 1)
  }
  return locations
 }
@@ -377,7 +410,7 @@ export function missingEditError(pathArg: string, editIndex: number, content: st
 }
 
 function resolveEditPath(cwd: string, path: string) {
- return isAbsolute(path) ? resolve(path) : resolve(cwd, path)
+ return resolvePath(cwd, path)
 }
 
 function planFileEdits(pathArg: string, absolutePath: string, content: string, edits: Array<{index: number; oldText: string; newText: string}>): PlannedFileEdit {
@@ -391,7 +424,7 @@ function planFileEdits(pathArg: string, absolutePath: string, content: string, e
    throw missingEditError(pathArg, edit.index, content, edit.oldText)
   }
 
-  const secondIndex = content.indexOf(edit.oldText, firstIndex + edit.oldText.length)
+  const secondIndex = content.indexOf(edit.oldText, firstIndex + 1)
   if (secondIndex !== -1) {
    throw duplicateEditError(pathArg, edit.index, content, edit.oldText)
   }
@@ -448,7 +481,11 @@ export async function planClassicEdits(cwd: string, edits: ClassicEdit[], readTe
  return planned
 }
 
-const readSchema = Type.Object({path: Type.String({description: 'Path to the file to read (relative or absolute)'}), offset: Type.Optional(Type.Number({description: 'Line number to start reading from (1-indexed)'})), limit: Type.Optional(Type.Number({description: 'Maximum number of lines to read'}))})
+const readSchema = Type.Object({
+ path: Type.String({description: 'Path to the file to read (relative or absolute)'}),
+ offset: Type.Optional(Type.Integer({minimum: 1, description: 'Line number to start reading from (1-indexed)'})),
+ limit: Type.Optional(Type.Integer({minimum: 1, description: 'Maximum number of lines to read'}))
+})
 
 const writeSchema = Type.Object({path: Type.String({description: 'Path to the file to write (relative or absolute)'}), content: Type.String({description: 'Content to write to the file'})})
 
@@ -486,57 +523,72 @@ function resolvePath(cwd: string, path: string) {
 }
 
 function resolvePatchPath(cwd: string, path: string) {
- const trimmed = path.trim()
- if (!trimmed) throw new Error('Patch path cannot be empty')
- return isAbsolute(trimmed) ? resolve(trimmed) : resolve(cwd, trimmed)
+ if (!path.trim()) throw new Error('Patch path cannot be empty')
+ return resolvePath(cwd, path)
 }
 
 function parseUpdateChunk(lines: string[], startIndex: number, lastContentLine: number) {
  let i = startIndex
- if (lines[i].trimEnd().startsWith('@@')) i += 1
+ const header = lines[i]
+ const range = header.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:.*)$/)
+ if (header.startsWith('@@ -') && !range) throw new Error(`Invalid unified hunk header: ${header}`)
+ const oldCount = range ? Number(range[2] ?? 1) : undefined
+ const newCount = range ? Number(range[4] ?? 1) : undefined
+ const oldStart = range ? Number(range[1]) - (oldCount === 0 ? 0 : 1) : undefined
+ if (range && (![oldStart!, oldCount!, Number(range[3]), newCount!].every(Number.isSafeInteger) || oldStart! < 0)) throw new Error(`Invalid unified hunk range: ${header}`)
+ const anchor = !range && header.startsWith('@@ ') ? header.slice(3) : undefined
+ if (header.startsWith('@@')) i += 1
  const oldLines: string[] = []
  const newLines: string[] = []
+ const context: number[] = []
  let parsed = 0
  let isEndOfFile = false
+ let oldNoNewline = false
+ let newNoNewline = false
+ let previousMarker = ''
  while (i <= lastContentLine) {
   const raw = lines[i]
-  const trimmed = raw.trimEnd()
-  if (trimmed === '*** End of File') {
+  if (raw === '\\ No newline at end of file') {
+   if (!previousMarker) throw new Error('No-newline marker must follow a hunk line')
+   if (previousMarker !== '+') oldNoNewline = true
+   if (previousMarker !== '-') newNoNewline = true
+   previousMarker = ''
+   i += 1
+   continue
+  }
+  if (raw === '*** End of File') {
    isEndOfFile = true
    i += 1
    break
   }
-  if (trimmed.startsWith('\\ No newline')) {
-   i += 1
-   continue
-  }
-  if (parsed > 0 && (trimmed.startsWith('@@') || trimmed.startsWith('*** '))) break
-  if (raw.length === 0) {
-   oldLines.push('')
-   newLines.push('')
-   parsed += 1
-   i += 1
-   continue
-  }
-  const marker = raw[0]
+  if (range && oldLines.length === oldCount && newLines.length === newCount) break
+  if (raw.startsWith('@@') || raw.startsWith('*** ') || isGitFileHeader(raw)) break
+  if (!range && isUnifiedFileHeader(lines, i, lastContentLine)) break
+  const marker = raw.length === 0 ? ' ' : raw[0]
   const body = raw.slice(1)
+  if ((oldNoNewline && marker !== '+') || (newNoNewline && marker !== '-')) throw new Error('No-newline marker must describe the last line of the file')
   if (marker === ' ') {
+   context.push(oldLines.length)
    oldLines.push(body)
    newLines.push(body)
   } else if (marker === '-') {
    oldLines.push(body)
   } else if (marker === '+') {
    newLines.push(body)
+   context.push(-1)
   } else if (parsed === 0) {
    throw new Error(`Unexpected line found in update hunk: '${raw}'.`)
   } else {
    break
   }
+  previousMarker = marker
   parsed += 1
   i += 1
+  if (range && (oldLines.length > oldCount! || newLines.length > newCount!)) throw new Error(`Unified hunk line count mismatch: ${header}`)
  }
- if (parsed === 0) throw new Error('Update hunk does not contain any lines')
- return {chunk: {oldLines, newLines, isEndOfFile}, nextIndex: i}
+ if (range && (oldLines.length !== oldCount || newLines.length !== newCount)) throw new Error(`Unified hunk line count mismatch (truncated hunk): ${header}`)
+ if (parsed === 0 && (!range || oldCount !== 0 || newCount !== 0)) throw new Error('Update hunk does not contain any lines')
+ return {chunk: {oldLines, newLines, context, isEndOfFile, oldStart, anchor, oldNoNewline, newNoNewline}, nextIndex: i}
 }
 
 function patchHeaderError(line: string) {
@@ -546,7 +598,10 @@ function patchHeaderError(line: string) {
 }
 
 function normalizePatchText(patchText: string) {
- const normalized = patchText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim()
+ const normalized = patchText
+  .replace(/\r\n/g, '\n')
+  .replace(/\r/g, '\n')
+  .replace(/^\n+|\n+$/g, '')
  if (!normalized) throw new Error('Patch payload is empty.')
  if (normalized.startsWith('*** Begin Patch')) return normalized
  return `*** Begin Patch\n${normalized}\n*** End Patch`
@@ -557,52 +612,38 @@ function isUnifiedFileHeader(lines: string[], index: number, lastContentLine: nu
 }
 
 function isGitFileHeader(line: string) {
- return line.trim().startsWith('diff --git ')
+ return line.startsWith('diff --git ')
 }
 
 function parseUnifiedPath(line: string, marker: '---' | '+++') {
- return normalizeUnifiedDiffPath(line.slice(marker.length).trim())
-}
-
-function skipOptionalUnifiedBody(lines: string[], index: number, lastContentLine: number) {
- let i = index
- if (isUnifiedFileHeader(lines, i, lastContentLine)) i += 2
- if (i <= lastContentLine && lines[i].trim().startsWith('@@')) i += 1
- return i
-}
-
-function skipToNextPatchSection(lines: string[], index: number, lastContentLine: number) {
- let i = index
- while (i <= lastContentLine && !lines[i].trim().startsWith('*** ')) i += 1
- return i
+ return normalizeUnifiedDiffPath(line.slice(marker.length).trimStart())
 }
 
 function parseUnifiedDiffOperation(lines: string[], startIndex: number, lastContentLine: number) {
  const oldPath = parseUnifiedPath(lines[startIndex], '---')
  const newPath = parseUnifiedPath(lines[startIndex + 1], '+++')
  if (!oldPath && !newPath) throw patchHeaderError(lines[startIndex])
- const path = newPath || oldPath
+ const path = oldPath || newPath
  let i = startIndex + 2
- let operationEnd = i
- while (operationEnd <= lastContentLine && !lines[operationEnd].trim().startsWith('*** ') && !isUnifiedFileHeader(lines, operationEnd, lastContentLine) && !isGitFileHeader(lines[operationEnd])) operationEnd += 1
- const lastOperationLine = operationEnd - 1
  const chunks: PatchChunk[] = []
- while (i <= lastOperationLine) {
-  if (!lines[i].trim() || lines[i].trim().startsWith('\\ No newline')) {
+ while (i <= lastContentLine) {
+  if (!lines[i].trim()) {
    i += 1
    continue
   }
-  const parsed = parseUpdateChunk(lines, i, lastOperationLine)
+  if (!lines[i].startsWith('@@')) break
+  const parsed = parseUpdateChunk(lines, i, lastContentLine)
   chunks.push(parsed.chunk)
   i = parsed.nextIndex
  }
- if (!oldPath) {
-  const contents = `${chunks.flatMap(chunk => chunk.newLines).join('\n')}\n`
-  return {operation: {kind: 'add' as const, path, contents}, nextIndex: operationEnd}
- }
- if (!newPath) return {operation: {kind: 'delete' as const, path}, nextIndex: operationEnd}
  if (chunks.length === 0) throw new Error(`Unified diff for path '${path}' has no hunks.`)
- return {operation: {kind: 'update' as const, path, chunks}, nextIndex: operationEnd}
+ if (!oldPath) {
+  if (chunks.some(chunk => chunk.oldLines.length > 0 || chunk.oldStart !== 0)) throw new Error(`Invalid add hunk for ${path}`)
+  const contents = applyUpdate(path, '', chunks)
+  return {operation: {kind: 'add' as const, path, contents}, nextIndex: i}
+ }
+ if (!newPath) return {operation: {kind: 'delete' as const, path, chunks}, nextIndex: i}
+ return {operation: {kind: 'update' as const, path, chunks, movePath: oldPath !== newPath ? newPath : undefined}, nextIndex: i}
 }
 
 export function parsePatch(patchText: string): PatchOperation[] {
@@ -618,7 +659,15 @@ export function parsePatch(patchText: string): PatchOperation[] {
    i += 1
    continue
   }
-  if (line.startsWith('diff --git ') || line.startsWith('index ') || line.startsWith('new file mode ') || line.startsWith('deleted file mode ') || line.startsWith('similarity index ') || line.startsWith('rename from ') || line.startsWith('rename to ')) {
+  if (line.startsWith('diff --git ')) {
+   let next = i + 1
+   while (next <= lastContentLine && !isGitFileHeader(lines[next]) && !lines[next].startsWith('*** ') && !isUnifiedFileHeader(lines, next, lastContentLine)) next += 1
+   if (!isUnifiedFileHeader(lines, next, lastContentLine)) throw new Error('Git metadata-only or binary patches are not supported; use explicit Add/Delete/Update File operations.')
+   i += 1
+   continue
+  }
+  if (line.startsWith('new file mode ') && line !== 'new file mode 100644') throw new Error('File mode changes are not supported by patch; set permissions explicitly with bash.')
+  if (line.startsWith('index ') || line.startsWith('new file mode ') || line.startsWith('deleted file mode ') || line.startsWith('similarity index ') || line.startsWith('rename from ') || line.startsWith('rename to ')) {
    i += 1
    continue
   }
@@ -631,9 +680,15 @@ export function parsePatch(patchText: string): PatchOperation[] {
   if (line.startsWith('*** Add File: ')) {
    const path = line.slice('*** Add File: '.length)
    i += 1
-   i = skipOptionalUnifiedBody(lines, i, lastContentLine)
+   if (isUnifiedFileHeader(lines, i, lastContentLine)) {
+    const parsed = parseUnifiedDiffOperation(lines, i, lastContentLine)
+    if (parsed.operation.kind !== 'add' || parsed.operation.path !== path) throw new Error(`Mismatched add headers for ${path}`)
+    operations.push(parsed.operation)
+    i = parsed.nextIndex
+    continue
+   }
    const contentLines: string[] = []
-   while (i <= lastContentLine && !lines[i].trim().startsWith('*** ')) {
+   while (i <= lastContentLine && !lines[i].startsWith('*** ') && !isGitFileHeader(lines[i]) && !isUnifiedFileHeader(lines, i, lastContentLine)) {
     if (lines[i].trim().startsWith('\\ No newline')) {
      i += 1
      continue
@@ -641,21 +696,28 @@ export function parsePatch(patchText: string): PatchOperation[] {
     contentLines.push(lines[i].startsWith('+') ? lines[i].slice(1) : lines[i])
     i += 1
    }
-   operations.push({kind: 'add', path, contents: `${contentLines.join('\n')}\n`})
+   operations.push({kind: 'add', path, contents: contentLines.length ? `${contentLines.join('\n')}\n` : ''})
    continue
   }
   if (line.startsWith('*** Delete File: ')) {
-   operations.push({kind: 'delete', path: line.slice('*** Delete File: '.length)})
+   const path = line.slice('*** Delete File: '.length)
    i += 1
-   i = skipToNextPatchSection(lines, skipOptionalUnifiedBody(lines, i, lastContentLine), lastContentLine)
+   if (isUnifiedFileHeader(lines, i, lastContentLine)) {
+    const parsed = parseUnifiedDiffOperation(lines, i, lastContentLine)
+    if (parsed.operation.kind !== 'delete' || parsed.operation.path !== path) throw new Error(`Mismatched delete headers for ${path}`)
+    operations.push(parsed.operation)
+    i = parsed.nextIndex
+   } else operations.push({kind: 'delete', path})
    continue
   }
   if (line.startsWith('*** Update File: ')) {
    const path = line.slice('*** Update File: '.length)
    i += 1
+   let movePath: string | undefined
+   if (lines[i]?.startsWith('*** Move to: ')) movePath = lines[i++].slice('*** Move to: '.length)
    if (isUnifiedFileHeader(lines, i, lastContentLine)) i += 2
    const chunks: PatchChunk[] = []
-   while (i <= lastContentLine && !lines[i].trim().startsWith('*** ')) {
+   while (i <= lastContentLine && !lines[i].startsWith('*** ') && !isUnifiedFileHeader(lines, i, lastContentLine) && !isGitFileHeader(lines[i])) {
     if (!lines[i].trim()) {
      i += 1
      continue
@@ -665,7 +727,7 @@ export function parsePatch(patchText: string): PatchOperation[] {
     i = parsed.nextIndex
    }
    if (chunks.length === 0) throw new Error(`Update file hunk for path '${path}' is empty`)
-   operations.push({kind: 'update', path, chunks})
+   operations.push({kind: 'update', path, chunks, movePath})
    continue
   }
   throw patchHeaderError(line)
@@ -682,25 +744,23 @@ function normalizedLine(line: string) {
   .replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, ' ')
 }
 
-function lineEqual(actual: string, expected: string) {
- return actual === expected || actual.trimEnd() === expected.trimEnd() || normalizedLine(actual) === normalizedLine(expected)
-}
-
-function findChunk(lines: string[], pattern: string[], start: number, eof: boolean) {
- const searchStart = eof && lines.length >= pattern.length ? lines.length - pattern.length : start
- const matches: number[] = []
- for (let i = searchStart; i <= lines.length - pattern.length; i += 1) {
-  let ok = true
-  for (let j = 0; j < pattern.length; j += 1) {
-   if (!lineEqual(lines[i + j], pattern[j])) {
-    ok = false
-    break
-   }
+function findChunk(lines: string[], pattern: string[], start: number, eof: boolean, preferred?: number) {
+ const end = lines.length - pattern.length
+ if (eof && end < start) return undefined
+ const searchStart = eof ? end : start
+ for (const normalize of [(line: string) => line, (line: string) => line.trimEnd(), normalizedLine]) {
+  const expected = pattern.map(normalize)
+  const matchesAt = (at: number) => at >= searchStart && at <= end && expected.every((line, index) => normalize(lines[at + index]) === line)
+  if (preferred !== undefined && matchesAt(preferred)) return preferred
+  let found: number | undefined
+  for (let i = searchStart; i <= end; i += 1) {
+   if (!matchesAt(i)) continue
+   if (found !== undefined) throw new Error('Patch hunk is ambiguous; multiple matching locations were found. Add context, a section anchor, or a numbered hunk.')
+   found = i
   }
-  if (ok) matches.push(i)
+  if (found !== undefined) return found
  }
- if (matches.length > 1) throw new Error('Patch hunk is ambiguous; multiple matching locations were found.')
- return matches[0]
+ return undefined
 }
 
 function leadingWhitespace(line: string) {
@@ -713,7 +773,7 @@ function preserveMatchedIndent(actualLines: string[], expectedLines: string[], n
  const actualAnchorIndex = expectedLines.findIndex(line => line === expectedAnchor)
  const actualIndent = leadingWhitespace(actualLines[actualAnchorIndex] ?? '')
  if (actualIndent.length === 0) return newLines
- return newLines.map(line => (line.trim().length > 0 && leadingWhitespace(line).length === 0 ? `${actualIndent}${line}` : line))
+ return newLines.map(line => (line.trim().length > 0 ? `${actualIndent}${line}` : line))
 }
 
 function nearestPatchPrefixLine(lines: string[], oldLines: string[], start: number) {
@@ -734,39 +794,76 @@ function formatMissingPatchChunkError(path: string, oldLines: string[], nearestP
 }
 
 function applyUpdate(path: string, content: string, chunks: PatchChunk[]) {
- const lines = content.split('\n')
- if (lines[lines.length - 1] === '') lines.pop()
- const replacements: Array<[number, number, string[]]> = []
+ const records = content.match(/[^\n]*\n|[^\n]+$/g)?.map(raw => ({text: raw.replace(/\r?\n$/, ''), ending: raw.endsWith('\r\n') ? '\r\n' : raw.endsWith('\n') ? '\n' : ''})) ?? []
+ const lines = records.map(record => record.text)
+ const newline = records.find(record => record.ending)?.ending ?? '\n'
+ const output: Array<{text: string; ending: string}> = []
  let cursor = 0
  for (const chunk of chunks) {
-  const found = findChunk(lines, chunk.oldLines, cursor, chunk.isEndOfFile)
+  let searchStart = cursor
+  if (chunk.anchor) {
+   const anchor = findChunk(lines, [chunk.anchor], cursor, false)
+   if (anchor === undefined) throw new Error(`Patch failed in ${path}: section anchor '${chunk.anchor}' was not found.`)
+   searchStart = anchor + 1
+  }
+  const found = chunk.oldLines.length === 0 ? (chunk.oldStart ?? (chunk.anchor ? searchStart : lines.length)) : findChunk(lines, chunk.oldLines, searchStart, chunk.isEndOfFile || Boolean(chunk.oldNoNewline), chunk.oldStart)
   if (found === undefined) throw new Error(formatMissingPatchChunkError(path, chunk.oldLines, nearestPatchPrefixLine(lines, chunk.oldLines, cursor)))
+  if (found < cursor || found > lines.length) throw new Error(`Patch failed in ${path}: overlapping or out-of-range hunk.`)
+  if (chunk.oldNoNewline && records.at(-1)?.ending) throw new Error(`Patch failed in ${path}: expected no newline at end of file.`)
+  if (chunk.newNoNewline && found + chunk.oldLines.length !== lines.length) throw new Error(`Patch failed in ${path}: no-newline marker is not at end of file.`)
+  for (let i = cursor; i < found; i += 1) output.push(records[i])
   const newLines = preserveMatchedIndent(lines.slice(found, found + chunk.oldLines.length), chunk.oldLines, chunk.newLines)
-  replacements.push([found, chunk.oldLines.length, newLines])
+  for (let i = 0; i < newLines.length; i += 1) {
+   const oldIndex = chunk.context[i]
+   output.push(oldIndex >= 0 ? {...records[found + oldIndex]} : {text: newLines[i], ending: newline})
+  }
+  if (newLines.length && found + chunk.oldLines.length === lines.length) {
+   const last = output[output.length - 1]
+   if (chunk.newNoNewline) last.ending = ''
+   else if (chunk.oldStart !== undefined) last.ending = newline
+   else if (records.length && chunk.oldLines.length) last.ending = records[records.length - 1].ending
+  }
   cursor = found + chunk.oldLines.length
  }
- for (const [start, oldLen, newLines] of replacements.sort((a, b) => b[0] - a[0])) {
-  lines.splice(start, oldLen, ...newLines)
- }
- return `${lines.join('\n')}\n`
+ for (let i = cursor; i < records.length; i += 1) output.push(records[i])
+ return output.map((record, index) => record.text + (record.ending || (index < output.length - 1 ? newline : ''))).join('')
 }
 
 async function planPatchOperations(cwd: string, operations: PatchOperation[], readText: (absolutePath: string) => Promise<string>, exists: (absolutePath: string) => Promise<boolean>) {
- const plans: PlannedPatchFile[] = []
+ const plans = new Map<string, PlannedPatchFile>()
+ const load = async (path: string) => {
+  const absolutePath = resolvePatchPath(cwd, path)
+  let plan = plans.get(absolutePath)
+  if (!plan) {
+   const before = (await exists(absolutePath)) ? await readText(absolutePath) : null
+   plan = {path, absolutePath, before, after: before}
+   plans.set(absolutePath, plan)
+  }
+  return plan
+ }
  for (const op of operations) {
-  const absolutePath = resolvePatchPath(cwd, op.path)
+  const plan = await load(op.path)
   if (op.kind === 'add') {
-   if (await exists(absolutePath)) throw new Error(`Patch failed in ${op.path}: file already exists.\nFix: use an update patch for existing files, or choose a new file path.`)
-   plans.push({path: op.path, absolutePath, before: null, after: op.contents.endsWith('\n') ? op.contents : `${op.contents}\n`})
-  } else if (op.kind === 'delete') {
-   if (!(await exists(absolutePath))) throw new Error(`Failed to delete ${op.path}: file does not exist`)
-   plans.push({path: op.path, absolutePath, before: await readText(absolutePath), after: null})
+   if (plan.after !== null) throw new Error(`Patch failed in ${op.path}: file already exists.\nFix: use an update patch for existing files, or choose a new file path.`)
+   plan.after = op.contents
   } else {
-   const before = await readText(absolutePath)
-   plans.push({path: op.path, absolutePath, before, after: applyUpdate(op.path, before, op.chunks)})
+   if (plan.after === null) throw new Error(`Patch failed in ${op.path}: file does not exist`)
+   if (op.kind === 'delete') {
+    if (op.chunks && applyUpdate(op.path, plan.after, op.chunks) !== '') throw new Error(`Patch failed in ${op.path}: delete hunks do not cover the complete file.`)
+    plan.after = null
+   } else {
+    const after = applyUpdate(op.path, plan.after, op.chunks)
+    if (op.movePath && resolvePatchPath(cwd, op.movePath) !== plan.absolutePath) {
+     const destination = await load(op.movePath)
+     if (destination.after !== null) throw new Error(`Patch failed in ${op.movePath}: move destination already exists.`)
+     destination.after = after
+     destination.moveFrom = plan.absolutePath
+     plan.after = null
+    } else plan.after = after
+   }
   }
  }
- return plans
+ return [...plans.values()].filter(plan => plan.before !== plan.after)
 }
 
 export async function planPatch(cwd: string, patchText: string, readText: (absolutePath: string) => Promise<string>, exists: (absolutePath: string) => Promise<boolean>) {
@@ -789,7 +886,19 @@ function ensureNotAborted(signal?: AbortSignal) {
 
 const fileMutationQueues = new Map<string, Promise<void>>()
 
+function mutationKey(path: string): string {
+ try {
+  return realpathSync(path)
+ } catch (error) {
+  if (!isRecord(error) || error.code !== 'ENOENT') throw error
+  const parent = dirname(path)
+  if (parent === path) return path
+  return join(mutationKey(parent), basename(path))
+ }
+}
+
 async function withFileMutationQueue<T>(path: string, task: () => Promise<T>): Promise<T> {
+ path = mutationKey(path)
  const previous = fileMutationQueues.get(path)
  let release = () => {}
  const current = new Promise<void>(resolve => {
@@ -861,37 +970,60 @@ function verifyWrittenBytes(absolutePath: string, pathArg: string, expected: Buf
 const writeDurability = () => process.env.TIA_FASTWRITE_FSYNC === '1'
 
 function fsyncDirOf(absolutePath: string) {
+ const fd = openSync(dirname(absolutePath), 'r')
  try {
-  const fd = openSync(dirname(absolutePath), 'r')
-  try {
-   fsyncSync(fd)
-  } finally {
-   closeSync(fd)
-  }
- } catch {}
+  fsyncSync(fd)
+ } finally {
+  closeSync(fd)
+ }
 }
 
 function writeAllSync(fd: number, data: Buffer) {
  let written = 0
  while (written < data.length) {
-  written += writeSync(fd, data, written, data.length - written)
+  const count = writeSync(fd, data, written, data.length - written)
+  if (count <= 0) throw new Error('Write made no progress')
+  written += count
  }
 }
 
-function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Buffer, signal?: AbortSignal) {
- let mode = 0o644
+function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Buffer, signal?: AbortSignal, requestedMode?: number) {
+ ensureNotAborted(signal)
+ let mode = requestedMode ?? 0o666
  let hadExisting = false
  let targetStat: ReturnType<typeof lstatSync> | undefined
  try {
   targetStat = lstatSync(absolutePath)
- } catch {}
+ } catch (error) {
+  if (!isRecord(error) || error.code !== 'ENOENT') throw error
+ }
  if (targetStat?.isSymbolicLink()) {
-  writeFileSync(absolutePath, data)
-  ensureNotAborted(signal)
-  verifyWrittenBytes(absolutePath, pathArg, data, 'symlink-preserving write')
+  const before = readFileSync(absolutePath)
+  try {
+   writeFileSync(absolutePath, data)
+   verifyWrittenBytes(absolutePath, pathArg, data, 'symlink-preserving write')
+   if (writeDurability()) {
+    const fd = openSync(absolutePath, 'r+')
+    try {
+     fsyncSync(fd)
+    } finally {
+     closeSync(fd)
+    }
+   }
+   ensureNotAborted(signal)
+  } catch (error) {
+   try {
+    writeFileSync(absolutePath, before)
+    verifyWrittenBytes(absolutePath, pathArg, before, 'rollback')
+   } catch (rollbackError) {
+    throw new AggregateError([error, rollbackError], `Write failed for ${pathArg}; rollback also failed`, {cause: error})
+   }
+   throw error
+  }
   return
  }
  if (targetStat) {
+  if (!targetStat.isFile()) throw new Error(`Cannot write non-regular file: ${pathArg}`)
   mode = Number(targetStat.mode) & 0o777
   hadExisting = true
  }
@@ -902,7 +1034,7 @@ function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Bu
  try {
   const fd = openSync(tmpPath, 'wx+', mode)
   try {
-   if (hadExisting) fchmodSync(fd, mode)
+   if (hadExisting || requestedMode !== undefined) fchmodSync(fd, mode)
    writeAllSync(fd, data)
    if (durable) fsyncSync(fd)
    ensureNotAborted(signal)
@@ -914,7 +1046,6 @@ function atomicWriteVerifiedSync(absolutePath: string, pathArg: string, data: Bu
   }
   renameSync(tmpPath, absolutePath)
   if (durable) fsyncDirOf(absolutePath)
-  ensureNotAborted(signal)
  } catch (error) {
   rmSync(tmpPath, {force: true})
   throw error
@@ -937,6 +1068,18 @@ function isAgentSkill(absolutePath: string, _cwd: string): boolean {
 
 type ReadWindow = {output: string; outputLines: number; outputBytes: number; hitLineLimit: boolean; hitByteLimit: boolean; firstLineExcess: number; totalLines: number}
 
+class ImageReadRequired extends Error {}
+
+function isImageHeader(bytes: Buffer) {
+ return (
+  (bytes.length >= 8 && bytes.readUInt32BE(0) === 0x89504e47 && bytes.readUInt32BE(4) === 0x0d0a1a0a) ||
+  (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) ||
+  (bytes[0] === 0x47 && ['GIF87a', 'GIF89a'].includes(bytes.toString('ascii', 0, 6))) ||
+  (bytes[0] === 0x52 && bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') ||
+  (bytes[0] === 0x42 && bytes[1] === 0x4d)
+ )
+}
+
 function scanReadWindow(absolutePath: string, startLine: number, maxLines: number, maxBytes: number, unlimited: boolean, signal?: AbortSignal): ReadWindow {
  const fd = openSync(absolutePath, 'r')
  const chunk = readScratch ?? (readScratch = Buffer.allocUnsafe(READ_SCAN_CHUNK))
@@ -956,9 +1099,15 @@ function scanReadWindow(absolutePath: string, startLine: number, maxLines: numbe
   while (true) {
    ensureNotAborted(signal)
    const want = firstRead && startLine === 1 && !unlimited ? READ_FIRST_CHUNK : READ_SCAN_CHUNK
-   firstRead = false
-   const bytesRead = readSync(fd, chunk, 0, want, null)
+   let bytesRead = readSync(fd, chunk, 0, want, null)
+   while (firstRead && bytesRead > 0 && bytesRead < 12) {
+    const count = readSync(fd, chunk, bytesRead, 12 - bytesRead, null)
+    if (!count) break
+    bytesRead += count
+   }
    if (bytesRead <= 0) break
+   if (firstRead && isImageHeader(chunk.subarray(0, bytesRead))) throw new ImageReadRequired('Read this image with the stock image reader')
+   firstRead = false
    lastByteWasNewline = chunk[bytesRead - 1] === 10
    const scanned = bytesRead === chunk.length ? chunk : chunk.subarray(0, bytesRead)
    let pos = 0
@@ -1040,6 +1189,8 @@ function scanReadWindow(absolutePath: string, startLine: number, maxLines: numbe
 
 export async function fastRead(cwd: string, pathArg: string, offset?: number, limit?: number, signal?: AbortSignal, onUpdate?: ToolUpdateFn) {
  ensureNotAborted(signal)
+ if (offset !== undefined && (!Number.isSafeInteger(offset) || offset < 1)) throw new Error('offset must be a positive integer')
+ if (limit !== undefined && (!Number.isSafeInteger(limit) || limit < 1)) throw new Error('limit must be a positive integer')
 
  const absolutePath = resolvePath(cwd, pathArg)
  const agentSkill = isAgentSkill(absolutePath, cwd)
@@ -1132,6 +1283,7 @@ export function normalizeEditParams(params: any): MultiReplacementEdit[] {
 }
 
 async function withFileMutationQueues<T>(paths: string[], task: () => Promise<T>): Promise<T> {
+ paths = [...new Set(paths.map(mutationKey))].sort()
  async function acquire(index: number): Promise<T> {
   if (index === paths.length) return task()
   return withFileMutationQueue(paths[index], () => acquire(index + 1))
@@ -1140,7 +1292,7 @@ async function withFileMutationQueues<T>(paths: string[], task: () => Promise<T>
 }
 
 function planMatchesCurrent(plan: PlannedFileEdit | PlannedPatchFile) {
- if (plan.before === null) return !existsSync(plan.absolutePath)
+ if (plan.before === null) return lstatSync(plan.absolutePath, {throwIfNoEntry: false}) === undefined
  try {
   return readFileSync(plan.absolutePath, 'utf8') === plan.before
  } catch {
@@ -1152,41 +1304,76 @@ function assertPlanCurrent(plan: PlannedFileEdit | PlannedPatchFile) {
  if (!planMatchesCurrent(plan)) throw new Error(`Edit aborted for ${plan.path}: file changed after preflight. Reread it and retry.`)
 }
 
-async function restorePlan(plan: PlannedFileEdit | PlannedPatchFile) {
+async function restorePlan(plan: PlannedFileEdit | PlannedPatchFile, snapshot?: FileSnapshot) {
+ if (planMatchesCurrent(plan)) return
  if (plan.after === null) {
-  if (!existsSync(plan.absolutePath) && plan.before !== null) await Bun.write(plan.absolutePath, plan.before)
+  if (existsSync(plan.absolutePath)) throw new Error('File changed during rollback; external contents preserved')
+  if (plan.before !== null) {
+   if (snapshot?.link !== undefined) symlinkSync(snapshot.link, plan.absolutePath)
+   else atomicWriteVerifiedSync(plan.absolutePath, plan.path, Buffer.from(plan.before), undefined, snapshot?.mode)
+  }
   return
  }
- if (!existsSync(plan.absolutePath) || readFileSync(plan.absolutePath, 'utf8') !== plan.after) return
+ if (!existsSync(plan.absolutePath) || readFileSync(plan.absolutePath, 'utf8') !== plan.after) throw new Error('File changed during rollback; external contents preserved')
  if (plan.before === null) rmSync(plan.absolutePath, {force: true})
- else await Bun.write(plan.absolutePath, plan.before)
+ else atomicWriteVerifiedSync(plan.absolutePath, plan.path, Buffer.from(plan.before), undefined, snapshot?.mode)
 }
 
-async function applyPlannedEditsUnlocked(plans: Array<PlannedFileEdit | PlannedPatchFile>, signal?: AbortSignal, restore: (plan: PlannedFileEdit | PlannedPatchFile) => Promise<void> = restorePlan) {
+async function applyPlannedEditsUnlocked(plans: Array<PlannedFileEdit | PlannedPatchFile>, signal?: AbortSignal, restore: (plan: PlannedFileEdit | PlannedPatchFile, snapshot?: FileSnapshot) => Promise<void> = restorePlan) {
  if (plans.length === 0) throw new Error('No edit operations were planned.')
  ensureNotAborted(signal)
  for (const plan of plans) assertPlanCurrent(plan)
+ const snapshots = new Map<string, FileSnapshot>()
+ const identities = new Map<string, string>()
+ for (const plan of plans) {
+  const key = mutationKey(plan.absolutePath)
+  const alias = identities.get(key)
+  if (alias && alias !== plan.absolutePath) throw new Error(`Edit paths ${alias} and ${plan.path} refer to the same file. Use one path for all changes.`)
+  identities.set(key, plan.absolutePath)
+  if (plan.before === null) continue
+  const stat = lstatSync(plan.absolutePath)
+  snapshots.set(plan.absolutePath, {mode: stat.mode & 0o777, link: stat.isSymbolicLink() ? readlinkSync(plan.absolutePath) : undefined})
+ }
  const applied: Array<PlannedFileEdit | PlannedPatchFile> = []
+ const createdDirectories: string[] = []
  try {
   for (const plan of plans) {
+   ensureNotAborted(signal)
    assertPlanCurrent(plan)
+   applied.push(plan)
    if (plan.after === null) {
     rmSync(plan.absolutePath, {force: true})
    } else {
+    const parent = dirname(plan.absolutePath)
+    const firstCreated = mkdirSync(parent, {recursive: true})
+    if (firstCreated) {
+     const directories: string[] = []
+     for (let dir = parent; ; dir = dirname(dir)) {
+      directories.push(dir)
+      if (dir === firstCreated) break
+     }
+     createdDirectories.push(...directories.reverse())
+    }
     const data = Buffer.from(plan.after, 'utf8')
-    writeFileSync(plan.absolutePath, data)
-    verifyWrittenBytes(plan.absolutePath, plan.path, data, 'edit write')
+    const moveMode = 'moveFrom' in plan && plan.moveFrom ? snapshots.get(plan.moveFrom)?.mode : undefined
+    atomicWriteVerifiedSync(plan.absolutePath, plan.path, data, signal, moveMode)
    }
-   applied.push(plan)
    ensureNotAborted(signal)
   }
  } catch (error) {
   const rollbackErrors: Error[] = []
   for (let i = applied.length - 1; i >= 0; i -= 1) {
    try {
-    await restore(applied[i])
+    await restore(applied[i], snapshots.get(applied[i].absolutePath))
    } catch (rollbackError) {
     rollbackErrors.push(new Error(`Rollback failed for ${applied[i].path}: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`, {cause: rollbackError}))
+   }
+  }
+  for (const dir of createdDirectories.reverse()) {
+   try {
+    rmdirSync(dir)
+   } catch (cleanupError) {
+    if (!isRecord(cleanupError) || !['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(String(cleanupError.code))) rollbackErrors.push(new Error(`Could not remove created directory ${dir}`, {cause: cleanupError}))
    }
   }
   if (rollbackErrors.length > 0) {
@@ -1204,14 +1391,16 @@ export async function applyPlannedEdits(plans: Array<PlannedFileEdit | PlannedPa
 }
 
 export async function fastPatch(cwd: string, patch: string, signal?: AbortSignal) {
+ ensureNotAborted(signal)
  const operations = parsePatch(patch)
- const uniquePaths = [...new Set(operations.map(operation => resolvePatchPath(cwd, operation.path)))].sort()
+ const uniquePaths = [...new Set(operations.flatMap(operation => [resolvePatchPath(cwd, operation.path), ...(operation.kind === 'update' && operation.movePath ? [resolvePatchPath(cwd, operation.movePath)] : [])]))].sort()
  return withFileMutationQueues(uniquePaths, async () => {
+  ensureNotAborted(signal)
   const plans = await planPatchOperations(
    cwd,
    operations,
    path => Bun.file(path).text(),
-   path => Bun.file(path).exists()
+   async path => lstatSync(path, {throwIfNoEntry: false}) !== undefined
   )
   return applyPlannedEditsUnlocked(plans, signal)
  })
@@ -1236,7 +1425,7 @@ export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signa
    if (firstIndex === -1) {
     throw missingEditError(pathArg, 0, before.toString('utf8'), edit.oldText)
    }
-   if (before.indexOf(oldBytes, firstIndex + oldBytes.length) !== -1) {
+   if (before.indexOf(oldBytes, firstIndex + 1) !== -1) {
     throw duplicateEditError(pathArg, 0, before.toString('utf8'), edit.oldText)
    }
    const newBytes = Buffer.from(edit.newText, 'utf8')
@@ -1244,19 +1433,13 @@ export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signa
    before.copy(after, 0, 0, firstIndex)
    newBytes.copy(after, firstIndex)
    before.copy(after, firstIndex + newBytes.length, firstIndex + oldBytes.length)
-   writeFileSync(absolutePath, after)
-   if (!writtenBytesMatch(absolutePath, after)) {
-    const actual = readFileSync(absolutePath)
-    try {
-     writeFileSync(absolutePath, before)
-    } catch {}
-    throw writeVerificationError(pathArg, 'edit write', after.toString('utf8'), actual.toString('utf8'))
-   }
-   ensureNotAborted(signal)
+   atomicWriteVerifiedSync(absolutePath, pathArg, after, signal)
    const beforeText = before.toString('utf8')
    const afterText = after.toString('utf8')
    const beforeStart = beforeText.indexOf(edit.oldText)
    return textResult(`Successfully replaced 1 block(s) in ${pathArg}.`, {
+    verified: true,
+    files: 1,
     diff: combinedEditDiff([{path: pathArg, absolutePath, before: beforeText, after: afterText, editCount: 1, diffHint: {beforeStart, beforeEnd: beforeStart + edit.oldText.length, afterStart: beforeStart, afterEnd: beforeStart + edit.newText.length}}])
    })
   })
@@ -1271,11 +1454,12 @@ export async function fastEdit(cwd: string, edits: MultiReplacementEdit[], signa
 }
 
 async function runBinary(cmd: string, args: string[], signal?: AbortSignal) {
- const proc = Bun.spawn([cmd, ...args], {stdout: 'ignore', stderr: 'ignore', signal})
- const exitCode = await proc.exited
+ ensureNotAborted(signal)
+ const proc = Bun.spawn([cmd, ...args], {stdout: 'ignore', stderr: 'pipe', signal})
+ const [exitCode, stderr] = await Promise.all([proc.exited, new Response(proc.stderr).text()])
  if (signal?.aborted) throw new Error('Operation aborted')
  if (exitCode !== 0) {
-  throw new Error(`${cmd} exited with code ${exitCode}`)
+  throw new Error(`${cmd} exited with code ${exitCode}${stderr.trim() ? `: ${stderr.trim()}` : ''}`)
  }
 }
 
@@ -1298,35 +1482,67 @@ function statKind(path: string): 'file' | 'dir' | 'other' | 'missing' {
 }
 
 function safeShellPathToken(token: string) {
- return token.length > 0 && token.charCodeAt(0) !== 45 && !/[\\'"`$*?[\]{}();<>|&!]/.test(token)
+ return token.length > 0 && !/^[-#~]/.test(token) && !/[\\'"`$*?[\]{}();<>|&!]/.test(token)
+}
+
+function copyPlainFile(src: string, dst: string, signal?: AbortSignal) {
+ ensureNotAborted(signal)
+ const input = openSync(src, 'r')
+ try {
+  const source = fstatSync(input)
+  if (!source.isFile()) throw new Error('Copy source is not a regular file')
+  const output = openSync(dst, 'a', source.mode & 0o777)
+  try {
+   const target = fstatSync(output)
+   if (!target.isFile() || (source.dev === target.dev && source.ino === target.ino)) throw new Error('Cannot copy to the same file or a non-regular file')
+   ftruncateSync(output, 0)
+   const buffer = Buffer.allocUnsafe(Math.min(256 * 1024, Math.max(source.size, 1)))
+   while (true) {
+    ensureNotAborted(signal)
+    const count = readSync(input, buffer, 0, buffer.length, null)
+    if (!count) break
+    writeAllSync(output, buffer.subarray(0, count))
+   }
+  } finally {
+   closeSync(output)
+  }
+ } finally {
+  closeSync(input)
+ }
 }
 
 export function planOptimizedBash(cwd: string, command: string): OptimizedBashStep[] | null {
- const parts = command
-  .split('&&')
-  .map(part => part.trim())
-  .filter(Boolean)
+ if (/[\r\n]/.test(command)) return null
+ const parts = command.split('&&').map(part => part.trim())
 
- if (parts.length === 0) {
+ if (parts.some(part => !part)) {
   return null
  }
 
  const steps: OptimizedBashStep[] = []
- const created = new Set<string>()
+ const virtual = new Map<string, 'file' | 'missing'>()
+ const kind = (path: string) => virtual.get(path) ?? statKind(path)
+ const plain = (path: string) => kind(path) === 'file' && (virtual.has(path) || lstatSync(path).isFile())
 
  for (const part of parts) {
   const catMatch = part.match(/^cat\s+(\S+)\s*>\s*\/dev\/null$/)
   if (catMatch) {
    if (!safeShellPathToken(catMatch[1])) return null
-   const file = resolvePath(cwd, catMatch[1])
-   if (statKind(file) !== 'file' && !created.has(file)) return null
+   const file = resolve(cwd, catMatch[1])
+   if (!plain(file)) return null
    steps.push({
     description: `drain ${catMatch[1]}`,
-    run: async () => {
+    run: async signal => {
      if (existsSync(FASTDRAIN_BIN())) {
-      await runBinary(FASTDRAIN_BIN(), [file])
+      await runBinary(FASTDRAIN_BIN(), [file], signal)
      } else {
-      await Bun.file(file).arrayBuffer()
+      const fd = openSync(file, 'r')
+      try {
+       const buffer = Buffer.allocUnsafe(256 * 1024)
+       while (readSync(fd, buffer, 0, buffer.length, null)) ensureNotAborted(signal)
+      } finally {
+       closeSync(fd)
+      }
      }
     }
    })
@@ -1336,19 +1552,22 @@ export function planOptimizedBash(cwd: string, command: string): OptimizedBashSt
   const cpMatch = part.match(/^cp\s+(\S+)\s+(\S+)$/)
   if (cpMatch) {
    if (!safeShellPathToken(cpMatch[1]) || !safeShellPathToken(cpMatch[2])) return null
-   const src = resolvePath(cwd, cpMatch[1])
-   const dst = resolvePath(cwd, cpMatch[2])
-   if (statKind(src) !== 'file' && !created.has(src)) return null
-   if (statKind(dst) === 'dir') return null
-   created.add(dst)
+   const src = resolve(cwd, cpMatch[1])
+   const dst = resolve(cwd, cpMatch[2])
+   if (!plain(src) || src === dst || (kind(dst) !== 'missing' && !plain(dst)) || statKind(dirname(dst)) !== 'dir') return null
+   if (existsSync(src) && existsSync(dst)) {
+    const source = statSync(src)
+    const target = statSync(dst)
+    if (source.dev === target.dev && source.ino === target.ino) return null
+   }
+   virtual.set(dst, 'file')
    steps.push({
     description: `copy ${cpMatch[1]} -> ${cpMatch[2]}`,
-    run: async () => {
-     mkdirSync(dirname(dst), {recursive: true})
+    run: async signal => {
      if (existsSync(FASTCOPY_BIN())) {
-      await runBinary(FASTCOPY_BIN(), [src, dst])
+      await runBinary(FASTCOPY_BIN(), [src, dst], signal)
      } else {
-      await Bun.write(dst, Bun.file(src))
+      copyPlainFile(src, dst, signal)
      }
     }
    })
@@ -1358,14 +1577,14 @@ export function planOptimizedBash(cwd: string, command: string): OptimizedBashSt
   const rmMatch = part.match(/^rm\s+(\S+)$/)
   if (rmMatch) {
    if (!safeShellPathToken(rmMatch[1])) return null
-   const target = resolvePath(cwd, rmMatch[1])
-   const kind = statKind(target)
-   if (kind === 'dir' || (kind === 'missing' && !created.has(target))) return null
-   created.delete(target)
+   const target = resolve(cwd, rmMatch[1])
+   if (!plain(target) || (statSync(dirname(target)).mode & 0o1000) !== 0) return null
+   if (!virtual.has(target) && (statSync(target).mode & 0o222) === 0) return null
+   virtual.set(target, 'missing')
    steps.push({
     description: `rm ${rmMatch[1]}`,
     run: async () => {
-     rmSync(target, {force: true})
+     rmSync(target)
     }
    })
    continue
@@ -1388,7 +1607,8 @@ async function tryOptimizedBash(cwd: string, command: string, signal?: AbortSign
   ensureNotAborted(signal)
   updates.push(`[fast path ${i + 1}/${steps.length}] ${steps[i].description}`)
   emitTextUpdate(onUpdate, updates.join('\n'))
-  await steps[i].run()
+  await steps[i].run(signal)
+  ensureNotAborted(signal)
  }
 
  return true
@@ -1402,21 +1622,26 @@ export default function (pi: ExtensionAPI) {
  pi.registerTool({
   name: 'read',
   label: 'read',
-  description: 'Read the contents of a file using an in-process zero-spawn windowed byte scanner. Supports offset/limit windows and returns truncated output with continuation hints.',
+  description: 'Read text with an in-process windowed byte scanner, or images as attachments. Supports offset/limit windows and returns truncated output with continuation hints.',
   parameters: readSchema,
   renderShell: stockRead.renderShell,
   renderCall: stockRead.renderCall,
   renderResult: stockRead.renderResult,
   async execute(_toolCallId, params, signal, onUpdate, ctx) {
    const typedOnUpdate: ToolUpdateFn = onUpdate
-   return fastRead(ctx.cwd, params.path, params.offset, params.limit, signal, typedOnUpdate)
+   try {
+    return await fastRead(ctx.cwd, params.path, params.offset, params.limit, signal, typedOnUpdate)
+   } catch (error) {
+    if (!(error instanceof ImageReadRequired)) throw error
+    return stockRead.execute(_toolCallId, params, signal, onUpdate, ctx)
+   }
   }
  })
 
  pi.registerTool({
   name: 'write',
   label: 'write',
-  description: 'Write content to a file atomically (temp file + rename) with byte-for-byte read-back verification.',
+  description: 'Write content with byte-for-byte read-back verification. Regular files use atomic temp-file + rename; symlinks are written through without replacing the link.',
   parameters: writeSchema,
   renderShell: stockWrite.renderShell,
   renderCall: stockWrite.renderCall,
@@ -1453,10 +1678,11 @@ export default function (pi: ExtensionAPI) {
    return component
   },
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+   const edits = normalizeEditParams(params)
    if (typeof params.patch === 'string') {
     return fastPatch(ctx.cwd, params.patch, signal)
    }
-   return fastEdit(ctx.cwd, normalizeEditParams(params), signal)
+   return fastEdit(ctx.cwd, edits, signal)
   }
  })
 
@@ -1470,7 +1696,7 @@ export default function (pi: ExtensionAPI) {
   renderResult: stockBash.renderResult,
   async execute(toolCallId, params, signal, onUpdate, ctx) {
    const typedOnUpdate: ToolUpdateFn = onUpdate
-   if (await tryOptimizedBash(ctx.cwd, params.command, signal, typedOnUpdate)) {
+   if (params.timeout === undefined && (await tryOptimizedBash(ctx.cwd, params.command, signal, typedOnUpdate))) {
     return textResult('(no output)')
    }
 

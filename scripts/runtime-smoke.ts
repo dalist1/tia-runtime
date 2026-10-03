@@ -4,7 +4,7 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import {cleanEnvironment, command} from './runtime-build.ts'
 
-export async function smokeRuntime(launcher: string, fff: boolean, log: string) {
+export async function smokeRuntime(launcher: string, fff: boolean, log: string, shippedFastTools = false) {
  const work = mkdtempSync(join(tmpdir(), 'tia-generation-smoke-'))
  const agent = join(work, 'shell-agent'),
   tiaAgent = join(work, 'tia-agent'),
@@ -16,6 +16,7 @@ export async function smokeRuntime(launcher: string, fff: boolean, log: string) 
   {id: 'read', name: 'read', input: {path: join(work, 'atomic-smoke.txt')}},
   {id: 'write', name: 'write', input: {path: join(work, 'written.txt'), content: 'verified café\n'}},
   {id: 'edit', name: 'edit', input: {path: join(work, 'edited.txt'), oldText: 'before', newText: 'after'}},
+  ...(shippedFastTools ? [{id: 'patch', name: 'edit', input: {patch: `*** Begin Patch\n*** Add File: ${join(work, 'nested/one.txt')}\n+one\n*** Add File: ${join(work, 'nested/two.txt')}\n+two\n*** Update File: ${join(work, 'nested/one.txt')}\n@@\n-one\n+ONE\n*** End Patch`}}] : []),
   {id: 'bash', name: 'bash', input: {command: 'printf atomic-bash'}},
   ...(fff
    ? [
@@ -102,6 +103,10 @@ export async function smokeRuntime(launcher: string, fff: boolean, log: string) 
    assert(JSON.stringify(results.find(r => r.toolName === name)?.result).includes(text), `Invalid ${name} result`)
   assert.equal(readFileSync(join(work, 'written.txt'), 'utf8'), 'verified café\n')
   assert.equal(readFileSync(join(work, 'edited.txt'), 'utf8'), 'after')
+  if (shippedFastTools) {
+   assert.equal(readFileSync(join(work, 'nested/one.txt'), 'utf8'), 'ONE\n')
+   assert.equal(readFileSync(join(work, 'nested/two.txt'), 'utf8'), 'two\n')
+  }
   assert(
    events.some(event => event.type === 'message_end' && event.message?.stopReason === 'stop' && event.message.content.some((c: any) => c.text === 'atomic-runtime-ok café')),
    'Missing final assistant response'
@@ -127,7 +132,7 @@ export async function smokeRuntime(launcher: string, fff: boolean, log: string) 
    slim.some(event => event.t === 'done' && event.stopReason === 'stop' && !event.error),
    'Missing slim completion'
   )
-  return {full: true, slim: true, toolCalls: calls.length, fffSearch: fff, writesVerified: true}
+  return {full: true, slim: true, toolCalls: calls.length, fffSearch: fff, writesVerified: true, multiFilePatch: shippedFastTools}
  } finally {
   server.stop(true)
   rmSync(work, {recursive: true, force: true})

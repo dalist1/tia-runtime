@@ -134,9 +134,20 @@ int main(int argc, char **argv) {
 
 	struct stat st;
 	if (fstat(src_fd, &st) != 0) fail("fstat src");
+	if (!S_ISREG(st.st_mode)) {
+		errno = EINVAL;
+		fail("source is not a regular file");
+	}
 
-	int dst_fd = open(dst_path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, st.st_mode & 0777);
+	int dst_fd = open(dst_path, O_WRONLY | O_CREAT | O_CLOEXEC, st.st_mode & 0777);
 	if (dst_fd < 0) fail("open dst");
+	struct stat dst_st;
+	if (fstat(dst_fd, &dst_st) != 0) fail("fstat dst");
+	if (!S_ISREG(dst_st.st_mode) || (st.st_dev == dst_st.st_dev && st.st_ino == dst_st.st_ino)) {
+		errno = EINVAL;
+		fail("destination is the same file or not a regular file");
+	}
+	if (ftruncate(dst_fd, 0) != 0) fail("truncate dst");
 
 	bool copied = copy_copy_file_range(src_fd, dst_fd, st.st_size);
 	if (!copied) {

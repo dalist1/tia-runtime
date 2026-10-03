@@ -73,6 +73,7 @@ bash "${ROOT_DIR}/install.sh" tia install >/dev/null
 G="$(generation_dir "${TIA_DATA}")"
 [[ "${G}" == "${TIA_DATA}"/generations/* ]]
 tia verify | grep -q '"verified": true'
+bun -e 'const fs=require("node:fs"),path=require("node:path"); const rows=fs.readdirSync(process.argv[1]).flatMap(name=>fs.readFileSync(path.join(process.argv[1],name),"utf8").split("\n")).filter(line=>line.startsWith("{")); if(!rows.some(line=>{try{return JSON.parse(line).validation?.multiFilePatch === true}catch{return false}})) throw new Error("Shipped multi-file patch smoke did not run")' "${TIA_DATA}/logs"
 
 printf '[2/14] check tia status\n'
 tia status > "${TMP_DIR}/tia-status.txt"
@@ -151,8 +152,9 @@ mkdir -p "${OAUTH_AGENT_DIR}"
 bun -e 'const fs=require("node:fs"); const payload=Buffer.from(JSON.stringify({"https://api.openai.com/auth":{chatgpt_account_id:"test-account"}})).toString("base64url"); fs.writeFileSync(process.argv[1], JSON.stringify({"openai-codex":{type:"oauth",access:`e30.${payload}.sig`,refresh:"fake",expires:Date.now()+3600000,accountId:"test-account"}}));' "${OAUTH_AGENT_DIR}/auth.json"
 printf '%s\n' '{"providers":{"openai-codex":{"baseUrl":"http://127.0.0.1:1"}}}' > "${OAUTH_AGENT_DIR}/models.json"
 printf '%s\n' '{"retry":{"provider":{"maxRetries":0,"timeoutMs":1000}}}' > "${OAUTH_AGENT_DIR}/settings.json"
+OAUTH_MODEL="$(bun -e 'console.log(require(process.argv[1])["openai-codex"])' "${G}/stream-runtime/default-models.json")"
 run_with_optional_timeout env -i HOME="${HOME}" PATH="${PATH}" PI_NO_PROXY_AUTO_START=1 TIA_DISABLE_FAST_STREAM=1 PI_CODING_AGENT_DIR="${OAUTH_AGENT_DIR}" \
-	tia pi --mode json --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --no-context-files --provider openai-codex -p oauth-check \
+	tia pi --mode json --no-session --no-extensions --no-skills --no-prompt-templates --no-themes --no-tools --no-context-files --provider openai-codex --model "${OAUTH_MODEL}" -p oauth-check \
 	> "${TMP_DIR}/tia-oauth-bundle.jsonl"
 bun -e 'const events=require("node:fs").readFileSync(process.argv[1],"utf8").trim().split(/\n+/).map(JSON.parse); const message=events.map(event=>event.message).find(message=>message?.role==="assistant"); if (!message || message.errorMessage?.includes("OAuth auth derivation failed") || !message.diagnostics?.some(item=>item.type==="provider_transport_failure")) process.exit(1);' "${TMP_DIR}/tia-oauth-bundle.jsonl"
 

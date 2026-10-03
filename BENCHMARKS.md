@@ -71,6 +71,11 @@ Thresholds count UTF-16 code units. Text bypasses the control timer. Verificatio
 
 ## Other benchmarks
 
+[Fast-tool correctness review](bench/history/fast-tools-review-v1/README.md): multi-file patch
+regressions, fault-injected writes, shell parity, and a measured 1.34× ten-file-patch
+speedup. Atomic exact edits add about 0.06 ms median latency; read/write changes were
+inconclusive. See the retained evidence and safety boundaries before generalizing.
+
 ```bash
 bun run bench:runtime <before-bin> <after-bin> <pi-package> <output.json> 12 5
 bun run bench:tools <before-extension.ts> <output.json> 12 200 60

@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test'
-import {mkdirSync, mkdtempSync, rmSync} from 'node:fs'
+import {linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync} from 'node:fs'
 import {readFile, readdir, stat, writeFile} from 'node:fs/promises'
 import {homedir, tmpdir} from 'node:os'
 import {join} from 'node:path'
@@ -79,6 +79,13 @@ test('native copy/write helpers survive partial operations and clean failed atom
 
   const copyContent = `${'0123456789abcdef'.repeat(128 * 1024)}\n`
   await writeFile(join(cwd, 'copy-source.txt'), copyContent)
+  linkSync(join(cwd, 'copy-source.txt'), join(cwd, 'copy-hardlink.txt'))
+  symlinkSync('copy-source.txt', join(cwd, 'copy-symlink.txt'))
+  for (const target of ['copy-source.txt', 'copy-hardlink.txt', 'copy-symlink.txt']) {
+   const sameFile = await run([join(outDir, 'fastcopy'), 'copy-source.txt', target], cwd)
+   expect(sameFile.exitCode).not.toBe(0)
+   expect(await readFile(join(cwd, 'copy-source.txt'), 'utf8')).toBe(copyContent)
+  }
   await writeFile(join(cwd, 'copy-target.txt'), 'stale destination data'.repeat(1000))
   const rangeFallback = await run([join(outDir, 'fastcopy'), 'copy-source.txt', 'copy-target.txt'], cwd, undefined, {...preload, TIA_FAULT_COPY_FILE_RANGE_AFTER: '4096'})
   expect(rangeFallback.exitCode, rangeFallback.stderr).toBe(0)

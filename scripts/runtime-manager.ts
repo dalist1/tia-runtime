@@ -3,6 +3,7 @@ import {createHmac, randomBytes} from 'node:crypto'
 import {appendFileSync, existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, writeFileSync} from 'node:fs'
 import {join, resolve} from 'node:path'
 import {buildRuntime, command as run, fastToolsPolicy, type RuntimeAssets} from './runtime-build.ts'
+import {pinNativeHelpers} from './runtime-resources.ts'
 import {smokeRuntime} from './runtime-smoke.ts'
 import {createActivation, directory, discardUnpublished, id, inspectLauncher, prepareDispatcher, prepareRoot, recover, sealGeneration, selection, switchActivation, verifyActivation, verifyGeneration, type Activation, type FaultHook, type Generation} from './runtime-store.ts'
 
@@ -153,7 +154,7 @@ export async function installRuntime(rootArg: string, command: string, assetsDir
    fff = result.details.fff.enabled
    return result
   },
-  launcher => smokeRuntime(launcher, fff, log),
+  (launcher, generation) => smokeRuntime(launcher, fff, log, readFileSync(join(generation, 'extensions/fast-tools.ts'), 'utf8') === pinNativeHelpers(readFileSync(join(assetsDir, 'fast-tools-extension.ts'), 'utf8'))),
   failpoint(env.TIA_FAILPOINT)
  )
  console.log(`Activated TIA ${manifest.version}: generation ${active.generation} (activation ${active.id})`)
