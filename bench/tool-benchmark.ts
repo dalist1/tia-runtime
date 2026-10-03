@@ -4,6 +4,7 @@ import {mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statfsSync, 
 import {cpus, release, tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
 import {pathToFileURL} from 'node:url'
+import {stripVTControlCharacters} from 'node:util'
 import {referenceRead} from './tool-read-reference.ts'
 
 type Extension = typeof import('../scripts/fast-tools-extension.ts')
@@ -11,7 +12,22 @@ type Measurement = {name: string; bytes: number; samplesMs: number[]; checks: nu
 type WorkerResult = {measurements: Measurement[]; maxRssKiB: number}
 type Pair = {order: string[]; baseline: WorkerResult; candidate: WorkerResult}
 
-const workloads = ['read-small', 'read-5MiB-window', 'read-deep-offset', 'read-line-limit-giant-tail', 'read-byte-limit-giant-tail', 'read-giant-first-line', 'read-unicode-boundary', 'read-unlimited-skill', 'write-1MiB-verified', 'edit-100KB-verified-diff', 'patch-100KB-numbered', 'patch-10-file-verified']
+const workloads = [
+ 'read-small',
+ 'read-5MiB-window',
+ 'read-deep-offset',
+ 'read-line-limit-giant-tail',
+ 'read-byte-limit-giant-tail',
+ 'read-giant-first-line',
+ 'read-unicode-boundary',
+ 'read-unlimited-skill',
+ 'write-1MiB-verified',
+ 'edit-100KB-verified-diff',
+ 'patch-100KB-numbered',
+ 'patch-10-file-verified',
+ 'edit-render-collapsed',
+ 'edit-render-expanded'
+]
 
 export function quantile(values: number[], fraction: number) {
  assert(values.length > 0 && values.every(value => Number.isFinite(value) && value >= 0))
@@ -131,6 +147,39 @@ async function worker(source: string, iterations: number, warmup: number, worklo
     }
    )
   }
+  if (workload.startsWith('edit-render-')) {
+   let edit: any
+   Reflect.apply(ext.default, undefined, [
+    {
+     registerTool: (tool: any) => {
+      if (tool.name === 'edit') edit = tool
+     }
+    }
+   ])
+   assert(edit?.renderResult)
+   const diff = Array.from({length: 10000}, (_, i) => `${i % 2 ? '+' : '-'}${i + 1} line-${i}`).join('\n')
+   const result = {content: [{type: 'text', text: 'Successfully applied edit'}], details: {diff}}
+   const expanded = workload === 'edit-render-expanded'
+   const theme = {fg: (role: string, text: string) => `\x1b[${role === 'toolDiffAdded' ? 32 : role === 'toolDiffRemoved' ? 31 : 90}m${text}\x1b[39m`}
+   let lastComponent: any
+   await measure(
+    workload,
+    Buffer.byteLength(diff),
+    async () => {
+     lastComponent = edit.renderResult(result, {expanded, isPartial: false}, theme, {isError: false, lastComponent})
+     return lastComponent.render(120)
+    },
+    lines => {
+     const text = stripVTControlCharacters(lines.join('\n'))
+     assert(text.includes('line-0'))
+     if (expanded) assert(text.includes('line-9999'))
+     else {
+      assert(text.includes('9990 more lines'))
+      assert(!text.includes('line-9999'))
+     }
+    }
+   )
+  }
   return {measurements, maxRssKiB: process.resourceUsage().maxRSS}
  } finally {
   rmSync(work, {recursive: true, force: true})
@@ -231,7 +280,7 @@ async function main() {
    logicalCpus: cpus().length,
    cpuAffinity: process.platform === 'linux' ? readFileSync('/proc/self/status', 'utf8').match(/^Cpus_allowed_list:\s*(.*)$/m)?.[1] : undefined,
    bun: Bun.version,
-   pi: JSON.parse(readFileSync(resolve(import.meta.dir, '../node_modules/@earendil-works/pi-coding-agent/package.json'), 'utf8')).version,
+   pi: JSON.parse(readFileSync(Bun.resolveSync('@earendil-works/pi-coding-agent/package.json', dirname(baseline)), 'utf8')).version,
    tmpdir: tmpdir(),
    filesystemType: statfsSync(tmpdir()).type,
    fsync: false

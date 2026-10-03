@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
+import {mkdirSync, readFileSync, writeFileSync, existsSync} from 'node:fs'
 import {join} from 'node:path'
 import type {Scenario} from './latency-config.ts'
 import {quantile} from './tool-benchmark.ts'
@@ -15,12 +16,47 @@ export function newTurn(): TurnTrace {
 export function textChunks(scenario: Scenario) {
  return Array.from({length: scenario.deltas}, (_, i) => `${String(i).padStart(5, '0')} café😄\u2028` + 'x'.repeat(scenario.deltaChars - 14) + '\n')
 }
-export function toolCalls(directory: string, turn: number) {
+export function patchFixture(turn: number) {
+ const filler = `${'f'.repeat(99)}\n`.repeat(500)
+ return `${filler}value-${turn}\n${filler}`
+}
+
+export function prepareToolFixture(directory: string, scenario: Scenario) {
+ if (scenario.toolWorkload === 'patch') {
+  for (let i = 0; i < 10; i++) writeFileSync(join(directory, `patch-${i}.txt`), patchFixture(0))
+ }
+ if (scenario.toolWorkload === 'files') writeFileSync(join(directory, 'copy-source.txt'), 'copy café😄\n'.repeat(1000))
+ if (scenario.toolWorkload === 'search') {
+  mkdirSync(join(directory, 'src'), {recursive: true})
+  for (let i = 0; i < 100; i++) writeFileSync(join(directory, 'src', `module-${i}.ts`), `export const value = ${i}\n`)
+  writeFileSync(join(directory, 'src', 'needle.ts'), 'export const needle = "latency-search-needle"\n')
+ }
+}
+
+export function checkToolFiles(directory: string, turn: number, scenario: Scenario) {
+ if (!scenario.tools || scenario.toolWorkload === 'search') return
+ assert.equal(readFileSync(join(directory, 'written.txt'), 'utf8'), `verified-${turn}\ncafé😄\n`)
+ if (scenario.toolWorkload === 'patch') {
+  for (let i = 0; i < 10; i++) assert.equal(readFileSync(join(directory, `patch-${i}.txt`), 'utf8'), patchFixture(turn + 1))
+ } else assert.equal(readFileSync(join(directory, 'edited.txt'), 'utf8'), `after-${turn}`)
+ if (scenario.toolWorkload === 'files') assert(!existsSync(join(directory, 'copied.txt')), 'Copy/remove chain left its destination behind')
+}
+
+export function toolCalls(directory: string, turn: number, scenario?: Scenario) {
+ if (scenario?.toolWorkload === 'search')
+  return [
+   {id: `find_${turn}`, name: 'find', input: {pattern: 'needle.ts', path: join(directory, 'src/')}},
+   {id: `grep_${turn}`, name: 'grep', input: {pattern: 'latency-search-needle', path: join(directory, 'src/')}},
+   {id: `read_${turn}`, name: 'read', input: {path: join(directory, 'source.txt'), offset: 1, limit: 2}},
+   {id: `bash_${turn}`, name: 'bash', input: {command: 'printf latency-bash'}}
+  ]
  return [
   {id: `read_${turn}`, name: 'read', input: {path: join(directory, 'source.txt'), offset: 1, limit: 2}},
   {id: `write_${turn}`, name: 'write', input: {path: join(directory, 'written.txt'), content: `verified-${turn}\ncafé😄\n`}},
-  {id: `edit_${turn}`, name: 'edit', input: {path: join(directory, 'edited.txt'), oldText: `before-${turn}`, newText: `after-${turn}`}},
-  {id: `bash_${turn}`, name: 'bash', input: {command: 'printf latency-bash'}}
+  scenario?.toolWorkload === 'patch'
+   ? {id: `edit_${turn}`, name: 'edit', input: {patch: Array.from({length: 10}, (_, i) => `--- a/${join(directory, `patch-${i}.txt`)}\n+++ b/${join(directory, `patch-${i}.txt`)}\n@@ -501 +501 @@\n-value-${turn}\n+value-${turn + 1}\n`).join('')}}
+   : {id: `edit_${turn}`, name: 'edit', input: {path: join(directory, 'edited.txt'), oldText: `before-${turn}`, newText: `after-${turn}`}},
+  {id: `bash_${turn}`, name: 'bash', input: {command: scenario?.toolWorkload === 'files' ? 'cp copy-source.txt copied.txt && cat copied.txt > /dev/null && rm copied.txt' : 'printf latency-bash'}}
  ]
 }
 
@@ -57,15 +93,17 @@ export function loopback() {
     const needsTools = scenario.tools && trace.requests.length === 1
     if (scenario.tools) {
      const names = parsed.tools.map((tool: any) => tool.name)
-     for (const name of ['read', 'write', 'edit', 'bash']) assert(names.includes(name), `Missing coding tool: ${name}`)
+     for (const {name} of toolCalls(directory, turnIndex, scenario)) assert(names.includes(name), `Missing coding tool: ${name}`)
      if (!needsTools) {
       const results = parsed.messages.at(-1).content.filter((b: any) => b.type === 'tool_result')
       assert.equal(results.length, 4, 'Missing tool results in continuation request')
-      for (const call of toolCalls(directory, turnIndex)) {
+      for (const call of toolCalls(directory, turnIndex, scenario)) {
        const result = results.find((r: any) => r.tool_use_id === call.id)
        assert(result && !result.is_error, `Failed tool result: ${call.name}`)
        if (call.name === 'read') assert(JSON.stringify(result.content).includes('source café'))
-       if (call.name === 'bash') assert(JSON.stringify(result.content).includes('latency-bash'))
+       if (call.name === 'bash' && scenario.toolWorkload !== 'files') assert(JSON.stringify(result.content).includes('latency-bash'))
+       if (call.name === 'find') assert(JSON.stringify(result.content).includes('needle.ts'))
+       if (call.name === 'grep') assert(JSON.stringify(result.content).includes('latency-search-needle'))
       }
      }
     }
@@ -84,7 +122,7 @@ export function loopback() {
        await wait(scenario.firstDelayMs)
        emit({type: 'message_start', message: {id: `msg_${turnIndex}_${trace.requests.length}`, type: 'message', role: 'assistant', model: 'latency-fixture', content: [], stop_reason: null, stop_sequence: null, usage: {input_tokens: 100, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0}}})
        if (needsTools) {
-        for (const [index, call] of toolCalls(directory, turnIndex).entries()) {
+        for (const [index, call] of toolCalls(directory, turnIndex, scenario).entries()) {
          emit({type: 'content_block_start', index, content_block: {type: 'tool_use', id: call.id, name: call.name, input: {}}})
          emit({type: 'content_block_delta', index, delta: {type: 'input_json_delta', partial_json: JSON.stringify(call.input)}})
          emit({type: 'content_block_stop', index})

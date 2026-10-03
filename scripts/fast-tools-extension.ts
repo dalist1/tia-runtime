@@ -10,6 +10,7 @@ const FASTDRAIN_BIN = () => join(fastToolsDir(), 'fastdrain')
 const FASTCOPY_BIN = () => join(fastToolsDir(), 'fastcopy')
 const READ_SCAN_CHUNK = 256 * 1024
 const READ_FIRST_CHUNK = 64 * 1024
+const INLINE_FILE_LIMIT = 256 * 1024
 
 let readScratch: Buffer | null = null
 let verifyScratch: Buffer | null = null
@@ -164,10 +165,7 @@ function linesEqual(left: string, leftStarts: number[], leftIndex: number, right
  const rightEnd = lineEnd(right, rightStarts, rightIndex)
  const length = leftEnd - leftStart
  if (length !== rightEnd - rightStart) return false
- for (let i = 0; i < length; i += 1) {
-  if (left.charCodeAt(leftStart + i) !== right.charCodeAt(rightStart + i)) return false
- }
- return true
+ return left.slice(leftStart, leftEnd) === right.slice(rightStart, rightEnd)
 }
 
 function lineText(text: string, starts: number[], index: number) {
@@ -197,10 +195,7 @@ function isLineBoundary(text: string, index: number) {
 function rangeLineEqual(left: string, leftStart: number, leftEnd: number, right: string, rightStart: number, rightEnd: number) {
  const leftLength = leftEnd - leftStart
  if (leftLength !== rightEnd - rightStart) return false
- for (let i = 0; i < leftLength; i += 1) {
-  if (left.charCodeAt(leftStart + i) !== right.charCodeAt(rightStart + i)) return false
- }
- return true
+ return left.slice(leftStart, leftEnd) === right.slice(rightStart, rightEnd)
 }
 
 function appendDiffRange(lines: string[], text: string, start: number, end: number, firstLine: number, marker: string, width: number) {
@@ -316,6 +311,16 @@ function renderLimitedText(text: string, expanded: boolean, maxLines: number, th
  let rendered = shown.join('\n')
  if (lines.length > shown.length) rendered += theme.fg('muted', `\n... (${lines.length - shown.length} more lines, ctrl+o to expand)`)
  return rendered
+}
+
+export function renderEditDiff(diff: string, expanded: boolean, theme: any) {
+ if (expanded) return renderDiffText(diff, theme)
+ let end = -1
+ for (let line = 0; line < 10; line++) {
+  end = diff.indexOf('\n', end + 1)
+  if (end === -1) return renderDiffText(diff, theme)
+ }
+ return renderDiffText(diff.slice(0, end), theme) + theme.fg('muted', `\n... (${countNewlines(diff, end)} more lines, ctrl+o to expand)`)
 }
 
 function editResultDetails(details: unknown): EditResultDetails | undefined {
@@ -793,11 +798,21 @@ function formatMissingPatchChunkError(path: string, oldLines: string[], nearestP
  return `Patch failed in ${path}: expected ${lineCount} ${noun} from the patch were not found.${nearest}\nFix: reread that region, then retry with current context or use exact edit.`
 }
 
+function patchLineEnding(line: string) {
+ return line.endsWith('\r\n') ? '\r\n' : line.endsWith('\n') ? '\n' : ''
+}
+
+function patchLineText(line: string) {
+ const ending = patchLineEnding(line)
+ return ending ? line.slice(0, -ending.length) : line
+}
+
 function applyUpdate(path: string, content: string, chunks: PatchChunk[]) {
- const records = content.match(/[^\n]*\n|[^\n]+$/g)?.map(raw => ({text: raw.replace(/\r?\n$/, ''), ending: raw.endsWith('\r\n') ? '\r\n' : raw.endsWith('\n') ? '\n' : ''})) ?? []
- const lines = records.map(record => record.text)
- const newline = records.find(record => record.ending)?.ending ?? '\n'
- const output: Array<{text: string; ending: string}> = []
+ const records = content.match(/[^\n]*\n|[^\n]+$/g) ?? []
+ const lines = records.map(patchLineText)
+ const firstNewline = content.indexOf('\n')
+ const newline = firstNewline > 0 && content.charCodeAt(firstNewline - 1) === 13 ? '\r\n' : '\n'
+ const output: string[] = []
  let cursor = 0
  for (const chunk of chunks) {
   let searchStart = cursor
@@ -809,24 +824,24 @@ function applyUpdate(path: string, content: string, chunks: PatchChunk[]) {
   const found = chunk.oldLines.length === 0 ? (chunk.oldStart ?? (chunk.anchor ? searchStart : lines.length)) : findChunk(lines, chunk.oldLines, searchStart, chunk.isEndOfFile || Boolean(chunk.oldNoNewline), chunk.oldStart)
   if (found === undefined) throw new Error(formatMissingPatchChunkError(path, chunk.oldLines, nearestPatchPrefixLine(lines, chunk.oldLines, cursor)))
   if (found < cursor || found > lines.length) throw new Error(`Patch failed in ${path}: overlapping or out-of-range hunk.`)
-  if (chunk.oldNoNewline && records.at(-1)?.ending) throw new Error(`Patch failed in ${path}: expected no newline at end of file.`)
+  if (chunk.oldNoNewline && records.at(-1)?.endsWith('\n')) throw new Error(`Patch failed in ${path}: expected no newline at end of file.`)
   if (chunk.newNoNewline && found + chunk.oldLines.length !== lines.length) throw new Error(`Patch failed in ${path}: no-newline marker is not at end of file.`)
   for (let i = cursor; i < found; i += 1) output.push(records[i])
   const newLines = preserveMatchedIndent(lines.slice(found, found + chunk.oldLines.length), chunk.oldLines, chunk.newLines)
   for (let i = 0; i < newLines.length; i += 1) {
    const oldIndex = chunk.context[i]
-   output.push(oldIndex >= 0 ? {...records[found + oldIndex]} : {text: newLines[i], ending: newline})
+   output.push(oldIndex >= 0 ? records[found + oldIndex] : newLines[i] + newline)
   }
   if (newLines.length && found + chunk.oldLines.length === lines.length) {
-   const last = output[output.length - 1]
-   if (chunk.newNoNewline) last.ending = ''
-   else if (chunk.oldStart !== undefined) last.ending = newline
-   else if (records.length && chunk.oldLines.length) last.ending = records[records.length - 1].ending
+   const index = output.length - 1
+   if (chunk.newNoNewline) output[index] = patchLineText(output[index])
+   else if (chunk.oldStart !== undefined) output[index] = patchLineText(output[index]) + newline
+   else if (records.length && chunk.oldLines.length) output[index] = patchLineText(output[index]) + patchLineEnding(records[records.length - 1])
   }
   cursor = found + chunk.oldLines.length
  }
  for (let i = cursor; i < records.length; i += 1) output.push(records[i])
- return output.map((record, index) => record.text + (record.ending || (index < output.length - 1 ? newline : ''))).join('')
+ return output.map((record, index) => (record.endsWith('\n') || index === output.length - 1 ? record : record + newline)).join('')
 }
 
 async function planPatchOperations(cwd: string, operations: PatchOperation[], readText: (absolutePath: string) => Promise<string>, exists: (absolutePath: string) => Promise<boolean>) {
@@ -898,23 +913,7 @@ function mutationKey(path: string): string {
 }
 
 async function withFileMutationQueue<T>(path: string, task: () => Promise<T>): Promise<T> {
- path = mutationKey(path)
- const previous = fileMutationQueues.get(path)
- let release = () => {}
- const current = new Promise<void>(resolve => {
-  release = resolve
- })
- fileMutationQueues.set(path, current)
-
- if (previous) await previous
- try {
-  return await task()
- } finally {
-  release()
-  if (fileMutationQueues.get(path) === current) {
-   fileMutationQueues.delete(path)
-  }
- }
+ return withFileMutationQueues([path], task)
 }
 
 function firstMismatchIndex(expected: string, actual: string) {
@@ -1282,13 +1281,21 @@ export function normalizeEditParams(params: any): MultiReplacementEdit[] {
  return edits
 }
 
-async function withFileMutationQueues<T>(paths: string[], task: () => Promise<T>): Promise<T> {
+export async function withFileMutationQueues<T>(paths: string[], task: () => Promise<T>): Promise<T> {
  paths = [...new Set(paths.map(mutationKey))].sort()
- async function acquire(index: number): Promise<T> {
-  if (index === paths.length) return task()
-  return withFileMutationQueue(paths[index], () => acquire(index + 1))
+ const previous = [...new Set(paths.map(path => fileMutationQueues.get(path)).filter(queue => queue !== undefined))]
+ let release = () => {}
+ const current = new Promise<void>(resolve => {
+  release = resolve
+ })
+ for (const path of paths) fileMutationQueues.set(path, current)
+ try {
+  if (previous.length) await Promise.all(previous)
+  return await task()
+ } finally {
+  release()
+  for (const path of paths) if (fileMutationQueues.get(path) === current) fileMutationQueues.delete(path)
  }
- return acquire(0)
 }
 
 function planMatchesCurrent(plan: PlannedFileEdit | PlannedPatchFile) {
@@ -1533,7 +1540,7 @@ export function planOptimizedBash(cwd: string, command: string): OptimizedBashSt
    steps.push({
     description: `drain ${catMatch[1]}`,
     run: async signal => {
-     if (existsSync(FASTDRAIN_BIN())) {
+     if (statSync(file).size > INLINE_FILE_LIMIT && existsSync(FASTDRAIN_BIN())) {
       await runBinary(FASTDRAIN_BIN(), [file], signal)
      } else {
       const fd = openSync(file, 'r')
@@ -1564,7 +1571,7 @@ export function planOptimizedBash(cwd: string, command: string): OptimizedBashSt
    steps.push({
     description: `copy ${cpMatch[1]} -> ${cpMatch[2]}`,
     run: async signal => {
-     if (existsSync(FASTCOPY_BIN())) {
+     if (statSync(src).size > INLINE_FILE_LIMIT && existsSync(FASTCOPY_BIN())) {
       await runBinary(FASTCOPY_BIN(), [src, dst], signal)
      } else {
       copyPlainFile(src, dst, signal)
@@ -1671,10 +1678,11 @@ export default function (pi: ExtensionAPI) {
    component.clear()
    const details = editResultDetails(result.details)
    const output = textContentOutput(result.content)
-   const body = !context.isError && typeof details?.diff === 'string' && details.diff.length > 0 ? renderDiffText(details.diff, theme) : theme.fg('toolOutput', output)
+   const expanded = Boolean(options.expanded)
+   const body = !context.isError && typeof details?.diff === 'string' && details.diff.length > 0 ? renderEditDiff(details.diff, expanded, theme) : renderLimitedText(theme.fg('toolOutput', output), expanded, 10, theme)
    if (!body) return component
    component.addChild(new Spacer(1))
-   component.addChild(new Text(renderLimitedText(body, Boolean(options.expanded), 10, theme), 0, 0))
+   component.addChild(new Text(body, 0, 0))
    return component
   },
   async execute(_toolCallId, params, signal, _onUpdate, ctx) {

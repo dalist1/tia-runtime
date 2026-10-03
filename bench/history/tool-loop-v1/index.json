@@ -1,0 +1,154 @@
+{
+ "schemaVersion": 1,
+ "createdAt": "2026-10-03T13:27:22.679Z",
+ "scope": "Synthetic offline full RPC on Pi 1.0.0; no live provider requests. Original journals retained locally, unchanged. Compact public journals omit only request body strings; every original request byte length and SHA-256 was revalidated before export.",
+ "runs": [
+  {
+   "name": "confirmation",
+   "originalJournalSha256": "2b270804a087f5942e4aaef3529fb602305fd58c4418ea7c4c5c9347f0a985e8",
+   "originalJournalBytes": 2525115192,
+   "processes": 280,
+   "prompts": 5824,
+   "tools": 23296,
+   "files": [
+    {
+     "path": "confirmation-compact.jsonl.gz",
+     "sha256": "a482b3e191bf98c18a4364e98e7ee40635a5eeab4fdd44694e2bc0dab243ed50",
+     "bytes": 2561110
+    },
+    {
+     "path": "confirmation-config.json.gz",
+     "sha256": "5c27d2ced2e41593e09cf99640ae84bab338b99979d047de18b5ecb50ab7b1f7",
+     "bytes": 629
+    },
+    {
+     "path": "confirmation-manifest.json.gz",
+     "sha256": "b87a35dbea678a1c14afd71c1971569e655138987e0d3acc59de4b792401e223",
+     "bytes": 4711
+    },
+    {
+     "path": "confirmation-summary.json.gz",
+     "sha256": "b467316be78cdfdc7f151f40dfbfc0fc93faef6c9b950bcc165b5b6f62ce796f",
+     "bytes": 806631
+    }
+   ]
+  },
+  {
+   "name": "first-pass",
+   "originalJournalSha256": "6358442bc7564d6297c60c47ecc564fa258c78e64bae3b3f907d1d4803a5eb1b",
+   "originalJournalBytes": 2525125684,
+   "processes": 280,
+   "prompts": 5824,
+   "tools": 23296,
+   "files": [
+    {
+     "path": "first-pass-compact.jsonl.gz",
+     "sha256": "5c3bdaeff9e127b9e14fa6e18d38364a253db45b7deb0bcdb60fd5019da54c04",
+     "bytes": 2555563
+    },
+    {
+     "path": "first-pass-config.json.gz",
+     "sha256": "b5e534e5484d695730a02977e695d2054073f2719210a230a034fe43c9709a0f",
+     "bytes": 629
+    },
+    {
+     "path": "first-pass-manifest.json.gz",
+     "sha256": "6e110cf70f8d924e0b53d7f84b55c747ef5651c128263733ec21032733587a1e",
+     "bytes": 4711
+    },
+    {
+     "path": "first-pass-summary.json.gz",
+     "sha256": "c34ad7926a4647326cb6628baf3542d11a1aad244ae75989f9d921b7fab11128",
+     "bytes": 807001
+    }
+   ]
+  },
+  {
+   "name": "profile",
+   "originalJournalSha256": "43854f0210583aa9e37926cf77f8409cb3087b45e9586fb9eda5f14c6728eb92",
+   "originalJournalBytes": 26668610,
+   "processes": 48,
+   "prompts": 240,
+   "tools": 960,
+   "files": [
+    {
+     "path": "profile-compact.jsonl.gz",
+     "sha256": "42a6c8f1edd54b9d344efe97e1f0e563f94a845e15871b3c397517c6322596c7",
+     "bytes": 265059
+    },
+    {
+     "path": "profile-config.json.gz",
+     "sha256": "d24a692dac69d8906a4af2a73b21a92abff7dacaf181c22a2c762890a069281f",
+     "bytes": 596
+    },
+    {
+     "path": "profile-manifest.json.gz",
+     "sha256": "f3fba34bfb1edfb6ed843e6cdf78980f94f3f26c657672b015d53debd3a862cd",
+     "bytes": 4705
+    },
+    {
+     "path": "profile-summary.json.gz",
+     "sha256": "1be30b18baf9b8275036704bbd99616aa93d4695c6f1c9e75cf90c270b72f193",
+     "bytes": 145367
+    }
+   ]
+  }
+ ],
+ "extra": [
+  {
+   "path": "tools.json.gz",
+   "sha256": "715b87a1b61eddadd5aa4e896ab32b87a8d64dc2df3bad0312d7a3f9ea420de3",
+   "bytes": 248502
+  },
+  {
+   "path": "baseline-extension.ts.gz",
+   "sha256": "d8d5328f1c4bcc3f408217cbd3f6f17d0204e6c380eda4c02450734238d1ac29",
+   "bytes": 19001
+  },
+  {
+   "path": "candidate-extension.ts.gz",
+   "sha256": "ae7b792a03e8918a37da96df7b9cf6c0feaa0236447a4f6d9501cec367e1855a",
+   "bytes": 19130
+  },
+  {
+   "path": "latency-before-memory-fix.ts.gz",
+   "sha256": "fc9acd713bcd3331b2395af28e26ac9d6a8b4ae28331cc6b373d7ad9bd7c6a18",
+   "bytes": 10590
+  },
+  {
+   "path": "unit.log.gz",
+   "sha256": "e17de25485a542d24eb7c50ec214dc22977a44ec6c0605c0902fcd775472ca84",
+   "bytes": 6230
+  },
+  {
+   "path": "integration.log.gz",
+   "sha256": "c889694122aeecbdfd93d669a581a7c2e7eb7bb5cf85a54e28e53c2dc9bdf102",
+   "bytes": 528
+  },
+  {
+   "path": "latency.ts.gz",
+   "sha256": "f2f1e00e04f5f78e3eeac0e8f2ddbcb3a2f6f5d7321f5ad81dc7bf8e60cff84c",
+   "bytes": 10791
+  },
+  {
+   "path": "latency-config.ts.gz",
+   "sha256": "4653b52066d1f8de52bfe30974db29f8643f8dc904c13b0da8cddf4370105503",
+   "bytes": 5296
+  },
+  {
+   "path": "latency-fixture.ts.gz",
+   "sha256": "105cf70138075ac9aae5bccb05da21bb97a9c4cb2fdaee35937245351a1cfd81",
+   "bytes": 4305
+  },
+  {
+   "path": "tool-loop-trace.ts.gz",
+   "sha256": "43e66b4f8326cdd92484bb2d6d25f05d76d767265c45fd7c7fe1746f5986b971",
+   "bytes": 1548
+  },
+  {
+   "path": "tool-benchmark.ts.gz",
+   "sha256": "3beeb64463eadff12d6efd8b65853791bc77612f35262edc2b70bcf25110a0e8",
+   "bytes": 5275
+  }
+ ]
+}

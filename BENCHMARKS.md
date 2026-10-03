@@ -40,6 +40,34 @@ bun run bench:latency --run results-latency/one.json results-latency/one-run
 
 **Cache correction:** `JITI_FS_CACHE` is boolean. Current harnesses isolate through `TMPDIR` and `JITI_RESPECT_TMPDIR_ENV=1`, checking cache files before/after. Historical records are unchanged; earlier directory-valued cache settings did not prove isolation.
 
+## Full tool-loop comparisons
+
+[Pi 1.0.0 tool-loop review](bench/history/tool-loop-v1/README.md): a repeated ~7%
+patch-heavy full-loop improvement, 1.43× ten-file patch execution and 4.90× collapsed
+diff rendering. Basic/search/long-session loops did not establish speedups. See the
+confirmation, control warnings and limitations rather than extrapolating microbenchmarks.
+
+For extension comparisons, point both RPC targets at the same isolated compiled
+executable and build metadata, and set each target's `fastTools` to its source snapshot.
+The top-level `fastTools` remains the default. New optional configuration fields:
+
+- Scenario `toolWorkload`: `basic` (default), `patch` (ten 100 KB files), `files`
+  (small copy/drain/remove chain), or `search` (actual FFF find/grep). All require
+  `tools: true`; patch requires fast tools, search requires an enabled `fffMode`
+  and explicit `fffExtension`.
+- `helperDir`: an isolated directory containing `fastcopy` and `fastdrain`. Binary
+  hashes are retained; helpers are exposed only inside disposable agent fixtures.
+- `traceTools: true`: opt-in diagnostic extension with child-clock execution/hook,
+  context/request and response/settlement boundaries. Use separately from primary
+  speedup runs: instrumentation adds overhead, and parallel tool durations overlap.
+- `targetComparisons[].warmProcessMeans`: paired comparisons of each process's mean
+  warm-turn latency, excluding its first turn. Do not treat turns from one process
+  as independent replicates.
+
+RPC completion waits for `agent_settled`. Requests are journaled exactly, but only
+summary data is retained between processes to bound benchmark memory. These additions
+do not disable normal Pi resources or measure terminal painting/provider latency.
+
 ## Earlier parameter screening (Pi 0.85.0)
 
 [Machine-readable index, checksums and validation](bench/history/latency-v1/index.json).

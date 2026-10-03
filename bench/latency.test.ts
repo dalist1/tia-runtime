@@ -5,7 +5,7 @@ import {join, resolve} from 'node:path'
 import {buildPi} from '../scripts/build-pi.ts'
 import {defaultConfig, parameters, plan, profiles, shuffle, sliceConfig, validateConfig} from './latency-config.ts'
 import {JsonlReader, metrics, newTurn, textChunks} from './latency-fixture.ts'
-import {comparisonScope, stockIdentity} from './latency.ts'
+import {comparisonScope, stockIdentity, summarySample} from './latency.ts'
 
 function config() {
  const c = defaultConfig()
@@ -193,6 +193,12 @@ for (const bytecode of [false, true])
     .split('\n')
     .map(line => JSON.parse(line))
    expect(samples.every(s => s.turns.every((t: any) => t.trace.requests.length === 2))).toBe(true)
+   const original = JSON.stringify(samples[0])
+   const retained = summarySample(samples[0])
+   expect(retained.turns[0].toolCount).toBe(4)
+   expect(retained.turns[0]).not.toHaveProperty('trace')
+   expect(retained).not.toHaveProperty('toolTrace')
+   expect(JSON.stringify(samples[0])).toBe(original)
    for (const sample of samples) {
     if (sample.cache.mode === 'cold') {
      expect(sample.cache.beforeFiles).toBe(0)

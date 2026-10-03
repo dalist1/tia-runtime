@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict'
+import {createHash} from 'node:crypto'
 import {appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync} from 'node:fs'
 import {cpus, release, tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import {buildPi} from '../scripts/build-pi.ts'
 import {defaultConfig, externalParameters, parameters, plan, shuffle, sliceConfig, type Config, type Profile, type Scenario, type Target} from './latency-config.ts'
-import {distribution, hash, JsonlReader, loopback, metrics, newTurn, now, type TurnTrace} from './latency-fixture.ts'
+import {checkToolFiles, distribution, hash, JsonlReader, loopback, metrics, newTurn, now, prepareToolFixture, type TurnTrace} from './latency-fixture.ts'
 import {pairedSpeedup} from './tool-benchmark.ts'
+import {traceExtension, traceMetrics, type LoopMark} from './tool-loop-trace.ts'
 
 type Cell = {target: Target; profile: Profile; scenario: Scenario}
 type Sample = {
@@ -23,7 +25,18 @@ type Sample = {
  eventCount: number
  cache: {mode: string; beforeFiles: number; afterFiles: number}
  nodeCompileCache: {beforeFiles: number; afterFiles: number}
+ toolTrace?: {marks: LoopMark[]; metrics: ReturnType<typeof traceMetrics>}
  turns: {phase: string; trace: TurnTrace; metrics: ReturnType<typeof metrics>}[]
+}
+type SummarySample = Omit<Sample, 'toolTrace' | 'turns'> & {turns: {phase: string; metrics: ReturnType<typeof metrics>; toolCount: number}[]}
+export function summarySample(sample: Sample): SummarySample {
+ const {turns, toolTrace: _toolTrace, ...rest} = sample
+ return {...rest, turns: turns.map(({phase, metrics, trace}) => ({phase, metrics, toolCount: Object.keys(trace.tools).length}))}
+}
+async function journalHash(path: string) {
+ const digest = createHash('sha256')
+ for await (const chunk of Bun.file(path).stream()) digest.update(chunk)
+ return digest.digest('hex')
 }
 const json = (path: string, value: unknown) => writeFileSync(path, JSON.stringify(value, null, 1) + '\n', {flag: 'wx'})
 const shaFile = (path: string) => hash(readFileSync(path))
@@ -88,6 +101,8 @@ function fixture(config: Config, cell: Cell, work: string, id: number, url: stri
   home = join(directory, 'home')
  for (const path of [directory, agent, home, join(agent, 'skills'), join(agent, 'prompts')]) mkdirSync(path, {recursive: true})
  writeFileSync(join(directory, 'source.txt'), 'source café\nsecond line\n')
+ prepareToolFixture(directory, cell.scenario)
+ if (config.helperDir) symlinkSync(resolve(config.helperDir), join(agent, 'fast-tools'), 'dir')
  writeFileSync(join(directory, 'AGENTS.md'), '# Benchmark fixture\nPreserve verified writes and coding tools.\n' + 'Synthetic context.\n'.repeat(400))
  for (let i = 0; i < 20; i++) {
   const skill = join(agent, `skills/fixture-${i}`)
@@ -96,7 +111,15 @@ function fixture(config: Config, cell: Cell, work: string, id: number, url: stri
   writeFileSync(join(agent, `prompts/fixture-${i}.md`), `---\ndescription: Synthetic prompt ${i}\n---\nInspect the fixture.\n`)
  }
  const v = cell.profile.values
- const extensions = [...(v.fastTools ? [resolve(config.fastTools)] : []), ...(v.fffMode && v.fffMode !== 'disabled' ? [resolve(config.fffExtension!)] : [])]
+ let extensions = [...(v.fastTools ? [resolve(cell.target.fastTools ?? config.fastTools)] : []), ...(v.fffMode && v.fffMode !== 'disabled' ? [resolve(config.fffExtension!)] : [])]
+ const tracePath = join(directory, 'tool-trace.json')
+ if (config.traceTools) {
+  const wrapper = join(work, `tool-trace-${hash(JSON.stringify(extensions)).slice(0, 16)}.ts`)
+  const source = traceExtension(extensions)
+  if (existsSync(wrapper)) assert.equal(readFileSync(wrapper, 'utf8'), source, 'Trace wrapper changed during benchmark')
+  else writeFileSync(wrapper, source, {flag: 'wx'})
+  extensions = [wrapper]
+ }
  json(join(agent, 'settings.json'), {
   extensions,
   transport: v.transport,
@@ -139,13 +162,14 @@ function fixture(config: Config, cell: Cell, work: string, id: number, url: stri
   FFF_FRECENCY_DB: join(directory, 'fff-frecency.sqlite'),
   FFF_HISTORY_DB: join(directory, 'fff-history.sqlite')
  }
+ if (config.traceTools) env.TIA_BENCH_TRACE_PATH = tracePath
  for (const key of ['flush', 'deltaChars', 'outputChars', 'controlDelayMs']) if (v[key] !== undefined) env[parameters[key].control] = String(v[key])
  const args = ['--mode', cell.target.protocol === 'rpc' ? 'rpc' : 'json', '--provider', 'latency', '--model', 'latency-fixture', '--thinking', String(v.thinking)]
  if (cell.target.protocol === 'slim' || !v.session) args.push('--no-session')
  if (cell.target.protocol !== 'slim') {
   for (const key of ['skills', 'prompts', 'themes', 'context']) if (!v[key]) args.push(parameters[key].control)
  }
- return {directory, env, args, cache: join(cache, 'jiti'), nodeCache}
+ return {directory, env, args, cache: join(cache, 'jiti'), nodeCache, tracePath}
 }
 
 export async function runCell(config: Config, cell: Cell, work: string, server: ReturnType<typeof loopback>, id: number, round: number, warmup: boolean, signal?: AbortSignal): Promise<Sample> {
@@ -194,15 +218,10 @@ export async function runCell(config: Config, cell: Cell, work: string, server: 
   turns[i].promptAt = now()
   send({id: `prompt-${i}`, type: 'prompt', message: prompt(i)})
  }
- const checkFiles = (i: number) => {
-  if (!cell.scenario.tools) return
-  assert.equal(readFileSync(join(f.directory, 'written.txt'), 'utf8'), `verified-${i}\ncafé😄\n`)
-  assert.equal(readFileSync(join(f.directory, 'edited.txt'), 'utf8'), `after-${i}`)
- }
  const finish = (at: number) => {
   assert(current < turns.length && turns[current].doneAt === undefined, 'Duplicate completion')
   turns[current].doneAt = at
-  checkFiles(current)
+  checkToolFiles(f.directory, current, cell.scenario)
   settled++
   if (cell.target.protocol === 'rpc') {
    if (current + 1 < count) startPrompt(++current)
@@ -305,6 +324,7 @@ export async function runCell(config: Config, cell: Cell, work: string, server: 
   assert.equal(settled, count, 'Missing successful completion')
   if (cell.target.protocol === 'rpc') assert(readyMs > 0, 'Missing RPC readiness')
   for (const trace of turns) if (cell.target.protocol !== 'slim') assert(trace.authoritative !== undefined, 'Missing authoritative assistant response')
+  const marks: LoopMark[] | undefined = config.traceTools ? JSON.parse(readFileSync(f.tracePath, 'utf8')) : undefined
   return {
    id,
    round,
@@ -320,6 +340,7 @@ export async function runCell(config: Config, cell: Cell, work: string, server: 
    eventCount,
    cache: {mode: cacheMode, beforeFiles, afterFiles},
    nodeCompileCache: {beforeFiles: nodeCacheBefore, afterFiles: filesUnder(f.nodeCache).length},
+   ...(marks ? {toolTrace: {marks, metrics: traceMetrics(marks, count)}} : {}),
    turns: turns.map((trace, index) => ({phase: index ? `warm-${index}` : 'cold', trace, metrics: metrics(trace, cell.scenario, start)}))
   }
  } catch (error) {
@@ -332,7 +353,7 @@ export async function runCell(config: Config, cell: Cell, work: string, server: 
  }
 }
 
-export function summarize(samples: Sample[], config: Config) {
+export function summarize(samples: SummarySample[], config: Config) {
  const output: any[] = []
  for (const {target, profile, scenario} of plan(config).cells) {
   const selected = samples.filter(s => !s.warmup && s.target === target.name && s.scenario === scenario.name)
@@ -345,7 +366,7 @@ export function summarize(samples: Sample[], config: Config) {
    const fields = Object.keys(rows[0].turns[turn].metrics.scalar)
    const comparisons = Object.fromEntries(
     fields.map(field => {
-     const get = (sample: Sample) => sample.turns[turn].metrics.scalar[field]
+     const get = (sample: SummarySample) => sample.turns[turn].metrics.scalar[field]
      const values = rows.map(get),
       reference = baseline.map(get)
      const speedup = [...values, ...reference].every(v => v > 0) ? pairedSpeedup(reference, values) : null
@@ -381,8 +402,11 @@ async function benchmark(config: Config, output: string) {
    provenance: metadata ? 'build-metadata-verified' : stock ? 'published Node bin; source hashes verified' : 'caller-supplied; dependency equivalence not established'
   }
  })
- const sources = ['bench/latency.ts', 'bench/latency-config.ts', 'bench/latency-fixture.ts', 'bench/tool-benchmark.ts', 'scripts/build-pi.ts', 'bun.lock'].map(path => ({path, sha256: shaFile(resolve(import.meta.dir, '..', path))}))
- const extensionSources = [config.fastTools, ...(config.fffExtension ? [config.fffExtension] : [])].map(path => ({path: resolve(path), sha256: shaFile(path)}))
+ const sources = ['bench/latency.ts', 'bench/latency-config.ts', 'bench/latency-fixture.ts', 'bench/tool-loop-trace.ts', 'bench/tool-benchmark.ts', 'scripts/build-pi.ts', 'bun.lock'].map(path => ({path, sha256: shaFile(resolve(import.meta.dir, '..', path))}))
+ const extensionSources = [...new Set([config.fastTools, ...config.targets.flatMap(target => (target.fastTools ? [target.fastTools] : [])), ...(config.fffExtension ? [config.fffExtension] : []), ...(config.helperDir ? ['fastcopy', 'fastdrain'].map(name => join(config.helperDir!, name)) : [])])].map(path => ({
+  path: resolve(path),
+  sha256: shaFile(path)
+ }))
  const git = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {cwd: resolve(import.meta.dir, '..'), stdout: 'pipe', stderr: 'pipe'})
  const dirty = Bun.spawnSync(['git', 'status', '--porcelain'], {cwd: resolve(import.meta.dir, '..'), stdout: 'pipe', stderr: 'pipe'})
  mkdirSync(output, {recursive: true})
@@ -404,7 +428,7 @@ async function benchmark(config: Config, output: string) {
  })
  const work = mkdtempSync(join(tmpdir(), 'tia-latency-')),
   server = loopback(),
-  samples: Sample[] = []
+  samples: SummarySample[] = []
  let id = 0
  const journal = join(output, 'samples.jsonl')
  const controller = new AbortController()
@@ -425,8 +449,8 @@ async function benchmark(config: Config, output: string) {
      const attempt = {id: id++, round, warmup: round < 0, target: cell.target.name, profile: cell.profile.name, scenario: cell.scenario.name}
      try {
       const sample = await runCell(config, cell, work, server, attempt.id, round, round < 0, controller.signal)
-      samples.push(sample)
       appendFileSync(journal, JSON.stringify(sample) + '\n')
+      samples.push(summarySample(sample))
       console.error(`[${samples.length}/${planned.launches}] ${sample.target} / ${sample.profile} / ${sample.scenario}: ${sample.elapsedMs.toFixed(1)}ms${sample.warmup ? ' (warmup)' : ''}`)
      } catch (error) {
       appendFileSync(journal, JSON.stringify({...attempt, failed: true, error: String(error)}) + '\n')
@@ -466,7 +490,7 @@ async function benchmark(config: Config, output: string) {
         right = select(after.name)
        assert.equal(left.length, config.rounds)
        assert.equal(right.length, config.rounds)
-       const comparison = (get: (s: Sample) => number) => ({baseline: distribution(left.map(get)), candidate: distribution(right.map(get)), speedup: [...left, ...right].every(s => get(s) > 0) ? pairedSpeedup(left.map(get), right.map(get)) : null})
+       const comparison = (get: (s: SummarySample) => number) => ({baseline: distribution(left.map(get)), candidate: distribution(right.map(get)), speedup: [...left, ...right].every(s => get(s) > 0) ? pairedSpeedup(left.map(get), right.map(get)) : null})
        return {
         target: target.name,
         baseline: baselineTarget.name,
@@ -478,7 +502,23 @@ async function benchmark(config: Config, output: string) {
         cpuMicros: comparison(s => s.cpuMicros),
         spawnToFirstTextMs: comparison(s => s.turns[0].metrics.scalar.spawnToFirstTextMs),
         elapsedMs: comparison(s => s.elapsedMs),
-        turns: left[0].turns.map((turn, i) => ({phase: turn.phase, comparisons: Object.fromEntries(['promptToFirstTextMs', 'promptToDoneMs', 'deliveryP95Ms', 'completionTailMs', ...(scenario.tools ? ['toolSpanMs'] : [])].map(field => [field, comparison(s => s.turns[i].metrics.scalar[field])]))}))
+        ...(scenario.turns > 1 && baselineTarget.protocol === 'rpc' && target.protocol === 'rpc'
+         ? {
+            warmProcessMeans: Object.fromEntries(
+             ['requestSetupMs', 'promptToFirstTextMs', 'promptToDoneMs', 'deliveryP95Ms', 'completionTailMs', ...(scenario.tools ? ['toolSpanMs', 'toolRoundTripMs'] : [])].map(field => [
+              field,
+              comparison(sample => {
+               const values = sample.turns.slice(1).map(turn => turn.metrics.scalar[field])
+               return values.reduce((a, b) => a + b, 0) / values.length
+              })
+             ])
+            )
+           }
+         : {}),
+        turns: left[0].turns.map((turn, i) => ({
+         phase: turn.phase,
+         comparisons: Object.fromEntries(['requestSetupMs', 'promptToFirstTextMs', 'promptToDoneMs', 'deliveryP95Ms', 'completionTailMs', ...(scenario.tools ? ['toolSpanMs', 'toolRoundTripMs'] : [])].map(field => [field, comparison(s => s.turns[i].metrics.scalar[field])]))
+        }))
        }
       })
     })
@@ -497,8 +537,8 @@ async function benchmark(config: Config, output: string) {
    finishedAt: new Date().toISOString(),
    checkedProcesses: samples.length,
    checkedPrompts: samples.reduce((n, s) => n + s.turns.length, 0),
-   checkedToolCalls: samples.reduce((n, s) => n + s.turns.reduce((m, t) => m + Object.keys(t.trace.tools).length, 0), 0),
-   samplesSha256: shaFile(journal),
+   checkedToolCalls: samples.reduce((n, s) => n + s.turns.reduce((m, t) => m + t.toolCount, 0), 0),
+   samplesSha256: await journalHash(journal),
    methodology:
     'Loopback only. Full RPC preserves coding tools and measures cold plus warm turns. JSON/slim are single-prompt cold-process cases. Paired AB/BA randomized blocks; 10000 seeded bootstrap resamples over paired process samples, phases kept separate. CIs are exploratory (multiple comparisons, no automatic winner/default changes). Deltas are not tokenizer tokens. Delivery lag is server enqueue to parent receipt, not terminal paint. Request bodies are exact synthetic fixtures; credentials/headers are not recorded.',
    controlWarnings,
@@ -511,7 +551,7 @@ async function benchmark(config: Config, output: string) {
    .map(row => ({target: row.target, profile: row.profile, scenario: row.scenario, ttftP50: row.comparisons.promptToFirstTextMs.stats.p50.toFixed(2), deliveryP95: row.comparisons.deliveryP95Ms.stats.p50.toFixed(3), tailP50: row.comparisons.completionTailMs.stats.p50.toFixed(3)}))
   console.table(short)
  } catch (error) {
-  json(join(output, 'failure.json'), {status: 'failed', finishedAt: new Date().toISOString(), checkedProcesses: samples.length, error: String(error), samplesSha256: existsSync(journal) ? shaFile(journal) : null})
+  json(join(output, 'failure.json'), {status: 'failed', finishedAt: new Date().toISOString(), checkedProcesses: samples.length, error: String(error), samplesSha256: existsSync(journal) ? await journalHash(journal) : null})
   throw error
  } finally {
   process.removeListener('SIGINT', interrupt)

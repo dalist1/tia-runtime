@@ -22,6 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/dalist1/tia-runtime/main/install.sh
 - `tia pi --mode json --no-session "prompt"` is the **model-only slim stream**, not a coding-agent substitute. Set `TIA_DISABLE_FAST_STREAM=1` for full JSON/tool compatibility.
 - Writes remain verified; `TIA_FASTWRITE_FSYNC=1` additionally enables durability.
 - Multi-file patches preflight every operation, create missing parents and attempt rollback on failure. See the [tool review, safety boundaries and measurements](bench/history/fast-tools-review-v1/README.md).
+- [Full tool-loop measurements on Pi 1.0.0](bench/history/tool-loop-v1/README.md) show a repeated ~7% patch-heavy loop improvement; not every workload or stage improved.
 - **TIA follows your Pi.** Without a pin, install builds the same Pi version as the host `pi` (Bun global `@earendil-works/pi-coding-agent`). After `pi` updates, the next `tia` launch builds and switches to a matching generation in the background; running sessions are unaffected. `tia sync` does it in the foreground, `tia status` shows `host pi`, and `TIA_AUTO_SYNC=0` disables it.
 - Install controls: `TIA_PI_PACKAGE_VERSION=<version>` (pins the version and disables auto-sync; without a host Pi the default is the newest publish date across channels), `TIA_FFF_SOURCE=vanilla|fork`, `TIA_FFF_PACKAGE_VERSION`, `TIA_ENABLE_FFF=0`.
 - ESM bytecode is enabled by default (tested with Bun 1.4.3); set `TIA_PI_BYTECODE=0` for older compilers. [Measurements](BENCHMARKS.md#stock-pi-versus-esm-bytecode) and [release status](RELEASE.md).

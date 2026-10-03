@@ -3,9 +3,26 @@ import {existsSync, readFileSync} from 'node:fs'
 import {join, resolve} from 'node:path'
 
 type Value = string | number | boolean
-export type Target = {name: string; command: string[]; protocol: 'rpc' | 'json' | 'slim'; buildMetadata?: string; stockNode?: boolean}
-export type Scenario = {name: string; turns: number; deltas: number; deltaChars: number; cadenceMs: number; firstDelayMs: number; thinkingDeltas: number; promptChars: number; tools: boolean; consumerDelayMs: number}
-export type Config = {schemaVersion: 1; packageDir: string; fastTools: string; fffExtension?: string; targets: Target[]; axes: Record<string, Value[]>; design: 'oat' | 'pairs' | 'grid'; rounds: number; warmups: number; seed: number; timeoutMs: number; maxDurationMs?: number; maxRuns: number; scenarios: Scenario[]}
+export type Target = {name: string; command: string[]; protocol: 'rpc' | 'json' | 'slim'; buildMetadata?: string; stockNode?: boolean; fastTools?: string}
+export type Scenario = {name: string; turns: number; deltas: number; deltaChars: number; cadenceMs: number; firstDelayMs: number; thinkingDeltas: number; promptChars: number; tools: boolean; consumerDelayMs: number; toolWorkload?: 'basic' | 'patch' | 'files' | 'search'}
+export type Config = {
+ schemaVersion: 1
+ packageDir: string
+ fastTools: string
+ fffExtension?: string
+ helperDir?: string
+ traceTools?: boolean
+ targets: Target[]
+ axes: Record<string, Value[]>
+ design: 'oat' | 'pairs' | 'grid'
+ rounds: number
+ warmups: number
+ seed: number
+ timeoutMs: number
+ maxDurationMs?: number
+ maxRuns: number
+ scenarios: Scenario[]
+}
 export type Profile = {name: string; values: Record<string, Value>}
 
 type Parameter = {control: string; scope: 'full' | 'slim' | 'both'; values: Value[]; note: string}
@@ -16,7 +33,7 @@ export const parameters: Record<string, Parameter> = {
  themes: {control: '--no-themes', scope: 'full', values: [true, false], note: 'Built-in themes only; RPC/JSON does not measure terminal painting.'},
  context: {control: '--no-context-files', scope: 'full', values: [true, false], note: 'Synthetic AGENTS.md; disabling removes project instructions.'},
  fastTools: {control: 'settings.extensions (fast-tools)', scope: 'full', values: [true, false], note: 'Actual registered read/write/edit/bash versus stock tools; verification stays enabled.'},
- fffMode: {control: 'PI_FFF_MODE', scope: 'full', values: ['disabled', 'override', 'tools-only', 'tools-and-ui'], note: 'Requires fffExtension. Startup/indexing only; search ranking and TUI autocomplete are not measured.'},
+ fffMode: {control: 'PI_FFF_MODE', scope: 'full', values: ['disabled', 'override', 'tools-only', 'tools-and-ui'], note: 'Requires fffExtension. The search workload exercises actual find/grep calls; other workloads measure startup/indexing only. Ranking quality and TUI autocomplete are not measured.'},
  transformCache: {control: 'JITI_FS_CACHE', scope: 'full', values: ['warm', 'disabled', 'cold'], note: 'Cold means empty transform cache per process, not cold OS page cache.'},
  thinking: {control: '--thinking', scope: 'both', values: ['off', 'minimal', 'low', 'medium', 'high'], note: 'Measures request serialization only; scripted thinking is NOT model reasoning or a quality evaluation.'},
  cacheRetention: {control: 'PI_CACHE_RETENTION', scope: 'both', values: ['short', 'long'], note: 'Request markers only; loopback cannot measure real provider cache hits.'},
@@ -76,9 +93,11 @@ function integer(value: number, min: number, max: number) {
  assert(Number.isSafeInteger(value) && value >= min && value <= max, `Expected integer ${min}..${max}, got ${value}`)
 }
 export function validateConfig(config: Config) {
- keys(config, ['schemaVersion', 'packageDir', 'fastTools', 'fffExtension', 'targets', 'axes', 'design', 'rounds', 'warmups', 'seed', 'timeoutMs', 'maxDurationMs', 'maxRuns', 'scenarios'])
+ keys(config, ['schemaVersion', 'packageDir', 'fastTools', 'fffExtension', 'helperDir', 'traceTools', 'targets', 'axes', 'design', 'rounds', 'warmups', 'seed', 'timeoutMs', 'maxDurationMs', 'maxRuns', 'scenarios'])
  assert.equal(config.schemaVersion, 1)
  assert(typeof config.packageDir === 'string' && typeof config.fastTools === 'string')
+ if (config.traceTools !== undefined) assert(typeof config.traceTools === 'boolean')
+ if (config.helperDir !== undefined) assert(typeof config.helperDir === 'string')
  assert(['oat', 'pairs', 'grid'].includes(config.design))
  integer(config.rounds, 2, 1000)
  integer(config.warmups, 0, 100)
@@ -88,7 +107,9 @@ export function validateConfig(config: Config) {
  integer(config.maxRuns, 1, 100000)
  assert(config.targets.length > 0 && config.scenarios.length > 0)
  for (const target of config.targets) {
-  keys(target, ['name', 'command', 'protocol', 'buildMetadata', 'stockNode'])
+  keys(target, ['name', 'command', 'protocol', 'buildMetadata', 'stockNode', 'fastTools'])
+  if (target.fastTools !== undefined) assert(typeof target.fastTools === 'string' && target.protocol !== 'slim', 'Tool overrides require a full runtime')
+  if (config.traceTools) assert(target.protocol !== 'slim', 'Tool tracing requires a full runtime')
   if (target.stockNode !== undefined) assert.equal(target.stockNode, true, 'stockNode must be true or omitted')
   if (target.stockNode) assert(target.protocol !== 'slim' && !target.buildMetadata, 'Stock Node cannot use slim/build metadata')
   assert(/^[\w.-]+$/.test(target.name) && ['rpc', 'json', 'slim'].includes(target.protocol))
@@ -97,7 +118,10 @@ export function validateConfig(config: Config) {
  assert.equal(new Set(config.targets.map(t => t.name)).size, config.targets.length, 'Duplicate target')
  assert.equal(new Set(config.scenarios.map(s => s.name)).size, config.scenarios.length, 'Duplicate scenario')
  for (const scenario of config.scenarios) {
-  keys(scenario, ['name', 'turns', 'deltas', 'deltaChars', 'cadenceMs', 'firstDelayMs', 'thinkingDeltas', 'promptChars', 'tools', 'consumerDelayMs'])
+  keys(scenario, ['name', 'turns', 'deltas', 'deltaChars', 'cadenceMs', 'firstDelayMs', 'thinkingDeltas', 'promptChars', 'tools', 'consumerDelayMs', 'toolWorkload'])
+  if (scenario.toolWorkload !== undefined) assert(scenario.tools && ['basic', 'patch', 'files', 'search'].includes(scenario.toolWorkload), 'Invalid tool workload')
+  if (scenario.toolWorkload === 'patch') assert(!config.axes.fastTools?.includes(false) && !config.targets.some(target => target.protocol === 'slim'), 'Patch workload requires fast tools')
+  if (scenario.toolWorkload === 'search') assert(config.fffExtension && config.axes.fffMode?.every(value => value !== 'disabled'), 'Search workload requires enabled FFF')
   assert(/^[\w.-]+$/.test(scenario.name) && typeof scenario.tools === 'boolean')
   integer(scenario.turns, 1, 100)
   integer(scenario.deltas, 2, 10000)
