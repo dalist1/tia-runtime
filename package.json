@@ -23,7 +23,7 @@
   "@earendil-works/pi-server": "0.85.0",
   "@earendil-works/pi-tui": "0.85.0",
   "@sinclair/typebox": "^0.34.52",
-  "@types/node": "^26.4.1",
+  "@types/node": "^26.6.4",
   "bun-types": "canary",
   "typescript": "next"
  },
