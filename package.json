@@ -12,10 +12,10 @@
   "bench:feedback": "bash bench/feedback-loop.sh",
   "bench:writer": "bun bench/slim-stream-writer-burst.ts 1000 10000",
   "install:zig": "bash scripts/install-zig.sh",
-  "lint": "oxlint -c .oxlintrc.json scripts/*.ts bench/*.ts --deny-warnings",
-  "typecheck": "tsc --noEmit",
-  "format": "oxfmt --check scripts/*.ts bench/*.ts bench/history/*.json package.json .oxlintrc.json tsconfig.json",
-  "format:write": "oxfmt --write scripts/*.ts bench/*.ts bench/history/*.json package.json .oxlintrc.json tsconfig.json"
+  "lint:scripts": "bun lint scripts/*.ts bench/*.ts --max-warnings=0",
+  "typecheck": "bun check",
+  "fmt:check": "bun format --check scripts/*.ts bench/*.ts bench/history/*.json package.json .oxlintrc.json tsconfig.json",
+  "fmt": "bun format scripts/*.ts bench/*.ts bench/history/*.json package.json .oxlintrc.json tsconfig.json"
  },
  "devDependencies": {
   "@earendil-works/pi-ai": "0.85.0",
@@ -25,8 +25,6 @@
   "@sinclair/typebox": "^0.34.52",
   "@types/node": "^26.4.1",
   "bun-types": "canary",
-  "oxfmt": "latest",
-  "oxlint": "latest",
   "typescript": "next"
  },
  "packageManager": "bun@1.4.3-canary.1"

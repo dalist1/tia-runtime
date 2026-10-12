@@ -47,8 +47,8 @@ Per-process progress; **60-second measurement budget** by default. Use fresh out
 
 ```bash
 bash -n install.sh scripts/install-tia.sh test.sh
-bun run format
-bun run lint
+bun run fmt:check
+bun run lint:scripts
 bun run typecheck
 bun test
 bash test.sh                                   # disposable HOME; never touches the live runtime

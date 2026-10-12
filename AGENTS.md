@@ -8,12 +8,14 @@
 - Use slim mode only for model-only subagents/tasks that need no tools/resources and can consume compact events (`t: session/s/d/e/done`).
 - To force full JSON compatibility for tests or consumers: `TIA_DISABLE_FAST_STREAM=1 tia pi --mode json --no-session ...`.
 
+Use native `bun check` (also `bun run typecheck`) for TypeScript checking, with a Bun build that supports it; do not fall back to `tsc` or Oxlint's `--type-check`. Lint with native `bun lint` and format with native `bun format`; they read `.oxlintrc.json` and `.oxfmtrc.json`, and there are no Oxlint or Oxfmt packages to fall back to. Keep the package script names `check`, `lint` and `format` free so they cannot shadow the native commands.
+
 Validation for runtime/install/streaming/tool changes:
 
 ```bash
 bash -n install.sh scripts/install-tia.sh test.sh
-bun run format
-bun run lint
+bun run fmt:check
+bun run lint:scripts
 bun run typecheck
 bun test
 bash test.sh                                   # disposable HOME only
