@@ -42,8 +42,12 @@ test('small file chains stay in process while large files retain native helpers'
  try {
   const agent = join(cwd, 'agent')
   mkdirSync(join(agent, 'fast-tools'), {recursive: true})
-  symlinkSync(Bun.which('cp')!, join(agent, 'fast-tools/fastcopy'))
-  symlinkSync(Bun.which('cat')!, join(agent, 'fast-tools/fastdrain'))
+  // Wrapper scripts, not symlinks: multicall coreutils (uutils) refuse to run under another name.
+  for (const [name, tool] of [
+   ['fastcopy', 'cp'],
+   ['fastdrain', 'cat']
+  ])
+   writeFileSync(join(agent, 'fast-tools', name), `#!/bin/sh\nexec ${Bun.which(tool)} "$@"\n`, {mode: 0o755})
   process.env.PI_CODING_AGENT_DIR = agent
   spy = spyOn(Bun, 'spawn').mockImplementation((...args: any[]) => {
    calls.push(args[0])
